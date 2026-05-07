@@ -1,14 +1,13 @@
 import streamlit as st
-import json, os, random, re, hashlib, pandas as pd, secrets
+import json, os, random, re, hashlib, pandas as pd, secrets, requests, base64
 from datetime import datetime, date, timedelta
 from io import BytesIO
 from PIL import Image
-import google.generativeai as genai
 import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V150"
+APP_VERSION = "V151"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -37,40 +36,42 @@ def play_audio(txt):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- AUTO-DETEKCJA MODELI AI (BEZ ZGADYWANIA NAZW) ---
-def get_ai_response(content):
-    genai.configure(api_key=API_KEY)
-    try:
-        # Pobieramy listę modeli bezpośrednio z Twojego konta Google
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
+# --- OPCJA ATOMOWA: BEZPOŚREDNIE POŁĄCZENIE Z GOOGLE API (BEZ BIBLIOTEKI) ---
+def get_ai_response(prompt_text, img_obj=None):
+    if not API_KEY:
+        raise Exception("Brak klucza API. Uzupełnij w konfiguracji.")
         
-        if not available_models:
-            raise Exception("Twój klucz łączy się z Google, ale nie udostępniono mu żadnych modeli tekstowych.")
-            
-        # Wybieramy najlepszy dostępny model (priorytet dla najnowszych)
-        target_model = available_models[0] # Domyślnie bierzemy pierwszy z brzegu
-        for pref in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-pro"]:
-            for am in available_models:
-                if pref in am:
-                    target_model = am
-                    break
-            else:
-                continue
-            break
-            
-        # Łączymy się używając nazwy, którą podyktowało samo Google
-        model = genai.GenerativeModel(target_model)
-        response = model.generate_content(content)
-        if response and response.text:
-            return response.text
-        else:
-            raise Exception("Model nie zwrócił żadnego tekstu.")
-            
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    headers = {'Content-Type': 'application/json'}
+    
+    parts = [{"text": prompt_text}]
+    
+    if img_obj:
+        buffered = BytesIO()
+        img_obj.thumbnail((800, 800)) # Kompresja dla szybkości
+        img_obj.save(buffered, format="JPEG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": img_b64
+            }
+        })
+        
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {"response_mime_type": "application/json"}
+    }
+    
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(f"Błąd HTTP {response.status_code}: {response.text}")
+        
+    res_json = response.json()
+    try:
+        return res_json['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
-        raise Exception(f"Błąd silnika (Użyto: {target_model if 'target_model' in locals() else 'Brak'}): {str(e)}")
+        raise Exception(f"Niezrozumiała odpowiedź serwera: {res_json}")
 
 def parse_ai_json(text):
     try:
@@ -90,7 +91,7 @@ if "auth" not in st.session_state:
         if tk in ss:
             st.session_state.auth, st.session_state.user = True, ss[tk]
 
-# Inicjalizacja zmiennych stanu (NameError fix)
+# Inicjalizacja kluczowych zmiennych (Naprawa NameError)
 if "u_a" not in st.session_state: st.session_state.u_a = ""
 if "n_m" not in st.session_state: st.session_state.n_m = "ask"
 
@@ -203,77 +204,4 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     del st.session_state.n_c; st.session_state.n_m = "ask"; st.rerun()
             else:
                 if st.button("Dalej ➡️", use_container_width=True):
-                    del st.session_state.n_c; st.session_state.n_m = "ask"; st.rerun()
-
-# --- 🎴 FISZKI ---
-elif choice == "🎴 Fiszki":
-    update_activity("Fiszki")
-    st.header("🎴 Fiszki")
-    kats = ["Wszystkie"] + sorted(list(set([c.get("category","Inne") for c in st.session_state.flashcards])))
-    sel_kat = st.selectbox("🎯 Wybierz kategorię:", kats)
-    cards = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
-    if cards:
-        if "f_idx" not in st.session_state: st.session_state.f_idx = 0
-        if "f_flipped" not in st.session_state: st.session_state.f_flipped = False
-        c = cards[st.session_state.f_idx % len(cards)]
-        word_txt = c["pl"] if st.session_state.f_flipped else c["de"]
-        ex_html = ""
-        if st.session_state.f_flipped and c.get("examples"):
-            for ex in c["examples"]:
-                ex_html += f"<div style='margin-top:15px; border-top:1px solid #444; padding-top:10px;'><span style='color:#FFEB3B; font-weight:bold;'>🇩🇪 {ex['de']}</span><br><span style='color:white; font-style:italic;'>🇵🇱 {ex['pl']}</span></div>"
-        
-        st.markdown(f'<div style="min-height:350px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:black; border:3px solid #FF5252; border-radius:30px; padding:30px; text-align:center;"><h1 style="color:white; margin:0; font-size:2.2em;">{word_txt}</h1>{ex_html}</div>', unsafe_allow_html=True)
-        st.write("<br>", unsafe_allow_html=True)
-        c1, c2, c3 = st.columns([1, 1.2, 1])
-        if c1.button("⬅️ Wstecz", use_container_width=True): st.session_state.f_idx -= 1; st.session_state.f_flipped = False; st.rerun()
-        if c2.button("🔄 OBRÓĆ", type="primary", use_container_width=True): st.session_state.f_flipped = not st.session_state.f_flipped; st.rerun()
-        if c3.button("Dalej ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
-        if st.session_state.f_flipped: play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
-
-# --- 📸 SKANER AI (AUTO-WYKRYWANIE) ---
-elif choice == "📸 Skaner AI":
-    update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie"); up = st.file_uploader("Lub wybierz plik")
-    if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
-        try:
-            with st.spinner("AI analizuje obraz (Wykrywam model)..."):
-                txt = get_ai_response(["Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]", Image.open(src or up).convert("RGB")])
-                data = parse_ai_json(txt)
-                if data:
-                    st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.015; st.rerun()
-                else: st.error("AI zwróciło nieprawidłowy format danych.")
-        except Exception as e: st.error(str(e))
-    if "pending" in st.session_state:
-        ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
-        if st.button("✅ ZAPISZ DO BAZY", use_container_width=True):
-            for w in ed.to_dict('records'):
-                w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": w.get("category", "Skaner")})
-                st.session_state.flashcards.append(w)
-            save_j(get_p(u, "flashcards"), st.session_state.flashcards); del st.session_state.pending; st.rerun()
-
-# --- 📦 GENERATOR SŁÓW (AUTO-WYKRYWANIE) ---
-elif choice == "📦 Generator słów":
-    update_activity("Generator"); cols = st.columns(5); lvls = ["A1", "A2", "B1", "B2", "C1"]
-    for i, lvl in enumerate(lvls):
-        if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"AI generuje słówka {lvl} (Wykrywam model)..."):
-                try:
-                    exist = [x['de'] for x in st.session_state.flashcards[:300]]
-                    p = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
-                    txt = get_ai_response(p)
-                    data = parse_ai_json(txt)
-                    if data:
-                        added = 0
-                        for w in data:
-                            if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
-                                w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
-                                st.session_state.flashcards.append(w); added += 1
-                        st.session_state.user_data["historical_cost"] += 0.01
-                        save_j(get_p(u, "flashcards"), st.session_state.flashcards)
-                        st.success(f"Dodano {added} nowych słówek!"); st.rerun()
-                    else: st.error("AI nie zwróciło poprawnego formatu JSON.")
-                except Exception as e: st.error(str(e))
-
-# --- 🕹️ QUIZ ---
-elif choice == "🕹️ Quiz":
-    update_activity("Quiz"); all_c = st.session_state.flashcards
-    if len(all_c)
+                    del st.session_
