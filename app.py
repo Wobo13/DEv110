@@ -8,7 +8,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V137"
+APP_VERSION = "V138"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -37,21 +37,15 @@ def play_audio(txt):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- PANCERNY PARSER AI ---
 def robust_parse_json(raw_text):
     try:
-        # 1. Próba znalezienia bloku kodu JSON
-        code_block = re.search(r'\[.*\]', raw_text, re.DOTALL)
-        if code_block:
-            clean_json = code_block.group(0).replace('```json', '').replace('```', '').strip()
-            return json.loads(clean_json)
-        # 2. Jeśli nie ma bloku, próbujemy załadować surowy tekst
+        # Usuwa znaczniki markdown i wyciąga listę [ ... ]
+        match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+        if match:
+            clean = match.group(0).replace('```json', '').replace('```', '').strip()
+            return json.loads(clean)
         return json.loads(raw_text.strip())
-    except Exception as e:
-        st.error(f"Błąd parsowania: {e}")
-        with st.expander("Zobacz co odpowiedziało AI (Debug)"):
-            st.code(raw_text)
-        return None
+    except: return None
 
 # --- LOGOWANIE ---
 if "auth" not in st.session_state:
@@ -114,7 +108,7 @@ def update_activity(m="Inne"):
 today_dt = date.today()
 update_activity()
 
-# --- MENU BOCZNE ---
+# --- MENU ---
 st.sidebar.title(f"👤 {u.capitalize()}")
 st.sidebar.caption(f"🚀 Wersja: {APP_VERSION}")
 st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
@@ -131,7 +125,7 @@ if st.session_state.l_c != choice:
         if k in st.session_state: del st.session_state[k]
     st.session_state.l_c = choice
 
-# --- MODUŁY NAUKI (ZAMROŻONE) ---
+# --- MODUŁY NAUKI ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     m_name = "Powtórki" if choice == "📅 Powtórki" else "Trening"
     update_activity(m_name)
@@ -139,8 +133,9 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
     sel_kat = st.selectbox("🎯 Kategoria:", kats)
     all_c = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
     cards = [c for c in all_c if not (choice == "📅 Powtórki") or c.get("next_review", str(today_dt)) <= str(today_dt)]
+    
     st.info(f"Słówek: **{len(cards)}**")
-    if not cards: st.success("Czysto! 🎉")
+    if not cards: st.success("Brawo! Gotowe. 🎉")
     else:
         if "n_c" not in st.session_state: st.session_state.n_c = random.choice(cards); st.session_state.n_m = "ask"
         c = st.session_state.n_c
@@ -156,7 +151,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             if is_ok: st.success(f"✅ Dobrze: {c['pl']}")
             else: st.error(f"❌ Poprawnie: {c['pl']}")
             if c.get("examples"):
-                for ex in c["examples"]: st.markdown(f"🇩🇪 {ex['de']}<br>🇵🇱 {ex['pl']}", unsafe_allow_html=True)
+                for ex in c["examples"]: st.markdown(f"🇩🇪 {ex['de']}<br>🇵🇱 {ex['pl']}", unsafe_allow_html=True); st.write("")
             play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
             if choice == "📅 Powtórki":
                 st.write("---"); c1, c2, c3 = st.columns(3); d = None
@@ -170,6 +165,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki")
+    st.header("🎴 Fiszki")
     kats = ["Wszystkie"] + sorted(list(set([c.get("category","Inne") for c in st.session_state.flashcards])))
     sel_kat = st.selectbox("🎯 Wybierz:", kats); cards = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
     if cards:
@@ -179,23 +175,23 @@ elif choice == "🎴 Fiszki":
         ex_html = ""
         if st.session_state.f_flipped and c.get("examples"):
             for ex in c["examples"]: ex_html += f"<div style='margin-top:15px; border-top:1px solid #444; padding-top:10px;'><span style='color:#FFEB3B; font-weight:bold;'>🇩🇪 {ex['de']}</span><br><span style='color:white; font-style:italic;'>🇵🇱 {ex['pl']}</span></div>"
-        st.markdown(f'<div style="min-height:350px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:black; border:2px solid red; border-radius:30px; padding:30px; text-align:center;"><h1 style="color:white; margin:0; font-size:2.2em;">{word_txt}</h1>{ex_html}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="min-height:350px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#000000; border:3px solid #FF5252; border-radius:30px; padding:30px; text-align:center;"><h1 style="color:white; margin:0; font-size:2.2em;">{word_txt}</h1>{ex_html}</div>', unsafe_allow_html=True)
         st.write("<br>", unsafe_allow_html=True); c1, c2, c3 = st.columns([1, 1.2, 1])
         if c1.button("⬅️ Wstecz", use_container_width=True): st.session_state.f_idx -= 1; st.session_state.f_flipped = False; st.rerun()
         if c2.button("🔄 OBRÓĆ", type="primary", use_container_width=True): st.session_state.f_flipped = not st.session_state.f_flipped; st.rerun()
         if c3.button("Dalej ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
         if st.session_state.f_flipped: play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
 
-# --- MODUŁ: SKANER AI (Gemini 1.5 Flash + Robust Parser) ---
 elif choice == "📸 Skaner AI":
-    update_activity("Skaner"); src = st.camera_input("Foto"); up = st.file_uploader("Wgraj plik")
+    update_activity("Skaner"); src = st.camera_input("Foto"); up = st.file_uploader("Plik")
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         try:
-            genai.configure(api_key=API_KEY); m = genai.GenerativeModel('gemini-1.5-flash')
-            res = m.generate_content(["Extract vocabulary. Return JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]", Image.open(src or up).convert("RGB")])
+            genai.configure(api_key=API_KEY); m = genai.GenerativeModel('gemini-1.5-pro')
+            res = m.generate_content(["Extract vocabulary. Return JSON: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]", Image.open(src or up).convert("RGB")])
             data = robust_parse_json(res.text)
-            if data: st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.005; st.rerun()
-        except Exception as e: st.error(f"Błąd połączenia: {e}")
+            if data: st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.015; st.rerun()
+            else: st.error("AI zwróciło zły format danych.")
+        except: st.error("Błąd połączenia AI (1.5 Pro).")
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
         if st.button("✅ ZAPISZ", use_container_width=True):
@@ -204,56 +200,27 @@ elif choice == "📸 Skaner AI":
                 st.session_state.flashcards.append(w)
             save_j(get_p(u, "flashcards"), st.session_state.flashcards); del st.session_state.pending; st.rerun()
 
-# --- MODUŁ: GENERATOR SŁÓW (Gemini 1.5 Flash + Robust Parser) ---
 elif choice == "📦 Generator słów":
     update_activity("Generator"); cols = st.columns(5); lvls = ["A1", "A2", "B1", "B2", "C1"]
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner("AI generuje..."):
+            with st.spinner("AI Pro pracuje..."):
                 try:
-                    genai.configure(api_key=API_KEY); m = genai.GenerativeModel('gemini-1.5-flash')
-                    exist = [x['de'] for x in st.session_state.flashcards[:250]]
-                    p = f"Generate 25 unique German words for level {lvl}. Categories/Examples in Polish. Skip: {exist}. Return ONLY JSON list: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
+                    genai.configure(api_key=API_KEY); m = genai.GenerativeModel('gemini-1.5-pro')
+                    exist = [x['de'] for x in st.session_state.flashcards[:300]]
+                    p = f"Generate 25 unique German words level {lvl}. Polish categories/examples. Skip: {exist}. JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
                     res = m.generate_content(p); data = robust_parse_json(res.text)
                     if data:
                         for w in data:
                             if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                                 w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
                                 st.session_state.flashcards.append(w)
-                        st.session_state.user_data["historical_cost"] += 0.003; save_j(get_p(u, "flashcards"), st.session_state.flashcards); st.rerun()
-                except Exception as e: st.error(f"Błąd AI: {e}")
+                        st.session_state.user_data["historical_cost"] += 0.01; save_j(get_p(u, "flashcards"), st.session_state.flashcards); st.rerun()
+                except: st.error("Błąd AI (1.5 Pro).")
 
-# --- MODUŁ: ADMIN (PEŁNY) ---
-elif choice == "👑 Admin":
-    st.header("👑 Panel Zarządzania Master")
-    users = load_j(AUTH_FILE, {}); adm_data = []; global_time = {m: 0.0 for m in MODULE_ORDER}
-    m1, m2 = st.columns(2)
-    for usr in users:
-        ud = load_j(get_p(usr, "user_data"), {}); ub = load_j(get_p(usr, "flashcards"), [])
-        df_u = pd.DataFrame(ub); mastery, ai_n = "0%", 0
-        if not df_u.empty:
-            opanowane = ((pd.to_datetime(df_u['next_review']).dt.date - today_dt).apply(lambda x: x.days if pd.notnull(x) else 0) >= 7).sum()
-            mastery = f"{round((opanowane/len(df_u))*100)}%"; ai_n = len(df_u[df_u['category'].str.contains('Skaner', case=False, na=False)])
-        t_s = ud.get("time_stats", {})
-        for m in MODULE_ORDER: global_time[m] += t_s.get(m, 0.0)
-        u_times = ", ".join([f"{m}:{round(s/60)}m" for m,s in t_s.items() if s > 15])
-        adm_data.append({"Użytkownik": usr, "Słów": len(ub), "AI (Skaner)": ai_n, "% Wiedzy": mastery, "Ostatnio": ud.get("last_seen", "Nigdy"), "Aktywność": u_times or "Brak", "Koszt": ud.get("historical_cost",0.0)})
-    
-    m1.metric("Łącznie Słówek", sum(x['Słów'] for x in adm_data))
-    m2.metric("Bonus AI", f"{BONUS_START - sum(x['Koszt'] for x in adm_data):.2f} PLN")
-    st.subheader("👥 Baza Użytkowników"); st.dataframe(pd.DataFrame(adm_data).drop(columns=['Koszt']), use_container_width=True)
-    
-    st.divider(); st.subheader("📊 Popularność Modułów")
-    total_g = sum(global_time.values())
-    if total_g > 0:
-        vals = [global_time[m] for m in MODULE_ORDER]; labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
-        fig = go.Figure(data=[go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='outside', marker_color='#1E88E5')])
-        fig.update_layout(template="plotly_dark", height=400, margin=dict(l=10, r=10, t=30, b=10)); st.plotly_chart(fig, use_container_width=True)
-
-# --- RESZTA MODUŁÓW (STABILNE) ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz"); all_c = st.session_state.flashcards
-    if len(all_c) < 4: st.warning("Dodaj min. 4 słówka!")
+    if len(all_c) < 4: st.warning("Dodaj słówka!")
     else:
         if "q_c" not in st.session_state:
             t = random.choice(all_c); opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]
@@ -269,8 +236,9 @@ elif choice == "🕹️ Quiz":
             if st.button("Dalej", use_container_width=True): del st.session_state.q_c; st.rerun()
 
 elif choice == "➕ Dodaj":
+    st.header("Dodaj ręcznie")
     with st.form("add"):
-        de = st.text_input("Niemiecki"); pl = st.text_input("Polski"); kat = st.text_input("Kategoria")
+        de, pl, kat = st.text_input("Niemiecki"), st.text_input("Polski"), st.text_input("Kat")
         if st.form_submit_button("Zapisz", use_container_width=True):
             if de and pl:
                 st.session_state.flashcards.append({"de":de,"pl":pl,"category":kat or "Inne","next_review":str(today_dt),"date_added":str(today_dt),"examples":[]})
@@ -280,12 +248,12 @@ elif choice == "📖 Słownik":
     update_activity("Słownik"); kats = ["Wszystkie"] + sorted(list(set([c.get("category","Inne") for c in st.session_state.flashcards])))
     f_kat = st.selectbox("📁 Kategoria:", kats); search = st.text_input("🔍 Szukaj:")
     for i, c in enumerate(st.session_state.flashcards):
-        if (f_kat == "Wszystkie" or c.get("category") == f_kat) and (search.lower() in c['de'].lower()):
+        if (f_kat == "Wszystkie" or c.get("category") == f_kat) and (search.lower() in c['de'].lower() or search.lower() in c['pl'].lower()):
             with st.expander(f"📝 {c['de']} — {c['pl']}"):
                 with st.form(f"ed_{i}"):
-                    n_de, n_pl = st.text_input("DE", c['de']), st.text_input("PL", c['pl'])
+                    n_de = st.text_input("DE", c['de']); n_pl = st.text_input("PL", c['pl']); n_ka = st.text_input("Kat", c.get('category','Inne'))
                     if st.form_submit_button("Zapisz", use_container_width=True):
-                        c.update({"de":n_de,"pl":n_pl}); save_j(get_p(u,"flashcards"), st.session_state.flashcards); st.rerun()
+                        c.update({"de":n_de,"pl":n_pl,"category":n_ka}); save_j(get_p(u,"flashcards"), st.session_state.flashcards); st.rerun()
                     if st.form_submit_button("Usuń", use_container_width=True):
                         st.session_state.flashcards.pop(i); save_j(get_p(u,"flashcards"), st.session_state.flashcards); st.rerun()
 
@@ -293,23 +261,50 @@ elif choice == "📊 Statystyki":
     update_activity("Statystyki"); df = pd.DataFrame(st.session_state.flashcards)
     if not df.empty:
         c1, c2, c3 = st.columns(3); c1.metric("Słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data.get('streak', 0)} dni")
-        df['status'] = df['next_review'].apply(lambda x: "Opanowane" if (date.fromisoformat(x)-today_dt).days >= 7 else "W trakcie")
-        c3.metric("Opanowane", len(df[df['status']=="Opanowane"]))
+        def ck(x):
+            try: return "Opanowane" if (date.fromisoformat(x)-today_dt).days >= 7 else "W trakcie"
+            except: return "W trakcie"
+        df['status'] = df['next_review'].apply(ck); c3.metric("Opanowane", len(df[df['status']=="Opanowane"]))
         st.bar_chart(pd.DataFrame([{"D": (today_dt + timedelta(days=i)).strftime("%d.%m"), "S": len(df[df['next_review']==str(today_dt + timedelta(days=i))])} for i in range(14)]).set_index("D"))
 
 elif choice == "⚙️ Moje Konto":
-    st.header("⚙️ Moje Konto"); update_activity("Konto")
+    st.header("Zarządzanie Kontem")
     if "del_msg" in st.session_state: st.success(st.session_state.del_msg); del st.session_state.del_msg
     with st.expander("🔑 Zmień hasło"):
         with st.form("p_c"):
             o, n1, n2 = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password"), st.text_input("Powtórz", type="password")
             if st.form_submit_button("Zaktualizuj"):
-                db = load_j(AUTH_FILE, {}); (db.update({u: hash_pw(n1)}) if db[u] == hash_pw(o) and n1 == n2 else st.error("Błąd")); save_j(AUTH_FILE, db); st.success("OK")
+                db = load_j(AUTH_FILE, {})
+                if db[u] == hash_pw(o) and n1 == n2:
+                    db[u] = hash_pw(n1); save_j(AUTH_FILE, db); st.success("Zmieniono!")
+                else: st.error("Błąd haseł")
     st.divider(); st.subheader("⚠️ Strefa Niebezpieczna"); conf = st.checkbox("Potwierdzam chęć usunięcia danych")
     lvls = ["A1", "A2", "B1", "B2", "C1"]; cols = st.columns(5)
     for i, l in enumerate(lvls):
-        if cols[i].button(f"Usuń {l}", disabled=not conf, use_container_width=True):
+        if cols[i].button(l, disabled=not conf, use_container_width=True):
             before = len(st.session_state.flashcards); st.session_state.flashcards = [x for x in st.session_state.flashcards if l not in str(x.get('category',''))]
             save_j(get_p(u, "flashcards"), st.session_state.flashcards); st.session_state.del_msg = f"Usunięto {before - len(st.session_state.flashcards)}!"; st.rerun()
-    if st.button("🗑️ USUŃ WSZYSTKO (CZYŚĆ BAZĘ)", type="primary", disabled=not conf, use_container_width=True):
+    if st.button("🗑️ USUŃ WSZYSTKO (RESET BAZY)", type="primary", disabled=not conf, use_container_width=True):
         st.session_state.flashcards = []; save_j(get_p(u, "flashcards"), []); st.rerun()
+
+elif choice == "👑 Admin":
+    st.header("👑 Panel Admina Master"); users = load_j(AUTH_FILE, {}); adm_data = []; global_time = {m: 0.0 for m in MODULE_ORDER}
+    m1, m2 = st.columns(2)
+    for usr in users:
+        ud = load_j(get_p(usr, "user_data"), {}); ub = load_j(get_p(usr, "flashcards"), []) # TWARDY ODCZYT
+        df_u = pd.DataFrame(ub); mastery, ai_n = "0%", 0
+        if not df_u.empty:
+            opanowane = ((pd.to_datetime(df_u['next_review']).dt.date - today_dt).apply(lambda x: x.days if pd.notnull(x) else 0) >= 7).sum()
+            mastery = f"{round((opanowane/len(df_u))*100)}%"; ai_n = len(df_u[df_u['category'].str.contains('Skaner', case=False, na=False)])
+        t_s = ud.get("time_stats", {})
+        for m in MODULE_ORDER: global_time[m] += t_s.get(m, 0.0)
+        u_times = ", ".join([f"{m}:{round(s/60)}m" for m,s in t_s.items() if s > 15])
+        adm_data.append({"Użytkownik": usr, "Słów": len(ub), "AI (Skaner)": ai_n, "% Wiedzy": mastery, "Ostatnio": ud.get("last_seen", "Nigdy"), "Czas Modułów": u_times or "Brak"})
+    m1.metric("Łącznie Słówek", sum(x['Słów'] for x in adm_data))
+    m2.metric("Bonus AI", f"{BONUS_START - sum(load_j(get_p(un, 'user_data'), {}).get('historical_cost', 0) for un in users):.2f} PLN")
+    st.dataframe(pd.DataFrame(adm_data), use_container_width=True)
+    total_g = sum(global_time.values())
+    if total_g > 0:
+        vals = [global_time[m] for m in MODULE_ORDER]; labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
+        fig = go.Figure(data=[go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='auto', marker_color='#1E88E5')])
+        fig.update_layout(template="plotly_dark", height=450, margin=dict(l=10, r=10, t=30, b=10)); st.plotly_chart(fig, use_container_width=True)
