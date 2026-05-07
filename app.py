@@ -128,16 +128,33 @@ st.session_state.user_data = load_user_data(u)
 st.session_state.flashcards = load_flashcards(u)
 
 def update_activity(m):
-    curr = time.time(); delta = curr - st.session_state.user_data.get("last_ts", curr)
+    curr = time.time()
+    # Obliczamy deltę czasu od ostatniej aktywności
+    last_ts = st.session_state.user_data.get("last_ts", curr)
+    delta = curr - last_ts
+    
+    # Rejestrujemy czas tylko jeśli przerwa była mniejsza niż 10 minut (600s)
     if 0 < delta < 600:
-        label = CLEAN_TIME_LABELS.get(m, "Inn")
+        # POPRAWKA: Czyścimy nazwę modułu (m) z ikonek emoji i znaków specjalnych
+        # re.sub(r'[^\x00-\x7F]+', '', m) usuwa wszystko co nie jest znakiem ASCII (emotki)
+        clean_choice = re.sub(r'[^\x00-\x7F]+', '', m).strip()
+        
+        # Pobieramy skrót modułu ze słownika (np. "Powtórki" -> "Pow")
+        label = CLEAN_TIME_LABELS.get(clean_choice, "Inn")
+        
+        # Aktualizujemy statystyki w user_data
         stats = st.session_state.user_data.get("time_stats", {})
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
+    
+    # Aktualizujemy timestamp i datę ostatniego widzenia
     st.session_state.user_data["last_ts"] = curr
     st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M")
+    
+    # Zapisujemy zaktualizowane dane do bazy Supabase
     save_user_data(u, st.session_state.user_data)
 
+# Wywołanie początkowe przy odświeżeniu/zmianie modułu
 update_activity("Inne")
 
 # --- 6. SIDEBAR I NAWIGACJA ---
@@ -644,7 +661,7 @@ elif choice == "⚙️ Moje Konto":
     if st.button("🔥 ZRESETUJ CAŁĄ MOJĘ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
         get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
 
-# --- 17. ADMIN PRO (Poprawiona logika mapowania czasu) ---
+# --- 17. ADMIN PRO ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
@@ -661,6 +678,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
     display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
+    # Mapa słów kluczowych do wyłapywania modułów z bazy
+    keyword_map = {
+        "pow": "Pow", "trn": "Trn", "qui": "Qiz", "qiz": "Qiz", 
+        "fis": "Fis", "tst": "Tst", "tes": "Tst"
+    }
+
     for user in ud_data:
         username = user["username"]
         user_cards = df_cards_all[df_cards_all["username"] == username]
@@ -672,22 +695,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         for raw_module_name, seconds in user_stats.items():
             found_code = "Inn"
-            raw_module_name_clean = raw_module_name.lower().strip()
+            raw_name_lower = raw_module_name.lower()
             
-            # SPRAWDZANIE 1: Czy nazwa z bazy to bezpośrednio któryś ze skrótów (np. "Pow")?
-            if raw_module_name in tracked_codes:
+            # 1. Próba dopasowania przez słowa kluczowe (najbardziej odporne)
+            for kw, code in keyword_map.items():
+                if kw in raw_name_lower:
+                    found_code = code
+                    break
+            
+            # 2. Jeśli nie znaleziono, sprawdź czy to nie jest czysty skrót
+            if found_code == "Inn" and raw_module_name in tracked_codes:
                 found_code = raw_module_name
-            else:
-                # SPRAWDZANIE 2: Czy w nazwie z bazy (np. "📅 Powtórki") jest słowo ze słownika CLEAN_TIME_LABELS?
-                for label, code in CLEAN_TIME_LABELS.items():
-                    if label.lower() in raw_module_name_clean or code.lower() == raw_module_name_clean:
-                        found_code = code
-                        break
-            
-            # Dodatkowe zabezpieczenie przed błędnym kodem
-            if found_code not in tracked_codes:
-                found_code = "Inn"
-                
+
             current_user_merged[found_code] += seconds
             total_sec += seconds
             global_time[found_code] = global_time.get(found_code, 0) + seconds
