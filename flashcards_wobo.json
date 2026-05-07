@@ -1,0 +1,327 @@
+[
+    {
+        "de": "Hallo",
+        "pl": "Cze\u015b\u0107",
+        "category": "A1 - Pozdrowienia",
+        "examples": [
+            {
+                "de": "Hallo! Wie geht es dir?",
+                "pl": "Cze\u015b\u0107! Jak si\u0119 masz?"
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Danke",
+        "pl": "Dzi\u0119kuj\u0119",
+        "category": "A1 - Pozdrowienia",
+        "examples": [
+            {
+                "de": "Danke sch\u00f6n f\u00fcr die Hilfe!",
+                "pl": "Dzi\u0119kuj\u0119 bardzo za pomoc!"
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Bitte",
+        "pl": "Prosz\u0119",
+        "category": "A1 - Pozdrowienia",
+        "examples": [
+            {
+                "de": "Bitte, nehmen Sie Platz.",
+                "pl": "Prosz\u0119, usi\u0105d\u017a."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Ja",
+        "pl": "Tak",
+        "category": "A1 - S\u0142owa podstawowe",
+        "examples": [
+            {
+                "de": "Ja, das stimmt.",
+                "pl": "Tak, to prawda."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Nein",
+        "pl": "Nie",
+        "category": "A1 - S\u0142owa podstawowe",
+        "examples": [
+            {
+                "de": "Nein, das ist nicht richtig.",
+                "pl": "Nie, to nie jest poprawne."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Ich",
+        "pl": "Ja",
+        "category": "A1 - Zaimki",
+        "examples": [
+            {
+                "de": "Ich hei\u00dfe Anna.",
+                "pl": "Nazywam si\u0119 Anna."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Du",
+        "pl": "Ty",
+        "category": "A1 - Zaimki",
+        "examples": [
+            {
+                "de": "Woher kommst du?",
+                "pl": "Sk\u0105d pochodzisz?"
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Er",
+        "pl": "On",
+        "category": "A1 - Zaimki",
+        "examples": [
+            {
+                "de": "Er ist mein Bruder.",
+                "pl": "On jest moim bratem."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Sie",
+        "pl": "Ona",
+        "category": "A1 - Zaimki",
+        "examples": [
+            {
+                "de": "Sie ist meine Schwester.",
+                "pl": "Ona jest moj\u0105 siostr\u0105."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Wir",
+        "pl": "My",
+        "category": "A1 - Zaimki",
+        "examples": [
+            {
+                "de": "Wir lernen Deutsch.",
+                "pl": "Uczymy si\u0119 niemieckiego."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Eins",
+        "pl": "Jeden",
+        "category": "A1 - Liczby",
+        "examples": [
+            {
+                "de": "Ich habe einen Hund.",
+                "pl": "Mam jednego psa."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Zwei",
+        "pl": "Dwa",
+        "category": "A1 - Liczby",
+        "examples": [
+            {
+                "de": "Wir haben zwei Katzen.",
+                "pl": "Mamy dwa koty."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Drei",
+        "pl": "Trzy",
+        "category": "A1 - Liczby",
+        "examples": [
+            {
+                "de": "Es sind drei \u00c4pfel.",
+                "pl": "S\u0105 trzy jab\u0142ka."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Haus",
+        "pl": "Dom",
+        "category": "A1 - Przedmioty domowe",
+        "examples": [
+            {
+                "de": "Ich wohne in einem Haus.",
+                "pl": "Mieszkam w domu."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Tisch",
+        "pl": "St\u00f3\u0142",
+        "category": "A1 - Przedmioty domowe",
+        "examples": [
+            {
+                "de": "Der Tisch ist gro\u00df.",
+                "pl": "St\u00f3\u0142 jest du\u017cy."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Stuhl",
+        "pl": "Krzes\u0142o",
+        "category": "A1 - Przedmioty domowe",
+        "examples": [
+            {
+                "de": "Ich sitze auf einem Stuhl.",
+                "pl": "Siedz\u0119 na krze\u015ble."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Wasser",
+        "pl": "Woda",
+        "category": "A1 - Jedzenie i napoje",
+        "examples": [
+            {
+                "de": "Ich trinke viel Wasser.",
+                "pl": "Pij\u0119 du\u017co wody."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Brot",
+        "pl": "Chleb",
+        "category": "A1 - Jedzenie i napoje",
+        "examples": [
+            {
+                "de": "Ich esse gern Brot.",
+                "pl": "Ch\u0119tnie jem chleb."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Milch",
+        "pl": "Mleko",
+        "category": "A1 - Jedzenie i napoje",
+        "examples": [
+            {
+                "de": "M\u00f6chtest du Milch im Kaffee?",
+                "pl": "Chcesz mleko do kawy?"
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Apfel",
+        "pl": "Jab\u0142ko",
+        "category": "A1 - Owoce",
+        "examples": [
+            {
+                "de": "Ich esse jeden Tag einen Apfel.",
+                "pl": "Codziennie jem jab\u0142ko."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Rot",
+        "pl": "Czerwony",
+        "category": "A1 - Kolory",
+        "examples": [
+            {
+                "de": "Das Auto ist rot.",
+                "pl": "Samoch\u00f3d jest czerwony."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Blau",
+        "pl": "Niebieski",
+        "category": "A1 - Kolory",
+        "examples": [
+            {
+                "de": "Der Himmel ist blau.",
+                "pl": "Niebo jest niebieskie."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Gr\u00fcn",
+        "pl": "Zielony",
+        "category": "A1 - Kolory",
+        "examples": [
+            {
+                "de": "Das Gras ist gr\u00fcn.",
+                "pl": "Trawa jest zielona."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Gro\u00df",
+        "pl": "Du\u017cy",
+        "category": "A1 - Przymiotniki",
+        "examples": [
+            {
+                "de": "Das ist ein gro\u00dfes Haus.",
+                "pl": "To jest du\u017cy dom."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    },
+    {
+        "de": "Klein",
+        "pl": "Ma\u0142y",
+        "category": "A1 - Przymiotniki",
+        "examples": [
+            {
+                "de": "Ich habe einen kleinen Hund.",
+                "pl": "Mam ma\u0142ego psa."
+            }
+        ],
+        "next_review": "2026-05-07",
+        "date_added": "2026-05-07"
+    }
+]

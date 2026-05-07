@@ -1,0 +1,302 @@
+[
+    {
+        "de": "hallo",
+        "pl": "cześć",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "ja",
+        "pl": "tak",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "nein",
+        "pl": "nie",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "bitte",
+        "pl": "proszę",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "danke",
+        "pl": "dziękuję",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "entschuldigung",
+        "pl": "przepraszam",
+        "category": "Podstawy",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "ich",
+        "pl": "ja",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "du",
+        "pl": "ty",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "er",
+        "pl": "on",
+        "category": "Zaimki",
+        "next_review": "2026-05-08"
+    },
+    {
+        "de": "sie",
+        "pl": "ona / oni",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "es",
+        "pl": "ono",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "wir",
+        "pl": "my",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "ihr",
+        "pl": "wy",
+        "category": "Zaimki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "sein",
+        "pl": "być",
+        "category": "Czasowniki",
+        "next_review": "2026-05-08"
+    },
+    {
+        "de": "haben",
+        "pl": "mieć",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "machen",
+        "pl": "robić",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "gehen",
+        "pl": "iść",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "kommen",
+        "pl": "przychodzić",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "essen",
+        "pl": "jeść",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "trinken",
+        "pl": "pić",
+        "category": "Czasowniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "gut",
+        "pl": "dobry",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "schön",
+        "pl": "ładny",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-11"
+    },
+    {
+        "de": "groß",
+        "pl": "duży",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "klein",
+        "pl": "mały",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "die Mutter",
+        "pl": "mama",
+        "category": "Rodzina",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "der Vater",
+        "pl": "tata",
+        "category": "Rodzina",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Kind",
+        "pl": "dziecko",
+        "category": "Rodzina",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "der Bruder",
+        "pl": "brat",
+        "category": "Rodzina",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "die Schwester",
+        "pl": "siostra",
+        "category": "Rodzina",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "die Frau",
+        "pl": "kobieta",
+        "category": "Ludzie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "der Mann",
+        "pl": "mężczyzna",
+        "category": "Ludzie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "der Freund",
+        "pl": "przyjaciel",
+        "category": "Ludzie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Haus",
+        "pl": "dom",
+        "category": "Dom",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Zimmer",
+        "pl": "pokój",
+        "category": "Dom",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Fenster",
+        "pl": "okno",
+        "category": "Dom",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "die Tür",
+        "pl": "drzwi",
+        "category": "Dom",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Brot",
+        "pl": "chleb",
+        "category": "Jedzenie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "das Wasser",
+        "pl": "woda",
+        "category": "Jedzenie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "der Kaffee",
+        "pl": "kawa",
+        "category": "Jedzenie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "die Milch",
+        "pl": "mleko",
+        "category": "Jedzenie",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "heute",
+        "pl": "dzisiaj",
+        "category": "Czas",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "morgen",
+        "pl": "jutro",
+        "category": "Czas",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "schnell",
+        "pl": "szybko",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "langsam",
+        "pl": "wolno",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "teuer",
+        "pl": "drogo",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "billig",
+        "pl": "tanio",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "heiß",
+        "pl": "gorąco",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "kalt",
+        "pl": "zimno",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "nowy",
+        "pl": "neu",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    },
+    {
+        "de": "alt",
+        "pl": "stary",
+        "category": "Przymiotniki",
+        "next_review": "2026-05-07"
+    }
+]
