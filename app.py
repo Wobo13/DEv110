@@ -14,7 +14,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V158"
+APP_VERSION = "V159"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -155,7 +155,7 @@ def update_activity(m="Inne"):
         stats = st.session_state.user_data.get("time_stats", {})
         m_clean = m.strip("📅 🚀 🕹️ 🎴 📸 📦 ➕ 📖 📊 ⚙️ ")
         
-        current_time_spent = stats.get(m_clean, 0)
+        current_time_spent = stats.get(m_clean, 0.0)
         stats[m_clean] = current_time_spent + delta
         
         st.session_state.user_data["time_stats"] = stats
@@ -335,7 +335,7 @@ elif choice == "📸 Skaner AI":
     
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         if not API_KEY:
-            st.error("Brak klucza API w ustawieniach.")
+            st.error("Brak klucza API.")
         else:
             try:
                 with st.spinner("AI analizuje..."):
@@ -349,7 +349,8 @@ elif choice == "📸 Skaner AI":
                     
                     if data:
                         st.session_state.pending = data
-                        st.session_state.user_data["historical_cost"] += 0.015
+                        cost = st.session_state.user_data.get("historical_cost", 0.0)
+                        st.session_state.user_data["historical_cost"] = cost + 0.015
                         st.rerun()
                     else: 
                         st.error(f"Otrzymano błędny format: {res.text}")
@@ -379,7 +380,7 @@ elif choice == "📦 Generator słów":
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
             if not API_KEY:
-                st.error("Brak klucza API w ustawieniach.")
+                st.error("Brak klucza API.")
             else:
                 with st.spinner(f"AI generuje słówka dla {lvl}..."):
                     try:
@@ -602,7 +603,7 @@ elif choice == "👑 Admin":
     users = load_j(AUTH_FILE, {})
     adm_list = []
     
-    # Inicjalizacja licznika czasu dla wszystkich modułów
+    # Inicjalizacja licznika czasu
     global_time = {}
     for m in MODULE_ORDER:
         global_time[m] = 0.0
@@ -627,11 +628,13 @@ elif choice == "👑 Admin":
                     pass
             mastery = f"{round((opanowane/len(df_u))*100)}%"
             
-            ai_n = len(df_u[df_u['category'].str.contains('Skaner', case=False, na=False)])
+            # Bezpieczne zliczanie AI
+            for cat in df_u['category']:
+                if isinstance(cat, str) and 'skaner' in cat.lower():
+                    ai_n += 1
             
         t_s = ud.get("time_stats", {})
         
-        # Bezpieczne dodawanie czasu (Naprawa SyntaxError)
         for m in MODULE_ORDER: 
             added_time = t_s.get(m, 0.0)
             global_time[m] = global_time[m] + added_time
@@ -672,16 +675,8 @@ elif choice == "👑 Admin":
             vals.append(val)
             labels.append(f"{m}: {round(val/60,1)} min")
         
-        fig = go.Figure(
-            data=[
-                go.Bar(
-                    x=MODULE_ORDER, 
-                    y=vals, 
-                    text=labels, 
-                    textposition='auto', 
-                    marker_color='#1E88E5'
-                )
-            ]
-        )
+        # Bezpieczne tworzenie wykresu (Naprawa uciętej linijki)
+        my_bar = go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='auto', marker_color='#1E88E5')
+        fig = go.Figure(data=[my_bar])
         fig.update_layout(template="plotly_dark", height=450)
         st.plotly_chart(fig, use_container_width=True)
