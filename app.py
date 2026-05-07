@@ -19,7 +19,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V212 (Dictionary Filter & Global Reset)"
+APP_VERSION = "V213 (Clear Tests & Spinner Update)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -270,37 +270,53 @@ elif choice == "🎴 Fiszki":
         if c3.button("Następna ➡️"): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
     else: st.warning("Brak słówek.")
 
-# --- 11. TESTY ---
+# --- 11. TESTY (Naprawione generowanie i luki) ---
 elif choice == "📝 Testy":
-    update_activity("Testy"); st.header("📝 Test")
-    if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek.")
+    update_activity("Testy"); st.header("📝 Test Kontekstowy")
+    if len(st.session_state.flashcards) < 5: st.warning("Wymagane minimum 5 słówek do wygenerowania testu.")
     else:
         if "test_q" not in st.session_state:
             n_q = st.slider("Liczba pytań", 5, 20, 5)
-            if st.button("🚀 GENERUJ"):
-                sample = random.sample(st.session_state.flashcards, n_q)
-                prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
-                data = json.loads(get_openai_response(prompt))
-                st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
+            if st.button("🚀 GENERUJ TEST", type="primary"):
+                with st.spinner("AI przygotowuje pytania testowe..."):
+                    try:
+                        sample = random.sample(st.session_state.flashcards, n_q)
+                        prompt = f"Generuj test dla słówek: {[w['de'] for w in sample]}. Zwróć JSON: {{ \"questions\": [{{ \"hint\":\"PL podpowiedź/kontekst\", \"sentence\":\"Niemieckie zdanie, w którym brakuje docelowego słowa (zastąp je przez '_______')\", \"correct\":\"Oczekiwane DE słowo\", \"distractors\":[\"błąd1\", \"błąd2\", \"błąd3\"], \"type\":\"QUIZ\" }}] }}"
+                        data = json.loads(get_openai_response(prompt))
+                        st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd podczas generowania testu: {e}. Spróbuj ponownie.")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
-                q = qs[t_idx]; st.info(f"💡 Podpowiedź: {q.get('hint','brak')}"); st.write(f"#### {q.get('sentence','?')}")
+                q = qs[t_idx]; st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
+                st.markdown(f"### {q.get('sentence','?')}")
                 correct = q.get('correct','')
+                
                 if q.get('type') == "QUIZ":
                     opts = list(set(q.get('distractors', []) + [correct])); random.shuffle(opts)
-                    for o in opts:
-                        if st.button(o, key=f"t_{t_idx}_{o}"):
+                    cols = st.columns(2)
+                    for i, o in enumerate(opts):
+                        if cols[i%2].button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
                             if o == correct: st.session_state.test_score += 1; st.toast("Dobrze!")
-                            else: st.error(f"Źle. Poprawnie: {correct}"); time.sleep(1)
+                            else: st.error(f"Źle. Poprawnie: {correct}"); time.sleep(1.5)
                             st.session_state.test_idx += 1; st.rerun()
                 else:
                     ans = st.text_input("Twoja odpowiedź:", key=f"in_{t_idx}")
-                    if st.button("OK"):
+                    if st.button("Zatwierdź"):
                         if normalize_text(ans) == normalize_text(correct): st.session_state.test_score += 1; st.toast("OK!")
-                        else: st.error(f"Poprawnie: {correct}"); time.sleep(1)
+                        else: st.error(f"Poprawnie: {correct}"); time.sleep(1.5)
                         st.session_state.test_idx += 1; st.rerun()
-            else: st.success(f"Wynik: {st.session_state.test_score}/{len(qs)}"); del st.session_state.test_q
+            else: 
+                score, total = st.session_state.test_score, len(qs)
+                perc = round((score/total)*100) if total > 0 else 0
+                st.success(f"Test zakończony! Wynik: {score}/{total} ({perc}%)")
+                if st.button("Zakończ test i zapisz wynik"): 
+                    st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
+                    save_user_data(u, st.session_state.user_data)
+                    del st.session_state.test_q
+                    st.rerun()
 
 # --- 12. GENERATOR ---
 elif choice == "📦 Generator słów":
@@ -311,7 +327,8 @@ elif choice == "📦 Generator słów":
             with st.spinner("AI pobiera słówka..."):
                 try:
                     res_lib = get_db().table("vocab_library").select("word").eq("level", lvl).execute()
-                    avail = [w['word'] for w in res_lib.data if w['word'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]]
+                    my_w = [x['de'].lower() for x in st.session_state.flashcards]
+                    avail = [w['word'] for w in res_lib.data if w['word'].lower() not in my_w]
                     sel = random.sample(avail, min(25, len(avail)))
                     prompt = f"Przetłumacz i otaguj: {sel}. JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"..., {lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
                     data = json.loads(get_openai_response(prompt))
@@ -320,14 +337,13 @@ elif choice == "📦 Generator słów":
                     st.success("Dodano!"); st.rerun()
                 except Exception as e: st.error(f"Błąd: {e}")
 
-# --- 13. SKANER ---
+# --- 13. SKANER AI ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner"); st.header("📸 Skaner")
     src = st.camera_input("Zrób zdjęcie")
     if src and st.button("Analizuj"):
         res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
-        for w in json.loads(res).get("flashcards", []): 
-            save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
+        for w in json.loads(res).get("flashcards", []): save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
         st.success("Dodano!"); st.rerun()
 
 # --- 14. DODAJ ---
@@ -337,7 +353,7 @@ elif choice == "➕ Dodaj":
         if st.form_submit_button("Zapisz"):
             save_word(u, {"de":de, "pl":pl, "category":ca, "next_review":str(date.today()), "origin":"Dodaj"}); st.rerun()
 
-# --- 15. SŁOWNIK (Filter Fixed) ---
+# --- 15. SŁOWNIK ---
 elif choice == "📖 Słownik":
     update_activity("Słownik"); st.header("📖 Słownik")
     all_tags = set()
@@ -366,7 +382,7 @@ elif choice == "📊 Statystyki":
         c1, c2 = st.columns(2); c1.metric("Baza słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
         st.table(df.groupby('origin').size())
 
-# --- 17. KONTO (Global Reset Added) ---
+# --- 17. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     with st.expander("🔑 Zmień hasło"):
