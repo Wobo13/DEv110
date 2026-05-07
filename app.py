@@ -483,21 +483,25 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     # 1. Pobieramy dane użytkowników
     ud_data = db.table("user_data").select("*").execute().data
     
-    # 2. POPRAWKA WYDAJNOŚCI: Pobieramy WSZYSTKIE fiszki jednym zapytaniem poza pętlą
+    # 2. Pobieramy WSZYSTKIE fiszki jednym zapytaniem poza pętlą (poprawka wydajności)
     all_cards_res = db.table("flashcards").select("username", "origin").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
     
     adm_list = []
     global_time = {}
     
+    # Definiujemy moduły, które chcemy śledzić w tabeli (zgodnie z CLEAN_TIME_LABELS)
+    tracked_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
+    # Mapowanie dla czytelniejszych nagłówków kolumn
+    column_map = {"Pow": "Powtórki (m)", "Trn": "Trening (m)", "Qiz": "Quiz (m)", "Fis": "Fiszki (m)", "Tst": "Testy (m)", "Inn": "Inne (m)"}
+    
     for user in ud_data:
         username = user["username"]
         total_cost = user.get("historical_cost", 0.0)
         
-        # 3. POPRAWKA WYDAJNOŚCI: Filtrujemy dane w pamięci (Pandas) zamiast pytać bazę w pętli
+        # Filtrujemy dane fiszek w pamięci
         user_cards = df_cards_all[df_cards_all["username"] == username]
         
-        # Szybkie liczenie statystyk pochodzenia
         origin_counts = user_cards["origin"].value_counts()
         m_man = int(origin_counts.get("Dodaj", 0))
         m_gen = int(origin_counts.get("Generator", 0))
@@ -505,25 +509,33 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         t_count = len(user.get("test_history", []))
         
+        # Przetwarzanie statystyk czasu
+        user_stats = user.get("time_stats", {})
         merged = {}
-        for m, s in user.get("time_stats", {}).items():
+        for m, s in user_stats.items():
             lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn")
             merged[lbl] = merged.get(lbl, 0) + s
             global_time[lbl] = global_time.get(lbl, 0) + s
             
-        u_times = ", ".join([f"{l}:{round(s/60)}m" for l, s in merged.items() if s > 1])
-        
-        adm_list.append({
+        # Tworzymy podstawowy słownik danych użytkownika
+        row = {
             "Użytkownik": username, 
             "Słów (Razem)": len(user_cards), 
             "Ręcznie": m_man, 
             "Gen. AI": m_gen, 
             "Skan. AI": m_skn, 
-            "Testy": t_count, 
-            "Czas na Modułach": u_times, 
+            "Testy": t_count,
             "Koszt OpenAI (PLN)": round(total_cost, 4)
-        })
+        }
         
+        # Dodajemy kolumny z czasem dla każdego modułu (przeliczone na minuty)
+        for mod_code in tracked_modules:
+            seconds = merged.get(mod_code, 0)
+            row[column_map[mod_code]] = round(seconds / 60, 1)
+            
+        adm_list.append(row)
+        
+    # Wyświetlamy tabelę
     st.table(pd.DataFrame(adm_list))
     
     if global_time:
