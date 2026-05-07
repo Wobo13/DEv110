@@ -646,11 +646,41 @@ elif choice == "📸 Skaner AI":
 # --- 13. DODAJ RĘCZNIE ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj Ręcznie")
-    with st.form("manual"):
-        de, pl, ca = st.text_input("Niemiecki"), st.text_input("Polski"), st.text_input("Tagi")
-        if st.form_submit_button("Zapisz", use_container_width=True):
-            save_word(u, {"de":de, "pl":pl, "category":ca, "next_review":str(date.today()), "origin":"Dodaj"}); st.rerun()
 
+    # Fragment izoluje formularz, zapobiegając przeładowywaniu całej strony (brak migania)
+    @st.fragment
+    def manual_add_ui():
+        # clear_on_submit sprawia, że po dodaniu słowa pola są gotowe na następne wpisy
+        with st.form("manual_entry_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            de = col1.text_input("Słowo Niemieckie (DE):", placeholder="np. die Katze")
+            pl = col2.text_input("Tłumaczenie Polskie (PL):", placeholder="np. kot")
+            ca = st.text_input("Tagi / Kategorie (opcjonalnie):", placeholder="np. Rzeczownik, Zwierzęta, A1")
+
+            submitted = st.form_submit_button("💾 Zapisz do bazy", use_container_width=True, type="primary")
+
+            if submitted:
+                if de.strip() and pl.strip():
+                    # 1. Zapis do bazy Supabase
+                    save_word(u, {
+                        "de": de.strip(),
+                        "pl": pl.strip(),
+                        "category": ca.strip(),
+                        "next_review": str(date.today()),
+                        "origin": "Dodaj"
+                    })
+
+                    # 2. Aktualizacja lokalnej listy w pamięci aplikacji
+                    st.session_state.flashcards = load_flashcards(u)
+
+                    # 3. Informacja zwrotna
+                    st.toast(f"✅ Dodano: {de}", icon="📥")
+                    st.success(f"Pomyślnie zapisano: **{de}** — *{pl}*")
+                else:
+                    st.error("Musisz podać przynajmniej słowo niemieckie i jego tłumaczenie!")
+
+    # Uruchomienie formularza
+    manual_add_ui()
 # --- 14. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
