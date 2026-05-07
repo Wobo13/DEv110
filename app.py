@@ -634,100 +634,119 @@ elif choice == "📦 Generator słów":
 # --- 12. SKANER AI ---
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
-    
-    # --- WYŚWIETLANIE WYNIKÓW PO OSTATNIM SKANOWANIU ---
-    if "last_scanned" in st.session_state:
-        st.success(f"🎉 Pomyślnie zeskanowano i dodano {len(st.session_state.last_scanned)} słówek!")
+
+    # 1. Inicjalizacja tymczasowej listy w sesji, jeśli nie istnieje
+    if "temp_scanned" not in st.session_state:
+        st.session_state.temp_scanned = []
+
+    # --- WIDOK 1: PRZETWARZANIE OBRAZU ---
+    if not st.session_state.temp_scanned:
+        st.write("Wgraj zdjęcie lub zrób fotkę notatek, aby AI wyciągnęła z nich słówka.")
+        t1, t2 = st.tabs(["📁 Wgraj plik", "📷 Zrób zdjęcie"])
         
-        df_new = pd.DataFrame(st.session_state.last_scanned)
-        st.dataframe(df_new, use_container_width=True, hide_index=True)
-        
-        if st.button("Ukryj listę", use_container_width=True):
-            del st.session_state.last_scanned
-            st.rerun()
-            
-        st.write("---")
-    # ----------------------------------------------------
+        img_to_process = None
+        with t1:
+            uploaded_file = st.file_uploader("Wybierz zdjęcie", type=["png", "jpg", "jpeg"])
+            if uploaded_file: img_to_process = uploaded_file
+        with t2:
+            camera_file = st.camera_input("Zrób zdjęcie")
+            if camera_file: img_to_process = camera_file
 
-    st.write("Wybierz, w jaki sposób chcesz dostarczyć obraz do analizy:")
-    t1, t2 = st.tabs(["📁 Wgraj plik z dysku", "📷 Zrób zdjęcie aparatem"])
-    
-    img_to_process = None
-
-    with t1:
-        uploaded_file = st.file_uploader("Wybierz zdjęcie (PNG, JPG)", type=["png", "jpg", "jpeg"])
-        if uploaded_file:
-            img_to_process = uploaded_file
-
-    with t2:
-        camera_file = st.camera_input("Zrób zdjęcie notatek")
-        if camera_file:
-            img_to_process = camera_file
-
-    if img_to_process:
-        if st.button("🚀 Analizuj obraz", type="primary", use_container_width=True):
-            with st.spinner("AI analizuje obraz, odczytuje pismo i tworzy fiszki... To może zająć kilkanaście sekund."):
-                try:
-                    image = Image.open(img_to_process)
-                    
-                    # Zaawansowany prompt wymuszający pełną strukturę fiszki
-                    prompt = """
-                    Przeanalizuj dokładnie to zdjęcie. Znajdź na nim wszystkie niemieckie słówka, wyrażenia lub całe notatki.
-                    Dla każdego znalezionego pojęcia:
-                    1. Zapisz je poprawnie po niemiecku (z rodzajnikiem, jeśli to rzeczownik).
-                    2. Dodaj polskie tłumaczenie.
-                    3. Wymyśl 1-2 tagi (np. część mowy, odpowiedni poziom CEFR lub kategoria tematyczna).
-                    4. Utwórz 1 naturalne zdanie przykładowe po niemiecku wraz z polskim tłumaczeniem.
-                    Zwróć wynik TYLKO jako czysty format JSON:
-                    {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
-                    """
-                    
-                    raw_res = get_openai_response(prompt, img_obj=image)
-                    raw_res = raw_res.replace("```json", "").replace("```", "").strip()
-                    data = json.loads(raw_res)
-                    
-                    flashcards_data = data.get("flashcards", data.get("words", []))
-                    
-                    if not flashcards_data:
-                        st.warning("AI nie było w stanie rozpoznać żadnych słówek na tym zdjęciu.")
-                    else:
-                        insert_payload = []
-                        display_list = []
+        if img_to_process:
+            if st.button("🚀 Analizuj i przygotuj listę", type="primary", use_container_width=True):
+                with st.spinner("AI czyta tekst i przygotowuje fiszki..."):
+                    try:
+                        image = Image.open(img_to_process)
+                        prompt = """
+                        Przeanalizuj zdjęcie. Znajdź niemieckie słówka/wyrażenia.
+                        Dla każdego: 1. Poprawny niemiecki (z rodzajnikiem). 2. Polskie tłumaczenie. 
+                        3. Tagi (część mowy, kategoria). 4. Zdanie przykładowe (DE + PL).
+                        Zwróć TYLKO JSON: {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
+                        """
+                        raw_res = get_openai_response(prompt, img_obj=image)
+                        raw_res = raw_res.replace("```json", "").replace("```", "").strip()
+                        data = json.loads(raw_res)
                         
-                        for w in flashcards_data:
-                            card = {
-                                "username": u,
-                                "de": w.get("de", ""),
-                                "pl": w.get("pl", ""),
-                                "category": w.get("category", "Skan"),
-                                "examples": w.get("examples", []),
-                                "next_review": str(date.today()),
-                                "origin": "Skaner"
-                            }
-                            insert_payload.append(card)
-                            display_list.append({
-                                "Niemiecki (DE)": card["de"], 
-                                "Polski (PL)": card["pl"],
-                                "Tagi": card["category"]
-                            })
-                            
-                        if insert_payload:
-                            # Masowe wrzucenie do bazy Supabase
-                            get_db().table("flashcards").insert(insert_payload).execute()
-                            
-                            added = len(insert_payload)
-                            st.session_state.user_data["historical_cost"] += 0.05 # Stały koszt wizji API
-                            save_user_data(u, st.session_state.user_data)
-                            
-                            # Odświeżenie lokalnej pamięci słówek
-                            st.session_state.flashcards = load_flashcards(u)
-                            
-                            # Zachowanie listy do wyświetlenia
-                            st.session_state.last_scanned = display_list
+                        items = data.get("flashcards", data.get("words", []))
+                        if items:
+                            st.session_state.temp_scanned = items
                             st.rerun()
-                            
-                except Exception as e:
-                    st.error(f"Wystąpił błąd podczas analizy wizyjnej AI: {e}")
+                        else:
+                            st.warning("Nie znaleziono słówek na zdjęciu.")
+                    except Exception as e:
+                        st.error(f"Błąd analizy: {e}")
+
+    # --- WIDOK 2: EDYCJA I WERYFIKACJA (Tylko jeśli mamy coś w poczekalni) ---
+    else:
+        st.subheader("📝 Zweryfikuj i edytuj słówka przed dodaniem")
+        st.info("Możesz poprawić teksty, zmienić tagi lub usunąć niechciane wiersze.")
+
+        # Używamy fragmentu, aby edycja była płynna
+        @st.fragment
+        def review_scanned_items():
+            temp_list = st.session_state.temp_scanned
+            updated_list = []
+            to_delete = None
+
+            for i, item in enumerate(temp_list):
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns([3, 3, 3, 1])
+                    
+                    # Pola edycyjne
+                    new_de = c1.text_input("Niemiecki (DE)", item['de'], key=f"sc_de_{i}")
+                    new_pl = c2.text_input("Polski (PL)", item['pl'], key=f"sc_pl_{i}")
+                    new_cat = c3.text_input("Tagi", item['category'], key=f"sc_cat_{i}")
+                    
+                    # Przycisk usuwania wiersza
+                    if c4.button("🗑️", key=f"sc_del_{i}", help="Usuń z listy"):
+                        to_delete = i
+
+                    # Zachowujemy przykłady w tle (nie edytujemy ich w tej tabeli dla czytelności)
+                    updated_list.append({
+                        "de": new_de,
+                        "pl": new_pl,
+                        "category": new_cat,
+                        "examples": item.get('examples', [])
+                    })
+
+            if to_delete is not None:
+                st.session_state.temp_scanned.pop(to_delete)
+                st.rerun(scope="fragment")
+
+            st.write("---")
+            col_act1, col_act2 = st.columns(2)
+            
+            if col_act1.button("🔥 Anuluj wszystko", use_container_width=True):
+                del st.session_state.temp_scanned
+                st.rerun()
+
+            if col_act2.button("✅ Zapisz wybrane słówka", type="primary", use_container_width=True):
+                with st.spinner("Zapisywanie do bazy..."):
+                    insert_payload = []
+                    for card in updated_list:
+                        insert_payload.append({
+                            "username": u,
+                            "de": card["de"],
+                            "pl": card["pl"],
+                            "category": card["category"],
+                            "examples": card["examples"],
+                            "next_review": str(date.today()),
+                            "origin": "Skaner"
+                        })
+                    
+                    if insert_payload:
+                        get_db().table("flashcards").insert(insert_payload).execute()
+                        st.session_state.flashcards = load_flashcards(u)
+                        st.session_state.user_data["historical_cost"] += 0.05
+                        save_user_data(u, st.session_state.user_data)
+                        
+                        # Czyścimy poczekalnię i pokazujemy sukces
+                        count = len(insert_payload)
+                        del st.session_state.temp_scanned
+                        st.session_state.acc_msg = f"✅ Pomyślnie dodano {count} zweryfikowanych słówek!"
+                        st.rerun()
+
+        review_scanned_items()
 
 # --- 13. DODAJ SŁÓWKO ---
 elif choice == "➕ Dodaj":
