@@ -8,7 +8,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V155"
+APP_VERSION = "V156"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -154,7 +154,7 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
 def is_correct(a, c): 
     return a.strip().lower() in [s.strip().lower() for s in re.split(r'[/,;]', c)]
 
-# --- MODUŁY NAUKI ---
+# --- 📅 POWTÓRKI / 🚀 TRENING ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki" if is_r else "Trening")
@@ -209,6 +209,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     st.session_state.n_m = "ask"
                     st.rerun()
 
+# --- 🎴 FISZKI ---
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki")
     st.header("🎴 Fiszki")
@@ -250,31 +251,34 @@ elif choice == "🎴 Fiszki":
         if st.session_state.f_flipped: 
             play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
 
-# --- 📸 SKANER AI (OFICJALNA BIBLIOTEKA) ---
+# --- 📸 SKANER AI ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
     src = st.camera_input("Zrób zdjęcie")
     up = st.file_uploader("Lub wybierz plik")
     
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
-        try:
-            with st.spinner("AI analizuje..."):
-                genai.configure(api_key=API_KEY)
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                img = Image.open(src or up).convert("RGB")
-                prompt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
-                
-                res = model.generate_content([prompt, img])
-                data = parse_ai_json(res.text)
-                
-                if data:
-                    st.session_state.pending = data
-                    st.session_state.user_data["historical_cost"] += 0.015
-                    st.rerun()
-                else: 
-                    st.error("AI odpowiedziało, ale nie w formacie JSON.")
-        except Exception as e: 
-            st.error(f"Błąd AI: {e}")
+        if not API_KEY:
+            st.error("Brak klucza API w ustawieniach (Secrets).")
+        else:
+            try:
+                with st.spinner("AI analizuje (gemini-1.5-flash)..."):
+                    genai.configure(api_key=API_KEY)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    img = Image.open(src or up).convert("RGB")
+                    prompt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
+                    
+                    res = model.generate_content([prompt, img])
+                    data = parse_ai_json(res.text)
+                    
+                    if data:
+                        st.session_state.pending = data
+                        st.session_state.user_data["historical_cost"] += 0.015
+                        st.rerun()
+                    else: 
+                        st.error(f"AI odpowiedziało, ale nie w formacie JSON. Odpowiedź: {res.text}")
+            except Exception as e: 
+                st.error(f"Błąd AI: {e}")
             
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
@@ -286,7 +290,7 @@ elif choice == "📸 Skaner AI":
             del st.session_state.pending
             st.rerun()
 
-# --- 📦 GENERATOR SŁÓW (OFICJALNA BIBLIOTEKA) ---
+# --- 📦 GENERATOR SŁÓW ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
     cols = st.columns(5)
@@ -294,31 +298,34 @@ elif choice == "📦 Generator słów":
     
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"AI generuje słówka dla {lvl}..."):
-                try:
-                    genai.configure(api_key=API_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    exist = [x['de'] for x in st.session_state.flashcards[:300]]
-                    prompt = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
-                    
-                    res = model.generate_content(prompt)
-                    data = parse_ai_json(res.text)
-                    
-                    if data:
-                        added = 0
-                        for w in data:
-                            if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
-                                w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
-                                st.session_state.flashcards.append(w)
-                                added += 1
-                        st.session_state.user_data["historical_cost"] += 0.01
-                        save_j(get_p(u, "flashcards"), st.session_state.flashcards)
-                        st.success(f"Dodano {added} nowych słówek!")
-                        st.rerun()
-                    else: 
-                        st.error("AI zwróciło zły format JSON.")
-                except Exception as e: 
-                    st.error(f"Błąd AI: {e}")
+            if not API_KEY:
+                st.error("Brak klucza API w ustawieniach (Secrets).")
+            else:
+                with st.spinner(f"AI generuje słówka dla {lvl}..."):
+                    try:
+                        genai.configure(api_key=API_KEY)
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        exist = [x['de'] for x in st.session_state.flashcards[:300]]
+                        prompt = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
+                        
+                        res = model.generate_content(prompt)
+                        data = parse_ai_json(res.text)
+                        
+                        if data:
+                            added = 0
+                            for w in data:
+                                if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
+                                    w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
+                                    st.session_state.flashcards.append(w)
+                                    added += 1
+                            st.session_state.user_data["historical_cost"] += 0.01
+                            save_j(get_p(u, "flashcards"), st.session_state.flashcards)
+                            st.success(f"Dodano {added} nowych słówek!")
+                            st.rerun()
+                        else: 
+                            st.error(f"AI zwróciło zły format JSON. Odpowiedź: {res.text}")
+                    except Exception as e: 
+                        st.error(f"Błąd AI: {e}")
 
 # --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
