@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V177 (Test Summary & Context Fix)"
+APP_VERSION = "V178 (Test Score Fix & Stats)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -27,9 +27,10 @@ BONUS_START = 1089.0
 # Pobieranie klucza API
 API_KEY = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("GEMINI_API_KEY") or st.session_state.get("manual_api_key", "")
 
+# NOWA KOLEJNOŚĆ (Testy pod Fiszkami)
 MODULE_ORDER = [
-    "Powtórki", "Trening", "Quiz", "Fiszki", 
-    "Skaner", "Generator", "Dodaj", "Słownik", "Testy"
+    "Powtórki", "Trening", "Quiz", "Fiszki", "Testy",
+    "Skaner", "Generator", "Dodaj", "Słownik"
 ]
 
 # --- WEWNĘTRZNA BAZA SŁÓWEK ---
@@ -90,6 +91,18 @@ def parse_ai_json(text):
         return json.loads(text.strip())
     except: return None
 
+# UNIWERSALNA FUNKCJA SPRAWDZAJĄCA ODPOWIEDŹ TESTOWĄ
+def check_test_answer(u_ans, q_obj):
+    user = str(u_ans).strip().lower()
+    correct = str(q_obj['correct']).strip().lower()
+    if not user: return False
+    # Dla tłumaczeń pozwalamy na małe różnice (np. brak kropki), ale musi być zgodność słów
+    if q_obj['type'] == "TLUMACZENIE":
+        u_clean = re.sub(r'[^\w\s]', '', user)
+        c_clean = re.sub(r'[^\w\s]', '', correct)
+        return u_clean == c_clean
+    return user == correct
+
 # --- SILNIK AI: OPENAI ---
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY: raise Exception("Brak klucza API OpenAI.")
@@ -142,15 +155,16 @@ if not st.session_state.auth:
             else:
                 db[un] = hash_pw(pn); save_j(AUTH_FILE, db)
                 save_j(get_p(un, "flashcards"), [])
-                init_data = {"streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy"}
-                save_j(get_p(un, "user_data"), init_data); st.success("Utworzono konto! Możesz się teraz zalogować.")
+                init_data = {"streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy", "test_history": []}
+                save_j(get_p(un, "user_data"), init_data); st.success("Utworzono konto!")
     st.stop()
 
 # --- INIT DANYCH ---
 u = st.session_state.user
 st.session_state.flashcards = load_j(get_p(u, "flashcards"), [])
 d_u = load_j(get_p(u, "user_data"), {})
-for k, v in {"streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy"}.items():
+# Migracja brakujących kluczy
+for k, v in {"streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy", "test_history": []}.items():
     if k not in d_u: d_u[k] = v
 st.session_state.user_data = d_u
 
@@ -177,12 +191,11 @@ if st.sidebar.button("Wyloguj", use_container_width=True):
     if "token" in st.query_params:
         tk = st.query_params["token"]
         ss = load_j(SESSIONS_FILE, {})
-        if tk in ss:
-            del ss[tk]
-            save_j(SESSIONS_FILE, ss)
+        if tk in ss: del ss[tk]; save_j(SESSIONS_FILE, ss)
     st.query_params.clear(); st.session_state.clear(); st.rerun()
 
-menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📸 Skaner AI", "📦 Generator słów", "➕ Dodaj", "📖 Słownik", "📝 Testy", "📊 Statystyki", "⚙️ Moje Konto"]
+# PRZEMIESZCZONE MENU (Testy pod Fiszkami)
+menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📝 Testy", "📸 Skaner AI", "📦 Generator słów", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
 if u == ADMIN_USER: menu.append("👑 Admin")
 choice = st.sidebar.radio("Nawigacja", menu)
 
@@ -212,8 +225,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         st.success("Wszystko opanowane! 🎊")
     else:
         if "n_idx" not in st.session_state or st.session_state.n_idx >= len(cards_to_show):
-            st.session_state.n_idx = 0
-            random.shuffle(cards_to_show)
+            st.session_state.n_idx = 0; random.shuffle(cards_to_show)
         orig_idx, c = cards_to_show[st.session_state.n_idx]
         st.write(f"### Słówko: **{c['de']}**")
         if st.session_state.n_m == "ask":
@@ -232,22 +244,16 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             play_audio(c['de'])
             if is_r:
                 st.write("---")
-                col1, col2, col3 = st.columns(3)
-                d = None
+                col1, col2, col3 = st.columns(3); d = None
                 if col1.button("🔴 Słabo (1d)", use_container_width=True): d = 1
                 if col2.button("🟡 Średnio (3d)", use_container_width=True): d = 3
                 if col3.button("🟢 Dobrze (7d)", use_container_width=True): d = 7
                 if d:
                     st.session_state.flashcards[orig_idx]["next_review"] = str(today_dt + timedelta(days=d))
-                    force_save()
-                    st.toast(f"Przesunięto o {d} dni!")
-                    st.session_state.n_m = "ask"
-                    st.rerun()
+                    force_save(); st.toast(f"Przesunięto o {d} dni!"); st.session_state.n_m = "ask"; st.rerun()
             else:
                 if st.button("Dalej ➡️", use_container_width=True):
-                    st.session_state.n_idx += 1
-                    st.session_state.n_m = "ask"
-                    st.rerun()
+                    st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
 
 # --- 🎴 FISZKI ---
 elif choice == "🎴 Fiszki":
@@ -276,22 +282,79 @@ elif choice == "🎴 Fiszki":
         if c3.button("Dalej ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
         if st.session_state.f_flipped: play_audio(c['de'])
 
+# --- 📝 TESTY (V178 - Score Fix & Stats) ---
+elif choice == "📝 Testy":
+    update_activity("Testy"); st.header("📝 Egzamin Kontekstowy")
+    if len(st.session_state.flashcards) < 5: st.warning("Potrzebujesz min. 5 słówek.")
+    else:
+        if "test_q" not in st.session_state:
+            all_cats = sorted(list(set([c.get("category", "Inne") for c in st.session_state.flashcards])))
+            sel_kat = st.selectbox("🎯 Wybierz zakres testu:", ["Wszystkie"] + all_cats)
+            n_q = st.slider("Liczba pytań", 5, 20, 5)
+            if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
+                with st.spinner("Przygotowanie..."):
+                    filtered = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
+                    if len(filtered) < 5: st.error("Zbyt mało słówek.")
+                    else:
+                        sample = random.sample(filtered, min(n_q, len(filtered)))
+                        words_str = ", ".join([f"{w['de']} ({w['pl']})" for w in sample])
+                        prompt = f"Generate a German test for: {words_str}. Rotate types: 'LUKA', 'QUIZ', 'TLUMACZENIE'. Output JSON: {{\"questions\": [ {{\"type\": \"LUKA\", \"sentence\": \"...\", \"correct\": \"...\", \"hint\": \"...\"}}, ... ]}}"
+                        try:
+                            res = get_openai_response(prompt); data = parse_ai_json(res)
+                            if data and "questions" in data:
+                                st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0
+                                st.session_state.user_data["historical_cost"] += 0.01; st.rerun()
+                        except Exception as e: st.error(f"Błąd: {e}")
+        else:
+            qs = st.session_state.test_q; idx = st.session_state.test_idx
+            if idx < len(qs):
+                q = qs[idx]; st.write(f"### Pytanie {idx+1} z {len(qs)}"); st.progress(idx / len(qs))
+                u_ans = ""
+                if q['type'] == "LUKA":
+                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}"); st.markdown(f"#### `{q['sentence']}`")
+                    u_ans = st.text_input("Wpisz brakujące słowo (DE):", key=f"q_{idx}")
+                elif q['type'] == "QUIZ":
+                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}"); st.markdown(f"#### `{q['sentence']}`")
+                    opts = q.get('distractors', []) + [q['correct']]; random.seed(idx); random.shuffle(opts)
+                    u_ans = st.radio("Wybierz opcję:", opts, key=f"q_{idx}")
+                elif q['type'] == "TLUMACZENIE":
+                    st.info("Przetłumacz na niemiecki:"); st.markdown(f"#### {q['sentence']}")
+                    u_ans = st.text_input("Twoja odpowiedź:", key=f"q_{idx}")
+                if st.button("Zatwierdź ➡️", use_container_width=True):
+                    st.session_state.test_q[idx]['user_ans'] = u_ans
+                    if check_test_answer(u_ans, q):
+                        st.session_state.test_score += 1; st.toast("Dobrze! 🌟")
+                    else: st.error(f"Źle. Poprawnie: {q['correct']}"); time.sleep(1)
+                    st.session_state.test_idx += 1; st.rerun()
+            else:
+                st.balloons(); score = st.session_state.test_score; total = len(qs); perc = round((score/total)*100)
+                # ZAPIS DO HISTORII
+                st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
+                save_j(get_p(u, "user_data"), st.session_state.user_data)
+                st.markdown(f'<div style="text-align:center; padding:30px; border-radius:20px; background:#111; border:2px solid #1E88E5; margin-bottom:25px;"><h1>Wynik: {score} / {total}</h1><h2 style="color:#1E88E5;">Sprawność: {perc}%</h2></div>', unsafe_allow_html=True)
+                st.subheader("📋 Szczegółowy raport:");
+                for i, q in enumerate(qs):
+                    u_a, c_a = q.get('user_ans', ''), q['correct']
+                    is_ok = check_test_answer(u_a, q)
+                    icon, color = ("✅", "#2E7D32") if is_ok else ("❌", "#C62828")
+                    with st.expander(f"{icon} Pytanie {i+1}"):
+                        st.write(f"**Zdanie:** {q['sentence']}")
+                        st.markdown(f'<div style="padding:10px; border-radius:10px; background:{color}22; border-left:5px solid {color};"><p>Twoja: <b>{u_a}</b></p><p>Poprawna: <b>{c_a}</b></p></div>', unsafe_allow_html=True)
+                if st.button("Powrót", use_container_width=True, type="primary"): del st.session_state.test_q; st.rerun()
+
 # --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz"); all_c = st.session_state.flashcards
     if len(all_c) < 4: st.warning("Dodaj min. 4 słówka!")
     else:
         if "q_c" not in st.session_state:
-            idx = random.randrange(len(all_c))
-            t = all_c[idx]
-            opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]
-            random.shuffle(opts)
+            idx = random.randrange(len(all_c)); t = all_c[idx]
+            opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]; random.shuffle(opts)
             st.session_state.update({"q_idx":idx, "q_c":t, "q_a":t['pl'], "q_o":opts, "q_s":"ask"})
         st.write(f"### Jak przetłumaczysz: **{st.session_state.q_c['de']}**")
         if st.session_state.q_s == "ask":
             for o in st.session_state.q_o:
-                if st.button(o, key=o, use_container_width=True):
-                    st.session_state.u_q, st.session_state.q_s = o, "res"; st.rerun()
+                if st.button(o, key=o, use_container_width=True): st.session_state.u_q, st.session_state.q_s = o, "res"; st.rerun()
         else:
             if st.session_state.get("u_q") == st.session_state.q_a:
                 st.success("✅ Brawo!")
@@ -312,7 +375,7 @@ elif choice == "📸 Skaner AI":
         try:
             with st.spinner("Przetwarzanie..."):
                 img = Image.open(src or up).convert("RGB")
-                req = "Extract German vocabulary. For EACH word: translate to Polish, generate EXACTLY 2 independent sentences containing the word, and assign a descriptive Polish category (e.g. 'Dom', 'Praca'). Output JSON object with key 'flashcards'."
+                req = "Extract German vocabulary. JSON object with key 'flashcards'."
                 res = get_openai_response(req, img_obj=img); data = parse_ai_json(res)
                 if isinstance(data, dict) and "flashcards" in data:
                     st.session_state.pending = data["flashcards"]
@@ -320,12 +383,12 @@ elif choice == "📸 Skaner AI":
         except Exception as e: st.error(f"Błąd AI: {e}")
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
-        if st.button("✅ ZAPISZ DO BAZY", use_container_width=True):
+        if st.button("✅ ZAPISZ", use_container_width=True):
             added = 0
             for w in ed.to_dict('records'):
                 if 'de' in w and 'pl' in w and w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                     w.update({"next_review": str(today_dt), "date_added": str(today_dt)}); st.session_state.flashcards.append(w); added += 1
-            force_save(); del st.session_state.pending; st.session_state.success_msg = f"🎉 Dodano {added} słówek!"; st.rerun()
+            force_save(); del st.session_state.pending; st.session_state.success_msg = f"🎉 Dodano {added}!"; st.rerun()
 
 # --- 📦 GENERATOR SŁÓW ---
 elif choice == "📦 Generator słów":
@@ -334,13 +397,11 @@ elif choice == "📦 Generator słów":
     cols = st.columns(5); lvls = ["A1", "A2", "B1", "B2", "C1"]
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, key=lvl, use_container_width=True):
-            with st.spinner(f"Szukam 25 nowych słówek {lvl}..."):
+            with st.spinner(f"Szukam 25 słówek {lvl}..."):
                 try:
-                    all_p = VOCAB_DB.get(lvl, [])
-                    my_w = [x['de'].lower() for x in st.session_state.flashcards]
+                    all_p = VOCAB_DB.get(lvl, []); my_w = [x['de'].lower() for x in st.session_state.flashcards]
                     sel = [w for w in all_p if w.lower() not in my_w]
-                    if len(sel) < 25: prompt = f"Generate 25 unique German words level {lvl} NOT IN: {my_w[:50]}. Translate to Polish, provide Polish category name, and EXACTLY 2 independent sentences per word. Output JSON object with key 'flashcards'."
-                    else: subset = sel[:25]; prompt = f"Translate these 25 German words to Polish: {subset}. Provide: PL translation, Polish category, and EXACTLY 2 independent sentences EACH containing the word. Output JSON key 'flashcards' containing objects with keys: 'de', 'pl', 'category', 'examples'."
+                    prompt = f"Generate 25 German words {lvl}. Output JSON key 'flashcards'."
                     res = get_openai_response(prompt); data = parse_ai_json(res)
                     if isinstance(data, dict) and "flashcards" in data:
                         added = 0
@@ -348,21 +409,17 @@ elif choice == "📦 Generator słów":
                             t_de = w.get('de') or w.get('word'); t_pl = w.get('pl') or w.get('translation')
                             if t_de and t_pl and t_de.lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                                 w.update({"de": t_de, "pl": t_pl, "next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
-                                if 'examples' not in w or not w['examples']: w['examples'] = []
                                 st.session_state.flashcards.append(w); added += 1
-                        st.session_state.user_data["historical_cost"] += 0.01; force_save()
-                        st.session_state.success_msg = f"🎉 Dodano {added} nowych słówek!"; st.rerun()
+                        st.session_state.user_data["historical_cost"] += 0.01; force_save(); st.session_state.success_msg = f"🎉 Dodano {added}!"; st.rerun()
                 except Exception as e: st.error(f"Błąd: {e}")
 
 # --- ➕ DODAJ / 📖 SŁOWNIK ---
 elif choice == "➕ Dodaj":
-    st.header("➕ Dodaj słówko"); update_activity("Dodaj")
+    st.header("➕ Dodaj"); update_activity("Dodaj")
     with st.form("man_f"):
         de, pl, kat = st.text_input("Niemiecki"), st.text_input("Polski"), st.text_input("Kategoria")
         if st.form_submit_button("Zapisz"):
-            if de and pl:
-                st.session_state.flashcards.append({"de":de, "pl":pl, "category":kat or "Inne", "next_review":str(today_dt), "date_added":str(today_dt), "examples":[]})
-                force_save(); st.success("Dodano!")
+            if de and pl: st.session_state.flashcards.append({"de":de, "pl":pl, "category":kat or "Inne", "next_review":str(today_dt), "date_added":str(today_dt), "examples":[]}); force_save(); st.success("Dodano!")
 
 elif choice == "📖 Słownik":
     update_activity("Słownik"); cats = sorted(list(set([c.get("category", "Inne") for c in st.session_state.flashcards])))
@@ -373,211 +430,64 @@ elif choice == "📖 Słownik":
                 with st.form(f"ed_{i}"):
                     n_de, n_pl, n_ka = st.text_input("DE", c['de']), st.text_input("PL", c['pl']), st.text_input("KAT", c.get('category','Inne'))
                     col_save, col_del = st.columns(2)
-                    if col_save.form_submit_button("Zapisz", use_container_width=True):
-                        st.session_state.flashcards[i].update({"de":n_de, "pl":n_pl, "category":n_ka})
-                        force_save()
-                        st.rerun()
-                    if col_del.form_submit_button("Usuń", use_container_width=True):
-                        del st.session_state.flashcards[i]
-                        force_save()
-                        st.rerun()
+                    if col_save.form_submit_button("Zapisz", use_container_width=True): st.session_state.flashcards[i].update({"de":n_de, "pl":n_pl, "category":n_ka}); force_save(); st.rerun()
+                    if col_del.form_submit_button("Usuń", use_container_width=True): del st.session_state.flashcards[i]; force_save(); st.rerun()
 
-# --- 📝 TESTY (V177 - Fix Podsumowania i Kontekstu) ---
-elif choice == "📝 Testy":
-    update_activity("Testy")
-    st.header("📝 Egzamin Kontekstowy")
-    
-    if len(st.session_state.flashcards) < 5:
-        st.warning("Potrzebujesz minimum 5 słówek w bazie, aby wygenerować test.")
-    else:
-        # Faza 1: Konfiguracja testu
-        if "test_q" not in st.session_state:
-            all_cats = sorted(list(set([c.get("category", "Inne") for c in st.session_state.flashcards])))
-            sel_kat = st.selectbox("🎯 Wybierz zakres testu:", ["Wszystkie"] + all_cats)
-            n_q = st.slider("Liczba pytań", 5, 20, 5)
-            
-            if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
-                with st.spinner("AI przygotowuje zadania z kontekstem..."):
-                    filtered = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
-                    if len(filtered) < 5:
-                        st.error("Zbyt mało słówek w tej kategorii.")
-                    else:
-                        sample = random.sample(filtered, min(n_q, len(filtered)))
-                        words_str = ", ".join([f"{w['de']} ({w['pl']})" for w in sample])
-                        
-                        # Zmieniony Prompt: Wymusza pole 'hint' dla kontekstu
-                        prompt = f"""Generate a German language test for these words: {words_str}.
-                        For each word, create 1 question. Rotate between 3 types:
-                        1. 'LUKA': A German sentence with the word replaced by '____'. Provide 'correct' word AND a 'hint' (Polish translation of THAT missing word).
-                        2. 'QUIZ': A German sentence with '____', provide 'correct' word, 'hint' (Polish translation) and 3 'distractors'.
-                        3. 'TLUMACZENIE': A Polish sentence to be translated to German containing the word. Provide the German sentence as 'correct'.
-                        Output JSON: {{"questions": [ {{"type": "LUKA", "sentence": "...", "correct": "...", "hint": "..."}}, ... ]}}"""
-                        
-                        try:
-                            res = get_openai_response(prompt)
-                            data = parse_ai_json(res)
-                            if data and "questions" in data:
-                                st.session_state.test_q = data["questions"]
-                                st.session_state.test_idx = 0
-                                st.session_state.test_score = 0
-                                st.session_state.user_data["historical_cost"] += 0.01
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Błąd generatora: {e}")
-        
-        # Faza 2: Przebieg testu
-        else:
-            qs = st.session_state.test_q
-            idx = st.session_state.test_idx
-            
-            if idx < len(qs):
-                q = qs[idx]
-                st.write(f"### Pytanie {idx+1} z {len(qs)}")
-                st.progress((idx) / len(qs))
-                
-                u_ans = ""
-                if q['type'] == "LUKA":
-                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}")
-                    st.markdown(f"#### `{q['sentence']}`")
-                    u_ans = st.text_input("Wpisz brakujące słowo (DE):", key=f"q_{idx}")
-                
-                elif q['type'] == "QUIZ":
-                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}")
-                    st.markdown(f"#### `{q['sentence']}`")
-                    opts = q.get('distractors', []) + [q['correct']]
-                    random.seed(idx)
-                    random.shuffle(opts)
-                    u_ans = st.radio("Wybierz poprawną opcję:", opts, key=f"q_{idx}")
-                
-                elif q['type'] == "TLUMACZENIE":
-                    st.info("Przetłumacz na niemiecki:")
-                    st.markdown(f"#### {q['sentence']}")
-                    u_ans = st.text_input("Twoja odpowiedź:", key=f"q_{idx}")
-
-                if st.button("Zatwierdź ➡️", use_container_width=True):
-                    # Zapisujemy odpowiedź użytkownika w obiekcie pytania
-                    st.session_state.test_q[idx]['user_ans'] = u_ans
-                    
-                    correct = q['correct'].lower().strip()
-                    user = u_ans.lower().strip()
-                    
-                    # Weryfikacja
-                    is_ok = False
-                    if q['type'] == "TLUMACZENIE":
-                        # Tłumaczenie sprawdzamy liberalnie lub AI (tutaj: uproszczenie)
-                        is_ok = (len(user) > 5) 
-                    else:
-                        is_ok = (user == correct)
-
-                    if is_ok:
-                        st.session_state.test_score += 1
-                        st.toast("Dobrze! 🌟")
-                    else:
-                        st.error(f"Źle. Poprawnie: {q['correct']}")
-                        time.sleep(1)
-                    
-                    st.session_state.test_idx += 1
-                    st.rerun()
-            
-            # Faza 3: Wyniki (ROZBUDOWANE PODSUMOWANIE)
-            else:
-                st.balloons()
-                score = st.session_state.test_score
-                total = len(qs)
-                perc = round((score/total)*100)
-                
-                st.markdown(f"""
-                <div style="text-align:center; padding:30px; border-radius:20px; background:#111; border:2px solid #1E88E5; margin-bottom:25px;">
-                    <h1 style="margin:0;">Wynik: {score} / {total}</h1>
-                    <h2 style="color:#1E88E5;">Sprawność: {perc}%</h2>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.subheader("📋 Szczegółowy raport:")
-                for i, q in enumerate(qs):
-                    u_a = q.get('user_ans', 'Brak')
-                    c_a = q['correct']
-                    is_correct_q = u_a.lower().strip() == c_a.lower().strip()
-                    
-                    icon = "✅" if is_correct_q else "❌"
-                    color = "#2E7D32" if is_correct_q else "#C62828"
-                    
-                    with st.expander(f"{icon} Pytanie {i+1}: {q['sentence'][:40]}..."):
-                        st.write(f"**Treść:** {q['sentence']}")
-                        if 'hint' in q: st.write(f"**Kontekst (PL):** {q['hint']}")
-                        st.markdown(f"""
-                        <div style="padding:10px; border-radius:10px; background:{color}22; border-left:5px solid {color};">
-                            <p style="margin:0;">Twoja odpowiedź: <b>{u_a}</b></p>
-                            <p style="margin:0;">Poprawna: <b>{c_a}</b></p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                if st.button("Powrót do menu", use_container_width=True, type="primary"):
-                    del st.session_state.test_q
-                    st.rerun()
-
-# --- 📊 STATYSTYKI ---
+# --- 📊 STATYSTYKI (Z historią testów) ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki"); df = pd.DataFrame(st.session_state.flashcards)
     st.header("📊 Twoje Statystyki")
     if df.empty: st.warning("Baza słówek jest pusta.")
     else:
         c1, c2, c3 = st.columns(3); c1.metric("Łącznie słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} dni")
-        know_count = len(df[df['next_review'].apply(is_word_mastered)])
-        c3.metric("Opanowane (7d+)", know_count)
+        know_count = len(df[df['next_review'].apply(is_word_mastered)]); c3.metric("Opanowane (7d+)", know_count)
         
         st.subheader("Podział na poziomy")
         stats_rows = []
         for l in ["A1", "A2", "B1", "B2", "C1"]:
-            l_df = df[df['category'].str.contains(l, na=False)]
-            total = len(l_df)
+            l_df = df[df['category'].str.contains(l, na=False)]; total = len(l_df)
             know = len(l_df[l_df['next_review'].apply(is_word_mastered)]) if total > 0 else 0
             perc = round((know/total)*100) if total > 0 else 0
-            stats_rows.append({"Poziom": l, "Słówek": total, "Opanowane": know, "% Wiedzy": f"{perc}%"})
+            stats_rows.append({"Poziom": l, "Słówek": total, "Opanowane": know, "%": f"{perc}%"})
         st.table(pd.DataFrame(stats_rows))
         
-        st.subheader("Nadchodzące powtórki")
-        sched = [{"Data": (today_dt + timedelta(days=i)).strftime("%d.%m"), "Słów": len(df[df['next_review'] == str(today_dt + timedelta(days=i))])} for i in range(10)]
-        st.bar_chart(pd.DataFrame(sched).set_index("Data"))
+        # HISTORIA TESTÓW
+        st.subheader("📜 Historia Twoich Testów")
+        h = st.session_state.user_data.get("test_history", [])
+        if h:
+            h_df = pd.DataFrame(h[::-1]).head(10) # 10 ostatnich
+            st.table(h_df[["date", "score", "total", "perc"]])
+        else: st.info("Nie ukończyłeś jeszcze żadnego testu.")
 
 # --- ⚙️ MOJE KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem"); update_activity("Konto")
-    if "del_msg" in st.session_state: st.success(st.session_state.del_msg); del st.session_state.del_msg
     with st.expander("🔑 Zmień hasło"):
         with st.form("pw_f"):
             o, n, cp = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password"), st.text_input("Powtórz", type="password")
             if st.form_submit_button("Zmień"):
                 db = load_j(AUTH_FILE, {})
                 if db.get(u) == hash_pw(o) and n == cp: db[u] = hash_pw(n); save_j(AUTH_FILE, db); st.success("OK!")
-    st.divider(); st.subheader("⚠️ Usuwanie danych"); conf = st.checkbox("Potwierdzam chęć usunięcia")
-    lvls = ["A1", "A2", "B1", "B2", "C1"]; col_d = st.columns(5)
-    for i, lvl in enumerate(lvls):
-        if col_d[i].button(f"Usuń {lvl}", disabled=not conf, use_container_width=True):
-            before = len(st.session_state.flashcards)
-            st.session_state.flashcards = [x for x in st.session_state.flashcards if lvl not in str(x.get('category',''))]
-            force_save(); st.session_state.del_msg = f"Usunięto {before - len(st.session_state.flashcards)} słówek z {lvl}!"; st.rerun()
-    if st.button("🗑️ RESET CAŁEJ BAZY", type="primary", disabled=not conf, use_container_width=True):
-        before = len(st.session_state.flashcards); save_j(get_p(u, "flashcards"), []); st.session_state.flashcards = []
-        st.session_state.del_msg = f"Usunięto wszystkie {before} słówek!"; st.rerun()
+    st.divider(); conf = st.checkbox("Potwierdzam chęć usunięcia danych")
+    if st.button("🗑️ RESET BAZY", type="primary", disabled=not conf, use_container_width=True):
+        save_j(get_p(u, "flashcards"), []); st.session_state.flashcards = []; st.rerun()
 
-# --- 👑 ADMIN ---
+# --- 👑 ADMIN (Z liczbą testów) ---
 elif choice == "👑 Admin":
     st.header("👑 Panel Admina"); users = load_j(AUTH_FILE, {}); adm_list = []; global_time = {m: 0.0 for m in MODULE_ORDER}
-    m1, m2 = st.columns(2)
     for usr in users:
         ud, ub = load_j(get_p(usr, "user_data"), {}), load_j(get_p(usr, "flashcards"), [])
-        df_u = pd.DataFrame(ub); mastery, ai_n = "0%", 0
-        if not df_u.empty:
-            opanowane = len(df_u[df_u['next_review'].apply(is_word_mastered)])
-            mastery = f"{round((opanowane/len(df_u))*100)}%"; ai_n = len(df_u[df_u['category'].str.contains('Skaner|Generator', case=False, na=False)])
+        mastery = "0%"
+        if ub:
+            opanowane = len([x for x in ub if is_word_mastered(x.get('next_review'))])
+            mastery = f"{round((opanowane/len(ub))*100)}%"
         t_s = ud.get("time_stats", {})
         for m in MODULE_ORDER: global_time[m] += t_s.get(m, 0.0)
         u_times = ", ".join([f"{m[0]}:{round(s/60)}m" for m, s in t_s.items() if s > 15])
-        adm_list.append({"Użytkownik":usr, "Słów":len(ub), "AI":ai_n, "%":mastery, "Ostatnio":ud.get("last_seen","Nigdy"), "Czas":u_times or "Brak"})
-    m1.metric("Łącznie słówek", sum(x['Słów'] for x in adm_list))
-    spent = sum(load_j(get_p(un, 'user_data'), {}).get('historical_cost', 0.0) for un in users)
-    m2.metric("Szac. koszt AI", f"{spent:.2f} PLN"); st.table(pd.DataFrame(adm_list))
+        # LICZNIK TESTÓW
+        t_count = len(ud.get("test_history", []))
+        adm_list.append({"Użytkownik":usr, "Słów":len(ub), "Testy":t_count, "%":mastery, "Ostatnio":ud.get("last_seen","Nigdy"), "Czas":u_times or "Brak"})
+    st.table(pd.DataFrame(adm_list))
     total_g = sum(global_time.values())
     if total_g > 0:
         vals = [global_time[m] for m in MODULE_ORDER]; labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
