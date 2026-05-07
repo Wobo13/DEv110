@@ -8,7 +8,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V156"
+APP_VERSION = "V157"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -67,7 +67,7 @@ if "auth" not in st.session_state:
             st.session_state.auth = True
             st.session_state.user = ss[tk]
 
-# Inicjalizacja kluczowych zmiennych
+# Inicjalizacja zmiennych
 if "u_a" not in st.session_state: st.session_state.u_a = ""
 if "n_m" not in st.session_state: st.session_state.n_m = "ask"
 
@@ -154,7 +154,7 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
 def is_correct(a, c): 
     return a.strip().lower() in [s.strip().lower() for s in re.split(r'[/,;]', c)]
 
-# --- 📅 POWTÓRKI / 🚀 TRENING ---
+# --- MODUŁY NAUKI ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki" if is_r else "Trening")
@@ -209,7 +209,6 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     st.session_state.n_m = "ask"
                     st.rerun()
 
-# --- 🎴 FISZKI ---
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki")
     st.header("🎴 Fiszki")
@@ -254,6 +253,10 @@ elif choice == "🎴 Fiszki":
 # --- 📸 SKANER AI ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
+    
+    if API_KEY:
+        st.caption(f"🔑 Używany klucz API: {API_KEY[:6]}...{API_KEY[-4:]} (Sprawdź czy zgadza się z nowym!)")
+        
     src = st.camera_input("Zrób zdjęcie")
     up = st.file_uploader("Lub wybierz plik")
     
@@ -293,6 +296,10 @@ elif choice == "📸 Skaner AI":
 # --- 📦 GENERATOR SŁÓW ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
+    
+    if API_KEY:
+        st.caption(f"🔑 Używany klucz API: {API_KEY[:6]}...{API_KEY[-4:]} (Sprawdź czy zgadza się z nowym!)")
+        
     cols = st.columns(5)
     lvls = ["A1", "A2", "B1", "B2", "C1"]
     
@@ -331,6 +338,8 @@ elif choice == "📦 Generator słów":
 elif choice == "🕹️ Quiz":
     update_activity("Quiz")
     all_c = st.session_state.flashcards
+    
+    # Naprawiona linijka Quizu z uciętym znakiem
     if len(all_c) < 4: 
         st.warning("Dodaj min. 4 słówka do bazy!")
     else:
@@ -480,39 +489,4 @@ elif choice == "👑 Admin":
             
         t_s = ud.get("time_stats", {})
         for m in MODULE_ORDER: 
-            global_time[m] += t_s.get(m, 0.0)
-            
-        u_times = ", ".join([f"{m[0]}:{round(s/60)}m" for m,s in t_s.items() if s > 15])
-        adm_list.append({
-            "Użytkownik": usr, 
-            "Słów": len(ub), 
-            "AI (Skaner)": ai_n, 
-            "% Wiedzy": mastery, 
-            "Ostatnio": ud.get("last_seen", "Nigdy"), 
-            "Czas": u_times or "Brak"
-        })
-    
-    m1.metric("Łącznie słówek w systemie", sum(x['Słów'] for x in adm_list))
-    total_spent = sum(load_j(get_p(usr_n, 'user_data'), {}).get('historical_cost', 0) for usr_n in users)
-    m2.metric("Pozostały Bonus AI", f"{BONUS_START - total_spent:.2f} PLN")
-    
-    st.table(pd.DataFrame(adm_list))
-    
-    total_g = sum(global_time.values())
-    if total_g > 0:
-        vals = [global_time[m] for m in MODULE_ORDER]
-        labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
-        
-        fig = go.Figure(
-            data=[
-                go.Bar(
-                    x=MODULE_ORDER, 
-                    y=vals, 
-                    text=labels, 
-                    textposition='auto', 
-                    marker_color='#1E88E5'
-                )
-            ]
-        )
-        fig.update_layout(template="plotly_dark", height=450)
-        st.plotly_chart(fig, use_container_width=True)
+            global_time[m] += t_s.get(m, 0
