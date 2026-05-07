@@ -635,11 +635,33 @@ elif choice == "📊 Statystyki":
         st.plotly_chart(fig, use_container_width=True)
 
         st.write("---")
-        st.subheader("Źródła pozyskania słówek")
-        origin_counts = df['origin'].value_counts().reset_index()
-        origin_counts.columns = ['Źródło', 'Liczba słówek']
-        st.table(origin_counts)
-    
+        
+        # Wyświetlanie tabel z poziomami i źródłami obok siebie
+        col_stats1, col_stats2 = st.columns(2)
+        
+        with col_stats1:
+            st.subheader("📈 Słówka wg poziomu")
+            levels = ["A1", "A2", "B1", "B2", "C1"]
+            level_counts = {lvl: 0 for lvl in levels}
+            
+            # Przeszukiwanie tagów w poszukiwaniu poziomów
+            if 'category' in df.columns:
+                for cat in df['category'].dropna():
+                    cat_str = str(cat).upper()
+                    for lvl in levels:
+                        if lvl in cat_str:
+                            level_counts[lvl] += 1
+                            
+            df_levels = pd.DataFrame(list(level_counts.items()), columns=['Poziom', 'Liczba słówek'])
+            st.table(df_levels)
+            
+        with col_stats2:
+            st.subheader("📌 Źródła pozyskania")
+            if 'origin' in df.columns:
+                origin_counts = df['origin'].value_counts().reset_index()
+                origin_counts.columns = ['Źródło', 'Liczba słówek']
+                st.table(origin_counts)
+        
     st.write("---")
     st.subheader("📝 Historia rozwiązanych testów")
     t_hist = st.session_state.user_data.get("test_history", [])
