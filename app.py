@@ -8,7 +8,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V148"
+APP_VERSION = "V149"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -37,13 +37,11 @@ def play_audio(txt):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- AUTO-DETEKCJA DZIAŁAJĄCEGO MODELU AI ---
+# --- AI Z NOWYM KLUCZEM ---
 def get_ai_response(content):
     genai.configure(api_key=API_KEY)
-    
-    # Testujemy tylko najnowsze, oficjalnie wspierane modele
+    # Używamy bezpośrednio 1.5-flash (najszybszy i najtańszy)
     models_to_test = ["gemini-1.5-flash", "gemini-1.5-pro"]
-        
     last_err = ""
     for m_name in models_to_test:
         try:
@@ -54,8 +52,7 @@ def get_ai_response(content):
         except Exception as e:
             last_err = str(e)
             continue
-            
-    raise Exception(f"BLOKADA KLUCZA API (404 v1beta). Twoje środowisko lub klucz odrzuca połączenia. \n1. Zaktualizuj bibliotekę na PC: pip install -U google-generativeai \n2. Jeśli jesteś w UE, upewnij się, że projekt w Google Cloud ma aktywne płatności (wymóg weryfikacji). \nSzczegóły: {last_err}")
+    raise Exception(f"Klucz API nadal odrzuca połączenie z modelami 1.5. Wygeneruj nowy klucz na aistudio.google.com. Szczegóły: {last_err}")
 
 def parse_ai_json(text):
     try:
@@ -75,7 +72,6 @@ if "auth" not in st.session_state:
         if tk in ss:
             st.session_state.auth, st.session_state.user = True, ss[tk]
 
-# Inicjalizacja kluczowych zmiennych (Naprawa NameError)
 if "u_a" not in st.session_state: st.session_state.u_a = ""
 if "n_m" not in st.session_state: st.session_state.n_m = "ask"
 
