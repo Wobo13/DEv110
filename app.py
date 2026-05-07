@@ -170,20 +170,25 @@ menu = [
 if u == ADMIN_USER:
     menu.append("👑 Admin")
 
+# Zabezpieczenie przed pierwszym uruchomieniem
+if "l_c" not in st.session_state:
+    st.session_state.l_c = "Inne" # Domyślnie traktujemy wejście jako 'Inne'
+
 # 1. Pobranie wyboru użytkownika
 choice = st.sidebar.radio("Nawigacja", menu)
 
-# 2. KLUCZOWA POPRAWKA: Jedyne, centralne wywołanie aktualizacji czasu.
-# System sam wyczyści ikonki i dopasuje czas do wybranego modułu.
-update_activity(choice)
+# 2. Zapis aktywności ZANIM zmienimy wewnętrzny stan aplikacji.
+# Zapisujemy czas przypisany do modułu, w którym użytkownik BYŁ DO TEJ PORY.
+update_activity(st.session_state.l_c)
 
-# 3. Logika czyszczenia sesji przy zmianie modułu
-if "l_c" not in st.session_state or st.session_state.l_c != choice:
+# 3. Logika czyszczenia sesji przy zmianie modułu na nowy
+if st.session_state.l_c != choice:
     # Czyścimy zbędne dane tymczasowe z poprzedniego modułu
     for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
         if k in st.session_state: 
             del st.session_state[k]
     
+    # Dopiero teraz aktualizujemy informację o tym, w jakim module jesteśmy
     st.session_state.l_c = choice
     st.session_state.n_m = "ask"
     st.session_state.u_a = ""
@@ -705,6 +710,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             k_low = k.lower()
             f_code = "Inn"
             
+            # Pancerne mapowanie - radzi sobie ze starymi wpisami w bazie
             if k in tracked_codes: f_code = k
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
@@ -742,3 +748,26 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
                 detail_rows.append(d_row)
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+
+        # WYŚWIETLANIE: Wykres sumaryczny (na samym końcu pliku)
+        if global_time:
+            st.write("---")
+            # Filtrujemy kategorie, które mają więcej niż 0 minut
+            chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
+            
+            if chart_data:
+                fig = go.Figure(data=[go.Bar(
+                    x=list(chart_data.keys()), 
+                    y=list(chart_data.values()), 
+                    marker_color='#FF5252',
+                    text=list(chart_data.values()),
+                    textposition='auto'
+                )])
+                fig.update_layout(
+                    template="plotly_dark", 
+                    height=400, 
+                    title="Globalny czas na modułach (minuty)"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Brak wystarczającej ilości czasu (pełnych minut) do wygenerowania wykresu.")
