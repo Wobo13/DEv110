@@ -693,35 +693,29 @@ elif choice == "📊 Statystyki":
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
             
-            # Kompletna mapa skrótów z bazy na pełne nazwy (bez Admina)
+            # Tłumaczymy tylko kluczowe moduły do nauki. Reszta automatycznie trafi do "Inne"
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
-                "Fis": "Fiszki", "Tst": "Testy", "Gen": "Generator słów", 
-                "Skn": "Skaner AI", "Dod": "Dodaj", "Słn": "Słownik", 
-                "Sta": "Statystyki", "Kon": "Moje Konto", "Inn": "Inne"
+                "Fis": "Fiszki", "Tst": "Testy", "Sta": "Statystyki"
             }
             
-            # Twarda lista definiująca poprawną kolejność z paska nawigacji
+            # Skrócona lista definiująca poprawną kolejność w tabeli
             nav_order = [
-                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", 
-                "Generator słów", "Skaner AI", "Dodaj", "Słownik", 
-                "Statystyki", "Moje Konto", "Inne"
+                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Statystyki", "Inne"
             ]
             
-            # Agregacja minut do pełnych nazw (zapobiega dublowaniu kategorii)
+            # Agregacja minut
             aggregated_mins = {name: 0 for name in nav_order}
             
             for code, sec in time_stats.items():
-                # Jeśli kod to 'Adm' lub cokolwiek nierozpoznanego, wrzucamy do 'Inne'
+                # Jeśli modułu nie ma na liście 'display_names', ląduje w 'Inne'
                 name = display_names.get(code, "Inne")
-                if name not in aggregated_mins:
-                    name = "Inne" 
                 aggregated_mins[name] += sec
             
             t_data = []
             for name in nav_order:
                 mins = int(aggregated_mins[name] // 60)
-                # Dodajemy WSZYSTKIE moduły, nawet jeśli mają 0 minut, dla zachowania spójności
+                # Pokazujemy moduł nawet jeśli ma 0 minut, dla zachowania struktury
                 t_data.append({"Moduł": name, "Minuty": mins})
             
             st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
