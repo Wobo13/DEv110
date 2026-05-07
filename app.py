@@ -631,17 +631,103 @@ elif choice == "📦 Generator słów":
                 except Exception as e: 
                     st.error(f"Wystąpił błąd podczas pracy AI: {e}")
 
-# --- 12. SKANER ---
+# --- 12. SKANER AI ---
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
-    src = st.camera_input("Zrób zdjęcie notatek")
-    if src and st.button("Analizuj"):
-        res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
-        for w in json.loads(res).get("flashcards", []): 
-            save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
-        st.session_state.user_data["historical_cost"] += 0.05 # Dodanie kosztu skanera Vision
-        save_user_data(u, st.session_state.user_data)
-        st.success("Dodano zeskanowane słówka!"); st.rerun()
+    
+    # --- WYŚWIETLANIE WYNIKÓW PO OSTATNIM SKANOWANIU ---
+    if "last_scanned" in st.session_state:
+        st.success(f"🎉 Pomyślnie zeskanowano i dodano {len(st.session_state.last_scanned)} słówek!")
+        
+        df_new = pd.DataFrame(st.session_state.last_scanned)
+        st.dataframe(df_new, use_container_width=True, hide_index=True)
+        
+        if st.button("Ukryj listę", use_container_width=True):
+            del st.session_state.last_scanned
+            st.rerun()
+            
+        st.write("---")
+    # ----------------------------------------------------
+
+    st.write("Wybierz, w jaki sposób chcesz dostarczyć obraz do analizy:")
+    t1, t2 = st.tabs(["📁 Wgraj plik z dysku", "📷 Zrób zdjęcie aparatem"])
+    
+    img_to_process = None
+
+    with t1:
+        uploaded_file = st.file_uploader("Wybierz zdjęcie (PNG, JPG)", type=["png", "jpg", "jpeg"])
+        if uploaded_file:
+            img_to_process = uploaded_file
+
+    with t2:
+        camera_file = st.camera_input("Zrób zdjęcie notatek")
+        if camera_file:
+            img_to_process = camera_file
+
+    if img_to_process:
+        if st.button("🚀 Analizuj obraz", type="primary", use_container_width=True):
+            with st.spinner("AI analizuje obraz, odczytuje pismo i tworzy fiszki... To może zająć kilkanaście sekund."):
+                try:
+                    image = Image.open(img_to_process)
+                    
+                    # Zaawansowany prompt wymuszający pełną strukturę fiszki
+                    prompt = """
+                    Przeanalizuj dokładnie to zdjęcie. Znajdź na nim wszystkie niemieckie słówka, wyrażenia lub całe notatki.
+                    Dla każdego znalezionego pojęcia:
+                    1. Zapisz je poprawnie po niemiecku (z rodzajnikiem, jeśli to rzeczownik).
+                    2. Dodaj polskie tłumaczenie.
+                    3. Wymyśl 1-2 tagi (np. część mowy, odpowiedni poziom CEFR lub kategoria tematyczna).
+                    4. Utwórz 1 naturalne zdanie przykładowe po niemiecku wraz z polskim tłumaczeniem.
+                    Zwróć wynik TYLKO jako czysty format JSON:
+                    {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
+                    """
+                    
+                    raw_res = get_openai_response(prompt, img_obj=image)
+                    raw_res = raw_res.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(raw_res)
+                    
+                    flashcards_data = data.get("flashcards", data.get("words", []))
+                    
+                    if not flashcards_data:
+                        st.warning("AI nie było w stanie rozpoznać żadnych słówek na tym zdjęciu.")
+                    else:
+                        insert_payload = []
+                        display_list = []
+                        
+                        for w in flashcards_data:
+                            card = {
+                                "username": u,
+                                "de": w.get("de", ""),
+                                "pl": w.get("pl", ""),
+                                "category": w.get("category", "Skan"),
+                                "examples": w.get("examples", []),
+                                "next_review": str(date.today()),
+                                "origin": "Skaner"
+                            }
+                            insert_payload.append(card)
+                            display_list.append({
+                                "Niemiecki (DE)": card["de"], 
+                                "Polski (PL)": card["pl"],
+                                "Tagi": card["category"]
+                            })
+                            
+                        if insert_payload:
+                            # Masowe wrzucenie do bazy Supabase
+                            get_db().table("flashcards").insert(insert_payload).execute()
+                            
+                            added = len(insert_payload)
+                            st.session_state.user_data["historical_cost"] += 0.05 # Stały koszt wizji API
+                            save_user_data(u, st.session_state.user_data)
+                            
+                            # Odświeżenie lokalnej pamięci słówek
+                            st.session_state.flashcards = load_flashcards(u)
+                            
+                            # Zachowanie listy do wyświetlenia
+                            st.session_state.last_scanned = display_list
+                            st.rerun()
+                            
+                except Exception as e:
+                    st.error(f"Wystąpił błąd podczas analizy wizyjnej AI: {e}")
 
 # --- 13. DODAJ SŁÓWKO ---
 elif choice == "➕ Dodaj":
