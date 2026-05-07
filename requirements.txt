@@ -1,6 +1,8 @@
 streamlit
-openai
 pandas
-Pillow
+openai
+supabase
+postgrest
+gtts
 plotly
-gTTS
+Pillow
