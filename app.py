@@ -642,17 +642,43 @@ elif choice == "📊 Statystyki":
         with col_stats1:
             st.subheader("📈 Słówka wg poziomu")
             levels = ["A1", "A2", "B1", "B2", "C1"]
-            level_counts = {lvl: 0 for lvl in levels}
+            level_totals = {lvl: 0 for lvl in levels}
+            level_mastered = {lvl: 0 for lvl in levels}
             
-            # Przeszukiwanie tagów w poszukiwaniu poziomów
+            today_str = str(date.today())
+            
+            # Przeszukiwanie tagów w poszukiwaniu poziomów i sprawdzanie statusu opanowania
             if 'category' in df.columns:
-                for cat in df['category'].dropna():
+                for _, row in df.iterrows():
+                    cat = row.get('category')
+                    if pd.isna(cat) or not cat: 
+                        continue
+                        
                     cat_str = str(cat).upper()
+                    next_rev = str(row.get('next_review', today_str))
+                    
+                    # Słówko uznajemy za "opanowane" jeśli jego powtórka jest w przyszłości
+                    is_mastered = next_rev > today_str
+                    
                     for lvl in levels:
                         if lvl in cat_str:
-                            level_counts[lvl] += 1
-                            
-            df_levels = pd.DataFrame(list(level_counts.items()), columns=['Poziom', 'Liczba słówek'])
+                            level_totals[lvl] += 1
+                            if is_mastered:
+                                level_mastered[lvl] += 1
+            
+            # Generowanie danych do tabeli z procentami
+            level_data = []
+            for lvl in levels:
+                total = level_totals[lvl]
+                mastered = level_mastered[lvl]
+                perc = int(round((mastered / total) * 100)) if total > 0 else 0
+                level_data.append({
+                    "Poziom": lvl, 
+                    "Słówek": total, 
+                    "Opanowane": f"{perc}%"
+                })
+                
+            df_levels = pd.DataFrame(level_data)
             st.table(df_levels)
             
         with col_stats2:
@@ -672,7 +698,6 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
         st.info("Brak rozwiązanych testów.")
-
 # --- 16. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
