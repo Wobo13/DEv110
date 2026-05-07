@@ -674,13 +674,14 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     
     adm_list = []
     global_time = {}
-    
+    raw_debug_info = [] # Lista do debugowania nazw
+
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
     display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
-    # Mapa słów kluczowych do wyłapywania modułów z bazy
+    # Rozszerzona mapa słów kluczowych
     keyword_map = {
-        "pow": "Pow", "trn": "Trn", "qui": "Qiz", "qiz": "Qiz", 
+        "pow": "Pow", "trn": "Trn", "tre": "Trn", "qui": "Qiz", "qiz": "Qiz", 
         "fis": "Fis", "tst": "Tst", "tes": "Tst"
     }
 
@@ -694,19 +695,23 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         total_sec = 0
         
         for raw_module_name, seconds in user_stats.items():
+            # Zbieramy surowe nazwy do analizy pod tabelą
+            if username == u: # tylko dla Twojego konta, żeby nie śmiecić
+                raw_debug_info.append(f"'{raw_module_name}'")
+
             found_code = "Inn"
             raw_name_lower = raw_module_name.lower()
             
-            # 1. Próba dopasowania przez słowa kluczowe (najbardziej odporne)
-            for kw, code in keyword_map.items():
-                if kw in raw_name_lower:
-                    found_code = code
-                    break
-            
-            # 2. Jeśli nie znaleziono, sprawdź czy to nie jest czysty skrót
-            if found_code == "Inn" and raw_module_name in tracked_codes:
+            # 1. Sprawdzenie skrótów bezpośrednich (np. "Pow")
+            if raw_module_name in tracked_codes:
                 found_code = raw_module_name
-
+            else:
+                # 2. Próba dopasowania przez słowa kluczowe
+                for kw, code in keyword_map.items():
+                    if kw in raw_name_lower:
+                        found_code = code
+                        break
+            
             current_user_merged[found_code] += seconds
             total_sec += seconds
             global_time[found_code] = global_time.get(found_code, 0) + seconds
@@ -738,13 +743,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 detail_rows.append(d_row)
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-        if global_time:
-            st.write("---")
-            chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if v >= 60}
-            if chart_data:
-                fig = go.Figure(data=[go.Bar(
-                    x=list(chart_data.keys()), y=list(chart_data.values()), 
-                    marker_color='#FF5252', text=list(chart_data.values()), textposition='auto'
-                )])
-                fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (min)")
-                st.plotly_chart(fig, use_container_width=True)
+        # --- SEKCJA DIAGNOSTYCZNA (Usuń po naprawie) ---
+        if raw_debug_info:
+            st.divider()
+            st.write("🔧 **Diagnostyka bazy (surowe nazwy modułów):**")
+            st.code(", ".join(set(raw_debug_info)))
+        # -----------------------------------------------
