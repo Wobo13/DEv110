@@ -555,7 +555,8 @@ elif choice == "📦 Generator słów":
 
     cols = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
-        if cols[i].button(lvl, use_container_width=True):
+        # Dodany unikalny klucz dla przycisku, aby zapobiec gubieniu stanu
+        if cols[i].button(lvl, use_container_width=True, key=f"gen_btn_{lvl}"):
             with st.spinner(f"AI pobiera i analizuje słówka dla poziomu {lvl}... To potrwa tylko chwilę."):
                 try:
                     # Pobieranie bazy i odfiltrowanie już posiadanych
@@ -570,19 +571,25 @@ elif choice == "📦 Generator słów":
                     sel = random.sample(avail, min(25, len(avail)))
                     
                     # Generowanie danych przez AI
-                    prompt = f"Przetłumacz i otaguj: {sel}. JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"..., {lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
-                    data = json.loads(get_openai_response(prompt))
+                    prompt = f"Przetłumacz i otaguj: {sel}. Zwróć wynik TYLKO w formacie JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"{lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
                     
-                    # --- OPTYMALIZACJA: BULK INSERT (ZAPIS ZBIORCZY) ---
+                    raw_res = get_openai_response(prompt)
+                    # Pancerne czyszczenie odpowiedzi w razie gdyby OpenAI dodało znaczniki Markdown
+                    raw_res = raw_res.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(raw_res)
+                    
+                    # Czasem AI nazywa listę 'words' zamiast 'flashcards', zabezpieczamy się
+                    flashcards_data = data.get("flashcards", data.get("words", []))
+                    
                     insert_payload = []
                     display_list = [] # Do wyświetlenia użytkownikowi
                     
-                    for w in data.get("flashcards", []):
+                    for w in flashcards_data:
                         card = {
                             "username": u,
                             "de": w.get("de", ""),
                             "pl": w.get("pl", ""),
-                            "category": w.get("category", ""),
+                            "category": w.get("category", lvl),
                             "examples": w.get("examples", []),
                             "next_review": str(date.today()),
                             "origin": "Generator"
@@ -591,7 +598,7 @@ elif choice == "📦 Generator słów":
                         display_list.append({"Niemiecki (DE)": card["de"], "Polski (PL)": card["pl"]})
                     
                     if insert_payload:
-                        # Jedno zapytanie do bazy zamiast 25! (Ogromny skok wydajności)
+                        # Jedno zapytanie do bazy (Ogromny skok wydajności)
                         get_db().table("flashcards").insert(insert_payload).execute()
                         
                         added = len(insert_payload)
@@ -599,12 +606,18 @@ elif choice == "📦 Generator słów":
                         st.session_state.user_data["historical_cost"] += (added * 0.005) 
                         save_user_data(u, st.session_state.user_data)
                         
+                        # --- KLUCZOWA ZMIANA: POBRANIE NOWYCH FISZEK DO PAMIĘCI APLIKACJI ---
+                        st.session_state.flashcards = load_flashcards(u)
+                        
                         # Zapisanie listy do sesji, aby przetrwała st.rerun()
                         st.session_state.last_generated = display_list
                         st.rerun()
+                    else:
+                        # Jeśli payload jest pusty, AI nie zwróciło danych prawidłowo
+                        st.error("AI zwróciło pustą odpowiedź lub błędny format. Spróbuj kliknąć jeszcze raz.")
                         
                 except Exception as e: 
-                    st.error(f"Wystąpił błąd AI: {e}")
+                    st.error(f"Wystąpił błąd podczas pracy AI: {e}")
 
 # --- 12. SKANER ---
 elif choice == "📸 Skaner AI":
