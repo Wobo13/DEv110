@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V176 (New Module: Testy)"
+APP_VERSION = "V177 (Test Summary & Context Fix)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -382,7 +382,7 @@ elif choice == "📖 Słownik":
                         force_save()
                         st.rerun()
 
-# --- 📝 TESTY (NOWY MODUŁ) ---
+# --- 📝 TESTY (V177 - Fix Podsumowania i Kontekstu) ---
 elif choice == "📝 Testy":
     update_activity("Testy")
     st.header("📝 Egzamin Kontekstowy")
@@ -397,7 +397,7 @@ elif choice == "📝 Testy":
             n_q = st.slider("Liczba pytań", 5, 20, 5)
             
             if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
-                with st.spinner("AI przygotowuje zadania..."):
+                with st.spinner("AI przygotowuje zadania z kontekstem..."):
                     filtered = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
                     if len(filtered) < 5:
                         st.error("Zbyt mało słówek w tej kategorii.")
@@ -405,12 +405,13 @@ elif choice == "📝 Testy":
                         sample = random.sample(filtered, min(n_q, len(filtered)))
                         words_str = ", ".join([f"{w['de']} ({w['pl']})" for w in sample])
                         
+                        # Zmieniony Prompt: Wymusza pole 'hint' dla kontekstu
                         prompt = f"""Generate a German language test for these words: {words_str}.
                         For each word, create 1 question. Rotate between 3 types:
-                        1. 'LUKA': A German sentence with the word replaced by '____'. Provide the missing word as 'correct'.
-                        2. 'QUIZ': A German sentence with '____', provide 'correct' word and 3 'distractors'.
-                        3. 'TLUMACZENIE': A Polish sentence to be translated to German containing the word.
-                        Output JSON: {{"questions": [ {{"type": "LUKA", "sentence": "...", "correct": "..."}}, ... ]}}"""
+                        1. 'LUKA': A German sentence with the word replaced by '____'. Provide 'correct' word AND a 'hint' (Polish translation of THAT missing word).
+                        2. 'QUIZ': A German sentence with '____', provide 'correct' word, 'hint' (Polish translation) and 3 'distractors'.
+                        3. 'TLUMACZENIE': A Polish sentence to be translated to German containing the word. Provide the German sentence as 'correct'.
+                        Output JSON: {{"questions": [ {{"type": "LUKA", "sentence": "...", "correct": "...", "hint": "..."}}, ... ]}}"""
                         
                         try:
                             res = get_openai_response(prompt)
@@ -434,18 +435,19 @@ elif choice == "📝 Testy":
                 st.write(f"### Pytanie {idx+1} z {len(qs)}")
                 st.progress((idx) / len(qs))
                 
+                u_ans = ""
                 if q['type'] == "LUKA":
-                    st.info("Uzupełnij brakujące słowo w zdaniu:")
+                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}")
                     st.markdown(f"#### `{q['sentence']}`")
-                    u_ans = st.text_input("Twoja odpowiedź:", key=f"q_{idx}")
+                    u_ans = st.text_input("Wpisz brakujące słowo (DE):", key=f"q_{idx}")
                 
                 elif q['type'] == "QUIZ":
-                    st.info("Wybierz pasujące słowo:")
+                    st.info(f"Podpowiedź (PL): {q.get('hint', 'brak')}")
                     st.markdown(f"#### `{q['sentence']}`")
                     opts = q.get('distractors', []) + [q['correct']]
-                    random.seed(idx) # Stała kolejność dla tego pytania
+                    random.seed(idx)
                     random.shuffle(opts)
-                    u_ans = st.radio("Opcje:", opts, key=f"q_{idx}")
+                    u_ans = st.radio("Wybierz poprawną opcję:", opts, key=f"q_{idx}")
                 
                 elif q['type'] == "TLUMACZENIE":
                     st.info("Przetłumacz na niemiecki:")
@@ -453,22 +455,31 @@ elif choice == "📝 Testy":
                     u_ans = st.text_input("Twoja odpowiedź:", key=f"q_{idx}")
 
                 if st.button("Zatwierdź ➡️", use_container_width=True):
-                    # Prosta weryfikacja (dla LUKA i QUIZ)
+                    # Zapisujemy odpowiedź użytkownika w obiekcie pytania
+                    st.session_state.test_q[idx]['user_ans'] = u_ans
+                    
                     correct = q['correct'].lower().strip()
                     user = u_ans.lower().strip()
                     
-                    if user == correct or (q['type'] == "TLUMACZENIE" and len(user) > 3):
-                        # W tłumaczeniu AI mogłoby sprawdzać dokładniej, tu upraszczamy lub dodajemy info
+                    # Weryfikacja
+                    is_ok = False
+                    if q['type'] == "TLUMACZENIE":
+                        # Tłumaczenie sprawdzamy liberalnie lub AI (tutaj: uproszczenie)
+                        is_ok = (len(user) > 5) 
+                    else:
+                        is_ok = (user == correct)
+
+                    if is_ok:
                         st.session_state.test_score += 1
                         st.toast("Dobrze! 🌟")
                     else:
-                        st.error(f"Niestety. Poprawna odpowiedź: {q['correct']}")
-                        time.sleep(1.5)
+                        st.error(f"Źle. Poprawnie: {q['correct']}")
+                        time.sleep(1)
                     
                     st.session_state.test_idx += 1
                     st.rerun()
             
-            # Faza 3: Wyniki
+            # Faza 3: Wyniki (ROZBUDOWANE PODSUMOWANIE)
             else:
                 st.balloons()
                 score = st.session_state.test_score
@@ -476,13 +487,32 @@ elif choice == "📝 Testy":
                 perc = round((score/total)*100)
                 
                 st.markdown(f"""
-                <div style="text-align:center; padding:40px; border-radius:20px; background:#1E1E1E; border:2px solid #4CAF50;">
-                    <h1>Koniec Testu! 🏁</h1>
-                    <h2 style="color:#4CAF50;">Twój wynik: {score} / {total} ({perc}%)</h2>
+                <div style="text-align:center; padding:30px; border-radius:20px; background:#111; border:2px solid #1E88E5; margin-bottom:25px;">
+                    <h1 style="margin:0;">Wynik: {score} / {total}</h1>
+                    <h2 style="color:#1E88E5;">Sprawność: {perc}%</h2>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                if st.button("Powrót do menu", use_container_width=True):
+                st.subheader("📋 Szczegółowy raport:")
+                for i, q in enumerate(qs):
+                    u_a = q.get('user_ans', 'Brak')
+                    c_a = q['correct']
+                    is_correct_q = u_a.lower().strip() == c_a.lower().strip()
+                    
+                    icon = "✅" if is_correct_q else "❌"
+                    color = "#2E7D32" if is_correct_q else "#C62828"
+                    
+                    with st.expander(f"{icon} Pytanie {i+1}: {q['sentence'][:40]}..."):
+                        st.write(f"**Treść:** {q['sentence']}")
+                        if 'hint' in q: st.write(f"**Kontekst (PL):** {q['hint']}")
+                        st.markdown(f"""
+                        <div style="padding:10px; border-radius:10px; background:{color}22; border-left:5px solid {color};">
+                            <p style="margin:0;">Twoja odpowiedź: <b>{u_a}</b></p>
+                            <p style="margin:0;">Poprawna: <b>{c_a}</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                if st.button("Powrót do menu", use_container_width=True, type="primary"):
                     del st.session_state.test_q
                     st.rerun()
 
