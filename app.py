@@ -763,26 +763,53 @@ elif choice == "📊 Statystyki":
 # --- 16. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
+    
+    # --- WYŚWIETLANIE KOMUNIKATÓW PO PRZEŁADOWANIU ---
+    if "acc_msg" in st.session_state:
+        st.success(st.session_state.acc_msg)
+        del st.session_state.acc_msg
+    # ------------------------------------------------
+
     with st.expander("🔑 Zmień hasło"):
         with st.form("pw"):
             o, n = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password")
             if st.form_submit_button("Zmień", use_container_width=True):
-                db = get_db(); res = db.table("users_auth").select("*").eq("username", u).execute()
+                db = get_db()
+                res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(o):
-                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute(); st.success("Hasło zaktualizowane!")
+                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute()
+                    st.success("Hasło zaktualizowane!")
+                else:
+                    st.error("Błędne stare hasło!")
     
-    st.divider(); st.subheader("🗑️ Usuwanie danych")
+    st.divider()
+    st.subheader("🗑️ Usuwanie danych")
     conf = st.checkbox("Potwierdzam chęć usunięcia danych")
     
     st.write("Usuń konkretny poziom z chmury:")
     col_d = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
-        if col_d[i].button(lvl, disabled=not conf):
-            get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute(); st.rerun()
+        # Dodany klucz (key), by przyciski w pętli działały stabilnie
+        if col_d[i].button(lvl, disabled=not conf, key=f"del_lvl_{lvl}"):
+            with st.spinner("Usuwanie..."):
+                res = get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute()
+                deleted_count = len(res.data) if res.data else 0
+                
+                # Zapisujemy wiadomość do sesji i odświeżamy lokalną bazę
+                st.session_state.acc_msg = f"🗑️ Pomyślnie usunięto {deleted_count} słówek powiązanych z poziomem {lvl}."
+                st.session_state.flashcards = load_flashcards(u)
+                st.rerun()
     
     st.write("---")
     if st.button("🔥 ZRESETUJ CAŁĄ MOJĘ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
-        get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
+        with st.spinner("Czyszczenie całej bazy..."):
+            res = get_db().table("flashcards").delete().eq("username", u).execute()
+            deleted_count = len(res.data) if res.data else 0
+            
+            # Zapisujemy wiadomość do sesji i czyścimy lokalną bazę
+            st.session_state.acc_msg = f"🔥 Baza została zresetowana! Trwale usunięto {deleted_count} słówek."
+            st.session_state.flashcards = []
+            st.rerun()
 
 # --- 17. ADMIN PRO ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
