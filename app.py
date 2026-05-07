@@ -15,16 +15,16 @@ import plotly.graph_objects as go
 from openai import OpenAI
 from postgrest import SyncPostgrestClient
 
-# --- KONFIGURACJA SUPABASE (Pobieranie z Twoich Secrets) ---
+# --- KONFIGURACJA SUPABASE (Pobieranie z Secrets) ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
 # --- KONFIGURACJA APKI ---
-APP_VERSION = "V195 (Full Database & Fixes)"
+APP_VERSION = "V196 (The Ultimate Database Fix)"
 ADMIN_USER = "wobo"
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-# MAPOWANIE NAZW MODUŁÓW (Ujednolicenie skrótów)
+# MAPOWANIE NAZW MODUŁÓW (Ujednolicenie skrótów dla Admina)
 CLEAN_TIME_LABELS = {
     "Powtórki": "Pow", "Nauka": "Pow", "Pow": "Pow", "Nau": "Pow", "N": "Pow", "P": "Pow",
     "Trening": "Trn", "Trn": "Trn", "T": "Trn",
@@ -56,7 +56,7 @@ VOCAB_DB = {
     ],
     "B1": [
         "Erfahrung", "Erfolg", "Entscheidung", "Meinung", "Gefühl", "Beziehung", "Zukunft", "Vergangenheit", "Umwelt", "Natur", "Gesellschaft", "Politik", "Wirtschaft", "Wissenschaft", "Technik", "Beruf", "Ausbildung", "Studium", "Gehalt", "Vertrag", "Vorbereiten", "Organisieren", "Diskutieren", "Argumentieren", "Erklären", "Empfehlen", "Vorschlagen", "Warnen", "Hoffen", "Träumen", "Gefährlich", "Sicher", "Möglich", "Unmöglich", "Nötig", "Nützlich", "Schwierig", "Leicht", "Interessant", "Langweilig", "Obwohl", "Trotzdem", "Deshalb", "Deswegen", "Falls", "Damit", "Stattdessen", "Zuerst", "Schließlich", "Besonders",
-        "Abhängig", "Ablehnen", "Abmachen", "Abnehmen", "Abonnieren", "Absagen", "Abschließen", "Absolvieren", "Abstimmen", "Abwarten", "Achten", "Ändern", "Anerkennen", "Anfangen", "Anfordern", "Angeben", "Angehören", "Angreifen", "Anhalten", "Anklagen", "Ankommen", "Ankündigen", "Anmelden", "Annehmen", "Anpassen", "Anrufen", "Anschließen", "Ansehen", "Ansprechen", "Anstrengen", "Antworten", "Anwenden", "Anzeigen", "Anziehen", "Arbeiten", "Ärgern", "Aufbauen", "Aufgeben", "Aufhalten", "Aufhören", "Aufklären", "Aufmerksam", "Aufaufnahme", "Aufräumen", "Aufregen", "Aufstehen", "Auftreten", "Aufwachen", "Ausbilden", "Ausdehnen",
+        "Abhängig", "Ablehnen", "Abmachen", "Abnehmen", "Abonnieren", "Absagen", "Abschließen", "Absolvieren", "Abstimmen", "Abwarten", "Achten", "Ändern", "Anerkennen", "Anfangen", "Anfordern", "Angeben", "Angehören", "Angreifen", "Anhalten", "Anklagen", "Ankommen", "Ankündigen", "Anmelden", "Annehmen", "Anpassen", "Anrufen", "Anschließen", "Ansehen", "Ansprechen", "Anstrengen", "Antworten", "Anwenden", "Anzeigen", "Anziehen", "Arbeiten", "Ärgern", "Aufbauen", "Aufgeben", "Aufhalten", "Aufhören", "Aufklären", "Aufmerksam", "Aufaufnahme", "Aufräumen", "Aufregen", "Aufstehen", "Aufutreten", "Aufwachen", "Ausbilden", "Ausdehnen",
         "Ausdrücken", "Auseinander", "Ausfallen", "Ausfüllen", "Ausgeben", "Ausgehen", "Ausgleichen", "Aushalten", "Auskennen", "Auskommen", "Auslachen", "Ausleihen", "Ausmachen", "Ausnutzen", "Auspacken", "Ausprobieren", "Ausruhen", "Ausscheiden", "Ausschließen", "Aussehen", "Aussprechen", "Ausstellen", "Aussuchen", "Austauschen", "Austreten", "Ausüben", "Auswandern", "Auswählen", "Ausweisen", "Auswirken", "Ausziehen", "Backen", "Bauen", "Beachten", "Beantragen", "Beantworten", "Bebauen", "Bedanken", "Bedeuten", "Bedienen", "Bedingung", "Beeinflussen", "Beenden", "Befinden", "Befolgen", "Befreien", "Begegnen", "Begeistern", "Beginnen", "Begleiten",
         "Begrenzen", "Begründen", "Begrüßen", "Behalten", "Behandeln", "Behaupten", "Behindern", "Beibringen", "Beifügen", "Beilegen", "Beitragen", "Bekannt", "Bekommen", "Belegen", "Beleidigen", "Belohnen", "Bemühen", "Benutzen", "Benötigen", "Beraten", "Berechnen", "Bereiten", "Berichten", "Berücksichtigen", "Beruhigen", "Berühmt", "Beschädigen", "Beschäftigen", "Bescheiden", "Bescheinen", "Beschleunigen", "Beschließen", "Beschreiben", "Beschweren", "Besichtigen", "Besitzen", "Besonderer", "Besprechen", "Bestätigen", "Bestehen", "Bestellen", "Bestimmen", "Bestrafen", "Besuchen", "Beteiligen", "Betrachten", "Betreuen", "Betrügen", "Betteln", "Bevor",
         "Bevorzugen", "Bewahren", "Bewegen", "Beweisen", "Bewerben", "Bewerten", "Bewohner", "Bezahlen", "Bezeichnen", "Beziehen", "Beziehung", "Bezirk", "Bezug", "Bieten", "Bilden", "Bildung", "Billigen", "Binden", "Bitten", "Blasen", "Bleiben", "Blick", "Blind", "Blitz", "Bloß", "Blühen", "Blume", "Blut", "Boden", "Bogen", "Bohren", "Boot", "Bord", "Böse", "Braten", "Brauchen", "Brauen", "Brechen", "Breit", "Brennen", "Bringen", "Bruch", "Brücke", "Bruder", "Brust", "Bube", "Buch", "Buchen", "Bühne", "Bund"
@@ -143,10 +143,6 @@ def is_correct(u_ans, c_ans_str):
     correct_options = [normalize_text(s) for s in re.split(r'[/,;]', str(c_ans_str))]
     return user in correct_options
 
-def check_test_answer(u_ans, q_obj):
-    u = normalize_text(u_ans); c = normalize_text(q_obj.get('correct', ''))
-    return u == c if u and c else False
-
 # --- LOGOWANIE ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
@@ -212,21 +208,24 @@ menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📝 T
 if u == ADMIN_USER: menu.append("👑 Admin")
 choice = st.sidebar.radio("Nawigacja", menu)
 
+# RESET STANÓW MODUŁÓW
 if "l_c" not in st.session_state or st.session_state.l_c != choice:
     for k in ["test_q", "test_idx", "test_score", "cur_review_list", "n_idx", "q_c", "q_s", "f_idx", "f_flipped", "pending"]:
         if k in st.session_state: del st.session_state[k]
     st.session_state.l_c, st.session_state.n_m, st.session_state.u_a = choice, "ask", ""
 
-# --- MODUŁY NAUKI ---
+# --- MODUŁY NAUKI (POWTÓRKI / TRENING) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki")
     all_cats = sorted(list(set([c.get("category", "Inne") for c in st.session_state.flashcards])))
     sel_kat = st.selectbox("🎯 Kategoria:", ["Wszystkie"] + all_cats)
+    
     if "cur_review_list" not in st.session_state:
         pool = [c for c in st.session_state.flashcards if sel_kat == "Wszystkie" or c.get("category") == sel_kat]
         if is_r: pool = [c for c in pool if c.get("next_review", str(today_dt)) <= str(today_dt)]
         random.shuffle(pool); st.session_state.cur_review_list, st.session_state.n_idx = pool, 0
+
     cards = st.session_state.cur_review_list
     if not cards: st.success("Wszystko opanowane! 🎊")
     else:
@@ -244,24 +243,31 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             else:
                 if is_correct(st.session_state.u_a, c['pl']): st.success(f"✅ Dobrze: {c['pl']}")
                 else: st.error(f"❌ Poprawnie: {c['pl']}")
+                
                 exs = c.get("examples", [])
                 first_ex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs)>0 else None
                 if isinstance(exs, list):
                     for ex in exs:
                         if isinstance(ex, dict) and 'de' in ex:
                             st.markdown(f"🇩🇪 {ex['de']}<br>🇵🇱 {ex.get('pl','')}", unsafe_allow_html=True)
+                
                 play_audio(c['de'], first_ex_de)
+                
                 if is_r:
-                    col1, col2, col3 = st.columns(3); d = None
+                    st.write("---")
+                    col1, col2, col3 = st.columns(3)
+                    d = None
                     if col1.button("🔴 Słabo (1d)", use_container_width=True): d = 1
                     if col2.button("🟡 Średnio (3d)", use_container_width=True): d = 3
                     if col3.button("🟢 Dobrze (7d)", use_container_width=True): d = 7
                     if d:
                         update_word(c['id'], {"next_review": str(today_dt + timedelta(days=d))})
                         st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
-                elif st.button("Dalej ➡️", use_container_width=True):
-                    st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
+                else:
+                    if st.button("Dalej ➡️", use_container_width=True):
+                        st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
 
+# --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz"); all_c = st.session_state.flashcards
     if len(all_c) < 4: st.warning("Dodaj min. 4 słówka!")
@@ -286,6 +292,7 @@ elif choice == "🕹️ Quiz":
             play_audio(c['de'], ex_de)
             if st.button("Dalej", use_container_width=True): del st.session_state.q_c; st.rerun()
 
+# --- 🎴 FISZKI ---
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki"); all_cats = sorted(list(set([c.get("category", "Inne") for c in st.session_state.flashcards])))
     sel_kat = st.selectbox("🎯 Kategoria:", ["Wszystkie"] + all_cats)
@@ -312,7 +319,7 @@ elif choice == "🎴 Fiszki":
 # --- 📝 TESTY (NAPRAWA 0/0 I KONTEKST) ---
 elif choice == "📝 Testy":
     update_activity("Testy"); st.header("📝 Egzamin Kontekstowy")
-    if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek.")
+    if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek w bazie.")
     else:
         if "test_q" not in st.session_state:
             n_q = st.slider("Liczba pytań", 5, 20, 5)
@@ -320,7 +327,7 @@ elif choice == "📝 Testy":
                 with st.spinner("AI przygotowuje zadania..."):
                     sample = random.sample(st.session_state.flashcards, min(n_q, len(st.session_state.flashcards)))
                     words_str = ", ".join([f"{w['de']} ({w['pl']})" for w in sample])
-                    prompt = f"Generate EXACTLY {len(sample)} German questions for: {words_str}. Provide 'hint' (Polish context), 'sentence', 'correct' (DE). JSON key 'questions'."
+                    prompt = f"Generate EXACTLY {len(sample)} German questions for: {words_str}. Provide 'hint' (Polish context), 'sentence', 'correct' (DE). For QUIZ provide 3 'distractors'. JSON key 'questions'."
                     try:
                         client = OpenAI(api_key=API_KEY)
                         res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"user","content":prompt}], response_format={"type":"json_object"})
@@ -330,7 +337,7 @@ elif choice == "📝 Testy":
                             st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = valid_qs, 0, 0
                             st.session_state.user_data["historical_cost"] += 0.01; st.rerun()
                         else: st.error("AI nie zwróciło zadań.")
-                    except: st.error("Błąd AI.")
+                    except: st.error("Błąd połączenia z AI.")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
@@ -356,21 +363,19 @@ elif choice == "📝 Testy":
                     else: st.error(f"Źle. Poprawnie: {correct_w}"); time.sleep(1.2)
                     st.session_state.test_idx += 1; st.rerun()
             else:
-                total = len(qs)
-                if total > 0:
-                    score = st.session_state.test_score
-                    perc = round((score/total)*100)
-                    st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
-                    save_user_data(u, st.session_state.user_data); st.balloons()
-                    st.success(f"Wynik: {score}/{total} ({perc}%)")
+                score, total = st.session_state.test_score, len(qs)
+                perc = round((score/total)*100) if total > 0 else 0
+                st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
+                save_user_data(u, st.session_state.user_data); st.balloons()
+                st.success(f"Wynik: {score}/{total} ({perc}%)")
                 if st.button("Powrót"): del st.session_state.test_q; st.rerun()
 
 # --- MODUŁY NARZĘDZIOWE ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner"); src = st.camera_input("Zdjęcie"); up = st.file_uploader("Lub plik")
-    if (src or up) and st.button("🚀 ANALIZUJ"):
+    if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         try:
-            with st.spinner("Przetwarzanie..."):
+            with st.spinner("Przetwarzanie obrazu..."):
                 img = Image.open(src or up).convert("RGB")
                 buffered = BytesIO(); img.thumbnail((800, 800)); img.save(buffered, format="JPEG")
                 img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -382,61 +387,70 @@ elif choice == "📸 Skaner AI":
         except Exception as e: st.error(f"Błąd AI: {e}")
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
-        if st.button("✅ ZAPISZ"):
+        if st.button("✅ ZAPISZ", use_container_width=True):
             for w in ed.to_dict('records'):
-                if 'de' in w and 'pl' in w: save_word(u, {"de":w['de'], "pl":w['pl'], "category":w.get('category','Skaner'), "next_review":str(today_dt), "origin":"Skaner"})
-            del st.session_state.pending; st.rerun()
+                if 'de' in w and 'pl' in w: save_word(u, {"de":w['de'], "pl":w['pl'], "category":w.get('category','Skaner'), "next_review":str(today_dt), "origin":"Skaner", "examples":w.get('examples', [])})
+            del st.session_state.pending; st.success("Dodano do chmury!"); time.sleep(1); st.rerun()
 
 elif choice == "📦 Generator słów":
     update_activity("Generator"); lvls = ["A1", "A2", "B1", "B2", "C1"]; cols = st.columns(5)
     for i, lvl in enumerate(lvls):
-        if cols[i].button(lvl):
+        if cols[i].button(lvl, use_container_width=True):
             with st.spinner(f"Szukam 25 słówek {lvl}..."):
                 try:
                     my_w = [x['de'].lower() for x in st.session_state.flashcards]
-                    selection = random.sample([w for w in VOCAB_DB[lvl] if w.lower() not in my_w], 25)
+                    available = [w for w in VOCAB_DB[lvl] if w.lower() not in my_w]
+                    if len(available) < 25: selection = available
+                    else: selection = random.sample(available, 25)
+                    
                     client = OpenAI(api_key=API_KEY)
-                    prompt = f"Translate to PL: {selection}. Polish categories. JSON key 'flashcards'."
+                    prompt = f"Translate to Polish: {selection}. Provide descriptive Polish category and 1 example sentence with translation for each. Output JSON key 'flashcards'."
                     res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"user","content":prompt}], response_format={"type":"json_object"})
                     data = json.loads(res.choices[0].message.content)
                     if "flashcards" in data:
-                        for w in data["flashcards"]: save_word(u, {**w, "next_review":str(today_dt), "origin":"Generator", "category":f"{lvl}-{w.get('category','Podstawowe')}"})
-                        st.session_state.user_data["historical_cost"] += 0.01; st.rerun()
-                except: st.error("Błąd.")
+                        for w in data["flashcards"]:
+                            save_word(u, {**w, "next_review":str(today_dt), "origin":"Generator", "category":f"{lvl}-{w.get('category','Inne')}"})
+                        st.session_state.user_data["historical_cost"] += 0.01; st.success("Dodano 25 słówek!"); time.sleep(1); st.rerun()
+                except Exception as e: st.error(f"Błąd generatora: {e}")
 
 elif choice == "➕ Dodaj":
-    st.header("Dodaj słówko")
+    st.header("➕ Dodaj słówko"); update_activity("Dodaj")
     with st.form("man_f"):
-        de, pl, kat = st.text_input("Niemiecki"), st.text_input("Polski"), st.text_input("Kategoria")
+        de = st.text_input("Niemiecki")
+        pl = st.text_input("Polski")
+        kat = st.text_input("Kategoria")
         if st.form_submit_button("Zapisz"):
             if de and pl: 
-                save_word(u, {"de":de, "pl":pl, "category":kat or "Inne", "next_review":str(today_dt), "origin":"Dodaj"})
-                st.success("Dodano!"); st.rerun()
+                save_word(u, {"de":de, "pl":pl, "category":kat or "Inne", "next_review":str(today_dt), "origin":"Dodaj", "examples":[]})
+                st.success("Zapisano!"); time.sleep(1); st.rerun()
 
 elif choice == "📖 Słownik":
     update_activity("Słownik"); search = st.text_input("Szukaj:")
     for i, c in enumerate(st.session_state.flashcards):
         if search.lower() in c['de'].lower() or search.lower() in c['pl'].lower():
             with st.expander(f"📝 {c['de']} - {c['pl']}"):
-                if st.button("Usuń", key=f"del_{c['id']}"): delete_word(c['id']); st.rerun()
+                c1, c2 = st.columns(2)
+                if c2.button("Usuń", key=f"del_{c['id']}"): 
+                    delete_word(c['id']); st.success("Usunięto!"); time.sleep(0.5); st.rerun()
 
 # --- STATYSTYKI & ADMIN ---
 elif choice == "📊 Statystyki":
     update_activity("Inn"); df = pd.DataFrame(st.session_state.flashcards)
-    st.header("Twoje Statystyki")
+    st.header("📊 Twoje Statystyki")
     if not df.empty:
-        c1, c2, c3 = st.columns(3); c1.metric("Słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d"); c3.metric("Opanowane", len(df[df['next_review'].apply(is_word_mastered)]))
-        st.subheader("Podział na poziomy")
+        c1, c2, c3 = st.columns(3); c1.metric("Słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d"); c3.metric("Opanowane", len(df[df['next_review'].apply(lambda x: (date.fromisoformat(x)-date.today()).days >= 7 if x else False)]))
+        st.subheader("🎯 Podział na poziomy")
         stats = []
         for l in ["A1", "A2", "B1", "B2", "C1"]:
             l_df = df[df['category'].str.contains(l, na=False)]
-            kn = len(l_df[l_df['next_review'].apply(is_word_mastered)]) if not l_df.empty else 0
-            stats.append({"Poziom":l, "Słówek":len(l_df), "Opanowane":kn, "%":f"{round((kn/len(l_df))*100) if not l_df.empty else 0}%"})
+            stats.append({"Poziom":l, "Słówek":len(l_df), "% Wiedzy": f"{round((len(l_df)/len(df))*100) if not df.empty else 0}%"})
         st.table(pd.DataFrame(stats))
+        st.subheader("📜 Historia Testów")
+        st.table(pd.DataFrame(st.session_state.user_data.get("test_history", [])[::-1]).head(10))
 
 elif choice == "👑 Admin":
-    st.header("Panel Admina")
-    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage")
+    st.header("👑 Panel Admina")
+    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     db = get_db()
     ud = db.table("user_data").select("*").execute().data
     adm_list = []; total_cost = 0.0; global_time = {}
@@ -446,7 +460,6 @@ elif choice == "👑 Admin":
         man = len([x for x in cards if x.get("origin") == "Dodaj"])
         gen = len([x for x in cards if x.get("origin") == "Generator"])
         skn = len([x for x in cards if x.get("origin") == "Skaner"])
-        
         t_s = user.get("time_stats", {})
         merged = {}
         for m, s in t_s.items():
@@ -455,26 +468,15 @@ elif choice == "👑 Admin":
             global_time[lbl] = global_time.get(lbl, 0) + s
         u_times = ", ".join([f"{l}:{round(s/60)}m" for l, s in merged.items() if s > 15])
         adm_list.append({"Użytkownik":username, "Słów":len(cards), "Ręcznie":man, "Gen":gen, "Skan":skn, "Czas":u_times, "Koszt":round(user.get("historical_cost",0),4)})
-    
     st.columns(2)[0].metric("Łącznie słówek", sum(x['Słów'] for x in adm_list))
     st.columns(2)[1].metric("Suma kosztów", f"{total_cost:.2f} PLN")
     st.table(pd.DataFrame(adm_list))
     if global_time:
-        fig = go.Figure(data=[go.Bar(x=list(global_time.keys()), y=list(global_time.values()), text=[f"{round(v/60)}m" for v in global_time.values()], textposition='auto')])
-        fig.update_layout(template="plotly_dark", height=400, title="Czas globalny (min)")
-        st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(data=[go.Bar(x=list(global_time.keys()), y=list(global_time.values()), marker_color='#1E88E5')])
+        fig.update_layout(template="plotly_dark", height=400, title="Czas globalny (minuty)"); st.plotly_chart(fig, use_container_width=True)
 
 elif choice == "⚙️ Moje Konto":
-    update_activity("Inn"); st.header("Konto")
-    with st.expander("🔑 Zmień hasło"):
-        with st.form("pw_f"):
-            o, n, cp = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password"), st.text_input("Powtórz", type="password")
-            if st.form_submit_button("Zmień"):
-                db = get_db()
-                res = db.table("users_auth").select("*").eq("username", u).execute()
-                if res.data and res.data[0]["password_hash"] == hash_pw(o) and n == cp:
-                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute()
-                    st.success("OK!")
-    st.divider(); conf = st.checkbox("Potwierdzam usuwanie")
-    if st.button("RESET BAZY", type="primary", disabled=not conf):
+    update_activity("Inn"); st.header("Zarządzanie Kontem")
+    conf = st.checkbox("Potwierdzam usuwanie danych")
+    if st.button("WYCZYŚĆ MOJĄ BAZĘ SŁÓWEK", type="primary", disabled=not conf):
         get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
