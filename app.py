@@ -19,7 +19,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V213 (Test Summary & Stats)"
+APP_VERSION = "V214 (Stats Table Fix & UI Polish)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -178,6 +178,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                 else: st.error(f"❌ Poprawnie: {c['pl']}")
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                if fex: st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
                 play_audio(c['de'], fex)
                 if is_r:
                     st.write("Jak oceniasz?")
@@ -251,7 +252,7 @@ elif choice == "🎴 Fiszki":
         if c3.button("Następna ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
     else: st.warning("Brak słówek.")
 
-# --- 10. TESTY Z PODSUMOWANIEM ---
+# --- 10. TESTY ---
 elif choice == "📝 Testy":
     update_activity("Testy"); st.header("📝 Test")
     if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek.")
@@ -265,17 +266,19 @@ elif choice == "📝 Testy":
                         prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
                         data = json.loads(get_openai_response(prompt))
                         st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
-                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}")
+                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}. Spróbuj ponownie.")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
-                q = qs[t_idx]; st.info(f"💡 Podpowiedź: {q.get('hint','brak')}"); st.write(f"#### {q.get('sentence','?')}")
+                q = qs[t_idx]; st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
+                st.markdown(f"### {q.get('sentence','?')}")
                 correct = str(q.get('correct',''))
                 
                 if q.get('type') == "QUIZ":
                     opts = list(set(q.get('distractors', []) + [correct])); random.shuffle(opts)
-                    for o in opts:
-                        if st.button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
+                    cols = st.columns(2)
+                    for i, o in enumerate(opts):
+                        if cols[i%2].button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
                             st.session_state.test_q[t_idx]['user_ans'] = o
                             if o == correct: st.session_state.test_score += 1; st.toast("Dobrze!")
                             else: st.error(f"Źle. Poprawnie: {correct}"); time.sleep(1)
@@ -288,7 +291,6 @@ elif choice == "📝 Testy":
                         else: st.error(f"Poprawnie: {correct}"); time.sleep(1)
                         st.session_state.test_idx += 1; st.rerun()
             else:
-                # WIDOK PODSUMOWANIA TESTU
                 score, total = st.session_state.test_score, len(qs)
                 perc = round((score/total)*100) if total > 0 else 0
                 st.markdown(f'<div style="text-align:center; padding:20px; border-radius:15px; background:#111; border:2px solid #1E88E5;"><h1>Twój wynik: {score}/{total} ({perc}%)</h1></div>', unsafe_allow_html=True)
@@ -371,20 +373,26 @@ elif choice == "📖 Słownik":
                 if st.form_submit_button("Zapisz", use_container_width=True): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
             if st.button("Usuń", key=f"del_{c['id']}", use_container_width=True): delete_word(c['id']); st.rerun()
 
-# --- 15. STATYSTYKI Z HISTORIĄ TESTÓW ---
+# --- 15. STATYSTYKI ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki"); st.header("📊 Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
     if not df.empty:
         c1, c2 = st.columns(2); c1.metric("Baza słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
         st.subheader("Źródła słówek")
-        st.table(df.groupby('origin').size())
+        
+        # Oczyszczenie tabelki "origin" by wyglądała profesjonalnie
+        origin_counts = df['origin'].value_counts().reset_index()
+        origin_counts.columns = ['Źródło', 'Liczba słówek']
+        st.table(origin_counts)
     
     st.write("---")
     st.subheader("📝 Historia rozwiązanych testów")
     t_hist = st.session_state.user_data.get("test_history", [])
     if t_hist:
         hist_df = pd.DataFrame(t_hist)[::-1]
+        # Bezpieczne ułożenie kolumn, aby zawsze trafiały we właściwe miejsce
+        hist_df = hist_df[["date", "score", "total", "perc"]]
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
