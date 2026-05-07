@@ -770,10 +770,33 @@ elif choice == "⚙️ Moje Konto":
         del st.session_state.acc_msg
     # ------------------------------------------------
 
+    # --- 1. PREFERENCJE NAUKI ---
+    with st.expander("🛠️ Preferencje nauki"):
+        st.write("Dostosuj działanie aplikacji do swojego stylu:")
+        
+        # Inicjalizacja ustawień w user_data, jeśli ich nie ma
+        if "settings" not in st.session_state.user_data:
+            st.session_state.user_data["settings"] = {
+                "auto_audio": True,
+                "show_hints": True,
+                "default_test_size": 10
+            }
+        
+        s = st.session_state.user_data["settings"]
+        
+        s["auto_audio"] = st.toggle("Automatyczne odtwarzanie lektora (Audio)", s.get("auto_audio", True))
+        s["show_hints"] = st.toggle("Pokazuj podpowiedzi PL w Quizie", s.get("show_hints", True))
+        s["default_test_size"] = st.slider("Domyślna liczba pytań w teście", 5, 50, s.get("default_test_size", 10))
+        
+        if st.button("Zapisz ustawienia", use_container_width=True):
+            save_user_data(u, st.session_state.user_data)
+            st.toast("Ustawienia zapisane! 💾")
+
+    # --- 2. ZMIANA HASŁA ---
     with st.expander("🔑 Zmień hasło"):
-        with st.form("pw"):
-            o, n = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password")
-            if st.form_submit_button("Zmień", use_container_width=True):
+        with st.form("pw_change"):
+            o, n = st.text_input("Stare hasło", type="password"), st.text_input("Nowe hasło", type="password")
+            if st.form_submit_button("Zmień hasło", use_container_width=True):
                 db = get_db()
                 res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(o):
@@ -781,33 +804,96 @@ elif choice == "⚙️ Moje Konto":
                     st.success("Hasło zaktualizowane!")
                 else:
                     st.error("Błędne stare hasło!")
-    
-    st.divider()
-    st.subheader("🗑️ Usuwanie danych")
-    conf = st.checkbox("Potwierdzam chęć usunięcia danych")
-    
-    st.write("Usuń konkretny poziom z chmury:")
-    col_d = st.columns(5)
-    for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
-        # Dodany klucz (key), by przyciski w pętli działały stabilnie
-        if col_d[i].button(lvl, disabled=not conf, key=f"del_lvl_{lvl}"):
-            with st.spinner("Usuwanie..."):
-                res = get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute()
-                deleted_count = len(res.data) if res.data else 0
+
+    # --- 3. EKSPORT I IMPORT (CSV) ---
+    with st.expander("📥 Eksport i Import słówek (CSV)"):
+        st.subheader("Eksportuj swoje dane")
+        if st.session_state.flashcards:
+            df_export = pd.DataFrame(st.session_state.flashcards)
+            # Przygotowujemy czysty CSV do pobrania
+            csv = df_export[["de", "pl", "category", "origin"]].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Pobierz moją bazę jako plik .CSV",
+                data=csv,
+                file_name=f"niemiecki_master_backup_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        st.write("---")
+        st.subheader("Importuj słówka z pliku")
+        st.info("Wymagane kolumny w pliku CSV: de, pl, category")
+        uploaded_file = st.file_uploader("Wybierz plik .csv", type="csv")
+        
+        if uploaded_file and st.button("🚀 Rozpocznij import"):
+            try:
+                imp_df = pd.read_csv(uploaded_file)
+                if all(col in imp_df.columns for col in ["de", "pl"]):
+                    new_cards = []
+                    for _, row in imp_df.iterrows():
+                        new_cards.append({
+                            "username": u,
+                            "de": str(row["de"]),
+                            "pl": str(row["pl"]),
+                            "category": str(row.get("category", "Import")),
+                            "next_review": str(date.today()),
+                            "origin": "Import"
+                        })
+                    
+                    if new_cards:
+                        get_db().table("flashcards").insert(new_cards).execute()
+                        st.session_state.flashcards = load_flashcards(u)
+                        st.success(f"Pomyślnie zaimportowano {len(new_cards)} słówek!")
+                        st.rerun()
+                else:
+                    st.error("Plik nie posiada wymaganych kolumn (de, pl).")
+            except Exception as e:
+                st.error(f"Błąd importu: {e}")
+
+    # --- 4. USUWANIE I RESET DANYCH ---
+    with st.expander("🗑️ Niebezpieczna strefa (Reset i Usuwanie)"):
+        st.warning("Uwaga: Te operacje są nieodwracalne!")
+        conf = st.checkbox("Potwierdzam chęć usunięcia danych")
+        
+        # --- RESET STATYSTYK (Punkt 3) ---
+        st.write("---")
+        st.subheader("🧹 Reset samych statystyk")
+        st.caption("Zachowuje wszystkie Twoje słówka, ale zeruje czas nauki, historię testów i daty powtórek.")
+        conf_stats = st.checkbox("Potwierdzam reset STATYSTYK (słówka zostaną)")
+        
+        if st.button("Zresetuj statystyki nauki", type="secondary", disabled=not conf_stats, use_container_width=True):
+            with st.spinner("Resetowanie..."):
+                # 1. Zerujemy user_data w bazie
+                st.session_state.user_data["time_stats"] = {}
+                st.session_state.user_data["test_history"] = []
+                st.session_state.user_data["streak"] = 0
+                save_user_data(u, st.session_state.user_data)
                 
-                # Zapisujemy wiadomość do sesji i odświeżamy lokalną bazę
-                st.session_state.acc_msg = f"🗑️ Pomyślnie usunięto {deleted_count} słówek powiązanych z poziomem {lvl}."
+                # 2. Resetujemy daty powtórek wszystkich słówek na dzisiaj
+                get_db().table("flashcards").update({"next_review": str(date.today())}).eq("username", u).execute()
+                
+                st.session_state.acc_msg = "✅ Statystyki nauki zostały zresetowane. Możesz zacząć od zera!"
                 st.session_state.flashcards = load_flashcards(u)
                 st.rerun()
-    
-    st.write("---")
-    if st.button("🔥 ZRESETUJ CAŁĄ MOJĘ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
-        with st.spinner("Czyszczenie całej bazy..."):
+
+        # --- USUWANIE POZIOMÓW ---
+        st.write("---")
+        st.subheader("Wybierz poziomy do usunięcia")
+        col_d = st.columns(5)
+        for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
+            if col_d[i].button(lvl, disabled=not conf, key=f"del_lvl_{lvl}"):
+                res = get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute()
+                count = len(res.data) if res.data else 0
+                st.session_state.acc_msg = f"🗑️ Usunięto {count} słówek z poziomu {lvl}."
+                st.session_state.flashcards = load_flashcards(u)
+                st.rerun()
+        
+        # --- HARD RESET ---
+        st.write("---")
+        if st.button("🔥 USUŃ TRWALE CAŁĄ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
             res = get_db().table("flashcards").delete().eq("username", u).execute()
-            deleted_count = len(res.data) if res.data else 0
-            
-            # Zapisujemy wiadomość do sesji i czyścimy lokalną bazę
-            st.session_state.acc_msg = f"🔥 Baza została zresetowana! Trwale usunięto {deleted_count} słówek."
+            count = len(res.data) if res.data else 0
+            st.session_state.acc_msg = f"🔥 Baza została wyczyszczona (usunięto {count} słówek)."
             st.session_state.flashcards = []
             st.rerun()
 
