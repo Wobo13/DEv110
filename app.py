@@ -14,7 +14,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V159"
+APP_VERSION = "V160"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -330,30 +330,34 @@ elif choice == "🎴 Fiszki":
 # --- 📸 SKANER AI ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
+    
+    if API_KEY:
+        st.caption(f"🔑 Używany klucz API: {API_KEY[:6]}...{API_KEY[-4:]}")
+        
     src = st.camera_input("Zrób zdjęcie")
     up = st.file_uploader("Lub wybierz plik")
     
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         if not API_KEY:
-            st.error("Brak klucza API.")
+            st.error("Brak klucza API w ustawieniach (Secrets).")
         else:
             try:
-                with st.spinner("AI analizuje..."):
+                with st.spinner("AI analizuje... (Wymuszam ominięcie cache)"):
                     genai.configure(api_key=API_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Używamy dopisku -latest, aby ominąć zablokowane stare ścieżki w cache Google
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
                     img = Image.open(src or up).convert("RGB")
+                    prompt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
                     
-                    req_txt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
-                    res = model.generate_content([req_txt, img])
+                    res = model.generate_content([prompt, img])
                     data = parse_ai_json(res.text)
                     
                     if data:
                         st.session_state.pending = data
-                        cost = st.session_state.user_data.get("historical_cost", 0.0)
-                        st.session_state.user_data["historical_cost"] = cost + 0.015
+                        st.session_state.user_data["historical_cost"] += 0.015
                         st.rerun()
                     else: 
-                        st.error(f"Otrzymano błędny format: {res.text}")
+                        st.error(f"AI odpowiedziało, ale nie w formacie JSON. Odpowiedź: {res.text}")
             except Exception as e: 
                 st.error(f"Błąd AI: {e}")
             
@@ -374,18 +378,23 @@ elif choice == "📸 Skaner AI":
 # --- 📦 GENERATOR SŁÓW ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
+    
+    if API_KEY:
+        st.caption(f"🔑 Używany klucz API: {API_KEY[:6]}...{API_KEY[-4:]}")
+        
     cols = st.columns(5)
     lvls = ["A1", "A2", "B1", "B2", "C1"]
     
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
             if not API_KEY:
-                st.error("Brak klucza API.")
+                st.error("Brak klucza API w ustawieniach (Secrets).")
             else:
-                with st.spinner(f"AI generuje słówka dla {lvl}..."):
+                with st.spinner(f"AI generuje słówka dla {lvl}... (Wymuszam ominięcie cache)"):
                     try:
                         genai.configure(api_key=API_KEY)
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        # Używamy dopisku -latest, aby ominąć zablokowane stare ścieżki
+                        model = genai.GenerativeModel('gemini-1.5-flash-latest')
                         exist = [x['de'] for x in st.session_state.flashcards[:300]]
                         
                         prompt = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
@@ -603,7 +612,6 @@ elif choice == "👑 Admin":
     users = load_j(AUTH_FILE, {})
     adm_list = []
     
-    # Inicjalizacja licznika czasu
     global_time = {}
     for m in MODULE_ORDER:
         global_time[m] = 0.0
@@ -628,7 +636,6 @@ elif choice == "👑 Admin":
                     pass
             mastery = f"{round((opanowane/len(df_u))*100)}%"
             
-            # Bezpieczne zliczanie AI
             for cat in df_u['category']:
                 if isinstance(cat, str) and 'skaner' in cat.lower():
                     ai_n += 1
@@ -675,8 +682,20 @@ elif choice == "👑 Admin":
             vals.append(val)
             labels.append(f"{m}: {round(val/60,1)} min")
         
-        # Bezpieczne tworzenie wykresu (Naprawa uciętej linijki)
-        my_bar = go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='auto', marker_color='#1E88E5')
+        # Ekstremalnie bezpieczne i pionowe rysowanie wykresu
+        my_bar = go.Bar(
+            x=MODULE_ORDER, 
+            y=vals, 
+            text=labels, 
+            textposition='auto', 
+            marker_color='#1E88E5'
+        )
+        
         fig = go.Figure(data=[my_bar])
-        fig.update_layout(template="plotly_dark", height=450)
+        
+        fig.update_layout(
+            template="plotly_dark", 
+            height=450
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
