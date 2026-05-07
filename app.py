@@ -13,11 +13,11 @@ from PIL import Image
 import time
 import plotly.graph_objects as go
 
-# Importujemy nową bibliotekę OpenAI
+# Importujemy bibliotekę OpenAI
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V162 (OpenAI Edition)"
+APP_VERSION = "V163 (OpenAI Edition)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -74,20 +74,18 @@ def parse_ai_json(text):
     except: 
         return None
 
-# --- NOWY SILNIK AI: OPENAI ---
+# --- SILNIK AI: OPENAI ---
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY:
         raise Exception("Brak klucza API. Upewnij się, że wkleiłeś klucz OpenAI.")
         
     client = OpenAI(api_key=API_KEY)
     
-    # Podstawowa konfiguracja wiadomości (wymuszamy format JSON)
     messages = [
         {"role": "system", "content": "You are a helpful assistant that outputs ONLY valid JSON."}
     ]
     
     if img_obj:
-        # Przetwarzanie obrazka dla modelu wizyjnego OpenAI
         buffered = BytesIO()
         img_obj.thumbnail((800, 800))
         img_obj.save(buffered, format="JPEG")
@@ -101,14 +99,12 @@ def get_openai_response(prompt_text, img_obj=None):
             ]
         })
     else:
-        # Zwykłe zapytanie tekstowe
         messages.append({"role": "user", "content": prompt_text})
         
-    # Wywołanie najnowszego, super szybkiego modelu gpt-4o-mini
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        response_format={"type": "json_object"} # Wymusza od AI czystego JSONa
+        response_format={"type": "json_object"}
     )
     
     return response.choices[0].message.content
@@ -123,7 +119,6 @@ if "auth" not in st.session_state:
             st.session_state.auth = True
             st.session_state.user = ss[tk]
 
-# Inicjalizacja zmiennych
 if "u_a" not in st.session_state: 
     st.session_state.u_a = ""
 if "n_m" not in st.session_state: 
@@ -230,7 +225,7 @@ if u == ADMIN_USER:
 choice = st.sidebar.radio("Nawigacja", menu)
 
 if "l_c" not in st.session_state or st.session_state.l_c != choice:
-    for k in ["n_c", "q_c", "q_s", "f_idx", "f_flipped", "pending"]:
+    for k in ["n_c", "q_c", "q_s", "f_idx", "f_flipped", "pending", "success_msg"]:
         if k in st.session_state: 
             del st.session_state[k]
     st.session_state.n_m = "ask"
@@ -373,28 +368,31 @@ elif choice == "🎴 Fiszki":
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
     
-    if API_KEY:
-        klucz_koniec = API_KEY[-4:]
-        st.caption(f"🔑 Silnik: OpenAI | Klucz: ...{klucz_koniec}")
+    if "success_msg" in st.session_state:
+        st.success(st.session_state.success_msg)
+        del st.session_state.success_msg
         
-    src = st.camera_input("Zrób zdjęcie")
-    up = st.file_uploader("Lub wybierz plik")
+    src = st.camera_input("Zrób zdjęcie tekstu/słówek")
+    up = st.file_uploader("Lub wybierz plik ze zdjęciem")
     
-    if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
+    if (src or up) and st.button("🚀 ANALIZUJ ZDJĘCIE", use_container_width=True):
         if not API_KEY:
-            st.error("Brak klucza API.")
+            st.error("Brak klucza API OpenAI.")
         else:
             try:
-                with st.spinner("OpenAI analizuje obraz..."):
+                with st.spinner("Skanowanie i tworzenie przykładowych zdań..."):
                     img = Image.open(src or up).convert("RGB")
                     
-                    # Definiujemy w prompcie klucz 'flashcards', bo OpenAI wymaga głównego klucza w JSON object
-                    req_txt = "Extract German-Polish vocabulary from this image. Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
+                    req_txt = (
+                        "Extract German vocabulary from this image and translate to Polish. "
+                        "You MUST generate 1-2 practical German example sentences (with Polish translations) for EACH extracted word to provide context. "
+                        "Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: "
+                        "[{'de':'word', 'pl':'translation', 'category':'Skaner', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
+                    )
                     
                     res_text = get_openai_response(req_txt, img_obj=img)
                     data = parse_ai_json(res_text)
                     
-                    # Oczyszczanie, jeśli OpenAI zamknęło listę w słowniku
                     if isinstance(data, dict) and "flashcards" in data:
                         data = data["flashcards"]
                     
@@ -409,26 +407,32 @@ elif choice == "📸 Skaner AI":
                 st.error(f"Błąd OpenAI: {e}")
             
     if "pending" in st.session_state:
+        st.info("Poniżej znajdziesz zeskanowane słówka oraz wygenerowane do nich zdania. Możesz je edytować przed zapisem.")
         df_pending = pd.DataFrame(st.session_state.pending)
         ed = st.data_editor(df_pending, use_container_width=True)
         if st.button("✅ ZAPISZ DO BAZY", use_container_width=True):
+            added_count = 0
             for w in ed.to_dict('records'):
                 w["next_review"] = str(today_dt)
                 w["date_added"] = str(today_dt)
                 if "category" not in w:
                     w["category"] = "Skaner"
+                if "examples" not in w or str(w["examples"]) == "nan":
+                    w["examples"] = []
                 st.session_state.flashcards.append(w)
+                added_count += 1
             save_j(get_p(u, "flashcards"), st.session_state.flashcards)
             del st.session_state.pending
+            st.session_state.success_msg = f"🎉 Sukces! Dodano {added_count} zeskanowanych słówek ze zdaniami do bazy!"
             st.rerun()
 
 # --- 📦 GENERATOR SŁÓW (OPENAI) ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
     
-    if API_KEY:
-        klucz_koniec = API_KEY[-4:]
-        st.caption(f"🔑 Silnik: OpenAI | Klucz: ...{klucz_koniec}")
+    if "success_msg" in st.session_state:
+        st.success(st.session_state.success_msg)
+        del st.session_state.success_msg
         
     cols = st.columns(5)
     lvls = ["A1", "A2", "B1", "B2", "C1"]
@@ -436,20 +440,25 @@ elif choice == "📦 Generator słów":
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
             if not API_KEY:
-                st.error("Brak klucza API.")
+                st.error("Brak klucza API OpenAI.")
             else:
-                with st.spinner(f"OpenAI generuje słówka dla {lvl}..."):
+                with st.spinner(f"Generowanie słówek i zdań kontekstowych dla {lvl}..."):
                     try:
                         exist = []
                         for x in st.session_state.flashcards[:300]:
                             exist.append(x['de'])
                             
-                        prompt = f"Generate 25 unique German words suitable for level {lvl}. Add Polish categories and Polish translation for examples. Skip these words: {exist}. Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
+                        prompt = (
+                            f"Generate 25 unique German words suitable for level {lvl}. "
+                            "You MUST include 1-2 practical example sentences (German and Polish translation) for EACH word. "
+                            f"Skip these words: {exist}. "
+                            "Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: "
+                            "[{'de':'word', 'pl':'translation', 'category':'category name', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
+                        )
                         
                         res_text = get_openai_response(prompt)
                         data = parse_ai_json(res_text)
                         
-                        # Oczyszczanie, jeśli OpenAI zamknęło listę w słowniku
                         if isinstance(data, dict) and "flashcards" in data:
                             data = data["flashcards"]
                         
@@ -463,13 +472,16 @@ elif choice == "📦 Generator słów":
                                     w["date_added"] = str(today_dt)
                                     cat_name = w.get('category', 'Inne')
                                     w["category"] = f"{lvl} - {cat_name}"
+                                    if "examples" not in w:
+                                        w["examples"] = []
                                     st.session_state.flashcards.append(w)
                                     added += 1
                                     
                             c_cost = st.session_state.user_data.get("historical_cost", 0.0)
                             st.session_state.user_data["historical_cost"] = c_cost + 0.01
                             save_j(get_p(u, "flashcards"), st.session_state.flashcards)
-                            st.success(f"Dodano {added} nowych słówek!")
+                            
+                            st.session_state.success_msg = f"🎉 Sukces! Pomyślnie wygenerowano i dodano {added} nowych słówek (wraz ze zdaniami) do Twojej bazy!"
                             st.rerun()
                         else: 
                             st.error("Zły format JSON wygenerowany przez AI.")
@@ -654,7 +666,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.del_msg = f"Usunięto {removed_count} słówek z poziomu {lvl}!"
             st.rerun()
     
-    btn_del_all = st.button("🗑️ USUŃ WSZYSTKO", type="primary", disabled=not conf_del, use_container_width=True)
+    btn_del_all = st.button("🗑️ USUŃ WSZYSTKO (RESET BAZY)", type="primary", disabled=not conf_del, use_container_width=True)
     if btn_del_all:
         save_j(get_p(u, "flashcards"), [])
         st.session_state.flashcards = []
