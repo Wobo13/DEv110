@@ -667,74 +667,51 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    # 1. Pobieranie danych o użytkownikach
     ud_data = db.table("user_data").select("*").execute().data
     
-    # 2. Pobieranie wszystkich fiszek (poprawka wydajności - jedno zapytanie poza pętlą)
     all_cards_res = db.table("flashcards").select("username", "origin").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
     
     adm_list = []
     global_time = {}
     
-    # Definicje kolumn dla nauki
+    # Kody, które chcemy widzieć w kolumnach
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
-    display_names = {
-        "Pow": "Powtórki", 
-        "Trn": "Trening", 
-        "Qiz": "Quiz", 
-        "Fis": "Fiszki", 
-        "Tst": "Testy", 
-        "Inn": "Inne"
-    }
+    display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
-    # ROZSZERZONA MAPA SŁÓW KLUCZOWYCH (na podstawie Twojej diagnostyki bazy)
-    # Mapuje surowe nazwy z bazy na nasze kody modułów
-    keyword_map = {
-        "pow": "Pow", 
-        "trn": "Trn", "tre": "Trn", 
-        "qiz": "Qiz", "qui": "Qiz", 
-        "fis": "Fis", 
-        "tst": "Tst", "tes": "Tst",
-        "skn": "Skn", "ska": "Skn",
-        "gen": "Gen",
-        "dod": "Dod",
-        "słn": "Słn", "sło": "Słn",
-        "sta": "Sta",
-        "inn": "Inn", "ine": "Inn" # łapie też 'Inne'
-    }
-
     for user in ud_data:
         username = user["username"]
-        # Filtrowanie fiszek użytkownika w pamięci
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
         
-        # Przetwarzanie statystyk czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
         
-        for raw_module_name, seconds in user_stats.items():
+        for raw_key, seconds in user_stats.items():
             found_code = "Inn"
-            raw_name_lower = raw_module_name.lower().strip()
+            k = str(raw_key).strip()
+            k_low = k.lower()
             
-            # 1. Próba dopasowania przez słowa kluczowe (odporne na ikonki i pełne nazwy)
-            for kw, code in keyword_map.items():
-                if kw in raw_name_lower:
-                    found_code = code
-                    break
+            # 1. NAJSILNIEJSZE DOPASOWANIE: Czy klucz jest jednym z naszych kodów? (Pow, Fis, Qiz itd.)
+            if k in tracked_codes:
+                found_code = k
+            # 2. Czy klucz zawiera rdzeń nazwy?
+            elif "pow" in k_low: found_code = "Pow"
+            elif "trn" in k_low or "tre" in k_low: found_code = "Trn"
+            elif "qiz" in k_low or "qui" in k_low: found_code = "Qiz"
+            elif "fis" in k_low: found_code = "Fis"
+            elif "tst" in k_low or "tes" in k_low: found_code = "Tst"
             
-            # 2. Zabezpieczenie: jeśli kod (np. Skn) nie jest w naszych kolumnach nauki, wrzuć do 'Inne'
-            if found_code not in tracked_codes:
-                found_code = "Inn"
+            # Dodaj do odpowiedniej kategorii
+            if found_code in current_user_merged:
+                current_user_merged[found_code] += seconds
+            else:
+                current_user_merged["Inn"] += seconds
                 
-            current_user_merged[found_code] += seconds
             total_sec += seconds
-            # Logika globalna do wykresu
             global_time[found_code] = global_time.get(found_code, 0) + seconds
             
-        # 3. Przygotowanie danych do Tabeli Głównej
         adm_list.append({
             "Użytkownik": username, 
             "Słów": len(user_cards), 
@@ -747,15 +724,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         })
     
     if not adm_list:
-        st.warning("Brak danych użytkowników.")
+        st.warning("Brak danych.")
     else:
         df_admin = pd.DataFrame(adm_list)
-        
-        # WYŚWIETLANIE: Tabela główna (Kompaktowa)
         st.subheader("📋 Podsumowanie użytkowników")
         st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
         
-        # WYŚWIETLANIE: Tabela szczegółowa (Pełne nazwy i liczby całkowite)
         with st.expander("🔍 Zobacz szczegółowy podział czasu (pełne minuty)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
@@ -765,22 +739,14 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 detail_rows.append(d_row)
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-        # WYŚWIETLANIE: Wykres Globalny
         if global_time:
             st.write("---")
+            # Wykres globalny
             chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if v >= 60}
-            
             if chart_data:
                 fig = go.Figure(data=[go.Bar(
-                    x=list(chart_data.keys()), 
-                    y=list(chart_data.values()), 
-                    marker_color='#FF5252',
-                    text=list(chart_data.values()),
-                    textposition='auto',
+                    x=list(chart_data.keys()), y=list(chart_data.values()), 
+                    marker_color='#FF5252', text=list(chart_data.values()), textposition='auto'
                 )])
-                fig.update_layout(
-                    template="plotly_dark", 
-                    height=400, 
-                    title="Globalny czas na modułach (suma minut użytkowników)"
-                )
+                fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (min)")
                 st.plotly_chart(fig, use_container_width=True)
