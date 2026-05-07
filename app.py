@@ -6,24 +6,25 @@ import re
 import hashlib
 import pandas as pd
 import secrets
+import base64
 from datetime import datetime, date, timedelta
 from io import BytesIO
 from PIL import Image
-import google.generativeai as genai
 import time
 import plotly.graph_objects as go
 
+# Importujemy nową bibliotekę OpenAI
+from openai import OpenAI
+
 # --- KONFIGURACJA ---
-APP_VERSION = "V161"
+APP_VERSION = "V162 (OpenAI Edition)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
 BONUS_START = 1089.0
 
-# Pobieranie klucza API z Secrets
-API_KEY = st.secrets.get("GEMINI_API_KEY") 
-if not API_KEY:
-    API_KEY = st.session_state.get("manual_api_key", "")
+# Pobieranie klucza API (sprawdza oba na wszelki wypadek)
+API_KEY = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("GEMINI_API_KEY") or st.session_state.get("manual_api_key", "")
 
 MODULE_ORDER = [
     "Powtórki", "Trening", "Quiz", "Fiszki", 
@@ -72,6 +73,45 @@ def parse_ai_json(text):
         return json.loads(text.strip())
     except: 
         return None
+
+# --- NOWY SILNIK AI: OPENAI ---
+def get_openai_response(prompt_text, img_obj=None):
+    if not API_KEY:
+        raise Exception("Brak klucza API. Upewnij się, że wkleiłeś klucz OpenAI.")
+        
+    client = OpenAI(api_key=API_KEY)
+    
+    # Podstawowa konfiguracja wiadomości (wymuszamy format JSON)
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that outputs ONLY valid JSON."}
+    ]
+    
+    if img_obj:
+        # Przetwarzanie obrazka dla modelu wizyjnego OpenAI
+        buffered = BytesIO()
+        img_obj.thumbnail((800, 800))
+        img_obj.save(buffered, format="JPEG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt_text},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+            ]
+        })
+    else:
+        # Zwykłe zapytanie tekstowe
+        messages.append({"role": "user", "content": prompt_text})
+        
+    # Wywołanie najnowszego, super szybkiego modelu gpt-4o-mini
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        response_format={"type": "json_object"} # Wymusza od AI czystego JSONa
+    )
+    
+    return response.choices[0].message.content
 
 # --- LOGOWANIE ---
 if "auth" not in st.session_state:
@@ -329,40 +369,44 @@ elif choice == "🎴 Fiszki":
                 audio_txt += " . . ".join([e['de'] for e in c["examples"]])
             play_audio(audio_txt)
 
-# --- 📸 SKANER AI ---
+# --- 📸 SKANER AI (OPENAI) ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
     
     if API_KEY:
         klucz_koniec = API_KEY[-4:]
-        st.caption(f"🔑 Klucz używany: ...{klucz_koniec}")
+        st.caption(f"🔑 Silnik: OpenAI | Klucz: ...{klucz_koniec}")
         
     src = st.camera_input("Zrób zdjęcie")
     up = st.file_uploader("Lub wybierz plik")
     
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         if not API_KEY:
-            st.error("Brak klucza API w ustawieniach.")
+            st.error("Brak klucza API.")
         else:
             try:
-                with st.spinner("AI analizuje obraz..."):
-                    genai.configure(api_key=API_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                with st.spinner("OpenAI analizuje obraz..."):
                     img = Image.open(src or up).convert("RGB")
                     
-                    req_txt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
-                    res = model.generate_content([req_txt, img])
-                    data = parse_ai_json(res.text)
+                    # Definiujemy w prompcie klucz 'flashcards', bo OpenAI wymaga głównego klucza w JSON object
+                    req_txt = "Extract German-Polish vocabulary from this image. Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
                     
-                    if data:
+                    res_text = get_openai_response(req_txt, img_obj=img)
+                    data = parse_ai_json(res_text)
+                    
+                    # Oczyszczanie, jeśli OpenAI zamknęło listę w słowniku
+                    if isinstance(data, dict) and "flashcards" in data:
+                        data = data["flashcards"]
+                    
+                    if data and isinstance(data, list):
                         st.session_state.pending = data
                         c_cost = st.session_state.user_data.get("historical_cost", 0.0)
                         st.session_state.user_data["historical_cost"] = c_cost + 0.015
                         st.rerun()
                     else: 
-                        st.error("AI odpowiedziało, ale nie w formacie JSON.")
+                        st.error("AI odpowiedziało, ale nie w formacie JSON listy fiszek.")
             except Exception as e: 
-                st.error(f"Błąd AI: {e}")
+                st.error(f"Błąd OpenAI: {e}")
             
     if "pending" in st.session_state:
         df_pending = pd.DataFrame(st.session_state.pending)
@@ -378,13 +422,13 @@ elif choice == "📸 Skaner AI":
             del st.session_state.pending
             st.rerun()
 
-# --- 📦 GENERATOR SŁÓW ---
+# --- 📦 GENERATOR SŁÓW (OPENAI) ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
     
     if API_KEY:
         klucz_koniec = API_KEY[-4:]
-        st.caption(f"🔑 Klucz używany: ...{klucz_koniec}")
+        st.caption(f"🔑 Silnik: OpenAI | Klucz: ...{klucz_koniec}")
         
     cols = st.columns(5)
     lvls = ["A1", "A2", "B1", "B2", "C1"]
@@ -392,23 +436,24 @@ elif choice == "📦 Generator słów":
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
             if not API_KEY:
-                st.error("Brak klucza API w ustawieniach.")
+                st.error("Brak klucza API.")
             else:
-                with st.spinner(f"AI generuje słówka dla {lvl}..."):
+                with st.spinner(f"OpenAI generuje słówka dla {lvl}..."):
                     try:
-                        genai.configure(api_key=API_KEY)
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        
                         exist = []
                         for x in st.session_state.flashcards[:300]:
                             exist.append(x['de'])
                             
-                        prompt = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
+                        prompt = f"Generate 25 unique German words suitable for level {lvl}. Add Polish categories and Polish translation for examples. Skip these words: {exist}. Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
                         
-                        res = model.generate_content(prompt)
-                        data = parse_ai_json(res.text)
+                        res_text = get_openai_response(prompt)
+                        data = parse_ai_json(res_text)
                         
-                        if data:
+                        # Oczyszczanie, jeśli OpenAI zamknęło listę w słowniku
+                        if isinstance(data, dict) and "flashcards" in data:
+                            data = data["flashcards"]
+                        
+                        if data and isinstance(data, list):
                             added = 0
                             for w in data:
                                 word_de = w['de'].lower()
@@ -427,9 +472,9 @@ elif choice == "📦 Generator słów":
                             st.success(f"Dodano {added} nowych słówek!")
                             st.rerun()
                         else: 
-                            st.error("Zły format JSON.")
+                            st.error("Zły format JSON wygenerowany przez AI.")
                     except Exception as e: 
-                        st.error(f"Błąd AI: {e}")
+                        st.error(f"Błąd OpenAI: {e}")
 
 # --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
@@ -692,7 +737,6 @@ elif choice == "👑 Admin":
             vals.append(val)
             labels.append(f"{m}: {round(val/60,1)} min")
         
-        # Bezpieczne rysowanie wykresu pionowo
         my_bar = go.Bar(
             x=MODULE_ORDER, 
             y=vals, 
