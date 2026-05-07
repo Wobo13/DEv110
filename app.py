@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V184 (Expanded Database 1250 Words)"
+APP_VERSION = "V185 (Stats Restored & PL Categories)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -46,7 +46,7 @@ VOCAB_DB = {
         "Apfel", "Brot", "Haus", "Auto", "Schule", "Lehrer", "Wasser", "Milch", "Tisch", "Stuhl", "Buch", "Stift", "Kind", "Mutter", "Vater", "Freund", "Stadt", "Land", "Weg", "Zeit", "Essen", "Trinken", "Schlafen", "Lernen", "Arbeiten", "Gehen", "Kommen", "Hören", "Sehen", "Sprechen", "Groß", "Klein", "Gut", "Schlecht", "Schön", "Hässlich", "Alt", "Jung", "Neu", "Kalt", "Heute", "Morgen", "Gestern", "Woche", "Jahr", "Tag", "Nacht", "Name", "Zahl", "Geld",
         "Hund", "Katze", "Baum", "Blume", "Sonne", "Mond", "Regen", "Schnee", "Wind", "Bett", "Zimmer", "Küche", "Bad", "Fenster", "Tür", "Schlüssel", "Tasche", "Gabel", "Löffel", "Messer", "Teller", "Tasse", "Glas", "Saft", "Kaffee", "Tee", "Zucker", "Salz", "Fleisch", "Fisch", "Gemüse", "Obst", "Banane", "Ei", "Käse", "Reis", "Nudeln", "Kuchen", "Zeitung", "Radio", "Handy", "Fahrrad", "Zug", "Bus", "Bahnhof", "Flughafen", "Hotel", "Arzt", "Krankenhaus", "Apotheke",
         "Arbeit", "Pause", "Ferien", "Urlaub", "Meer", "Berg", "Wald", "Straße", "Platz", "Garten", "Park", "Schrank", "Sofa", "Lampe", "Bild", "Uhr", "Kleidung", "Hose", "Hemd", "Rock", "Kleid", "Schuh", "Jacke", "Mantel", "Hut", "Brille", "Kopf", "Hand", "Fuß", "Bein", "Arm", "Auge", "Ohr", "Nase", "Mund", "Haar", "Herz", "Frühstück", "Mittagessen", "Abendessen", "Kochen", "Backen", "Waschen", "Putzen", "Kaufen", "Verkaufen", "Bezahlen", "Rechnen", "Schreiben", "Lesen",
-        "Singen", "Tanzen", "Spielen", "Laufen", "Schwimmen", "Reisen", "Besuchen", "Fragen", "Antworten", "Wissen", "Denken", "Glauben", "Hoffen", "Lieben", "Hassen", "Lachen", "Weinen", "Warten", "Suchen", "Finden", "Helfen", "Geben", "Nehmen", "Bringen", "Zeigen", "Sagen", "Erzählen", "Erklären", "Verstehen", "Vergessen", "Wichtig", "Richtig", "Falsch", "Einfach", "Schwer", "Leicht", "Heiß", "Warm", "Trocken", "Nass", "Hell", "Dunkel", "Laut", "Leise", "Schnell", "Langsam", "Müde", "Krank", "Gesund", "Glücklich",
+        "Singen", "Tanzen", "Spielen", "Laufen", "Schwimmen", "Reisen", "Besuchen", "Fragen", "Antworten", "Wissen", "Denken", "Glauben", "Hoffen", "Lieben", "Hassen", "Lachen", "Weinen", "Warten", "Suchen", "Finden", "Helfen", "Geben", "Nehmen", "Bringen", "Zeigen", "Sagen", "Erzählen", "Erklären", "Verstehen", "Vergessen", "Wichtig", "Richtig", "Falsch", "Einfach", "Schwer", "Leicht", "Heiß", "Warm", "Trocken", "Nass", "Hell", "Dunkel", "Laut", "Leise", "Schnell", "Langslow", "Müde", "Krank", "Gesund", "Glücklich",
         "Traurig", "Sauer", "Süß", "Bitter", "Teuer", "Billig", "Reich", "Arm", "Sauber", "Schmutzig", "Voll", "Leer", "Offen", "Geschlossen", "Erster", "Letzter", "Nächster", "Hier", "Dort", "Überall", "Nirgendwo", "Immer", "Oft", "Manchmal", "Selten", "Nie", "Vielleicht", "Sicher", "Gerne", "Zusammen", "Allein", "Wenig", "Viel", "Genug", "Echt", "Wirklich", "Wieder", "Noch", "Schon", "Erst", "Dann", "Danach", "Zuerst", "Schließlich", "Aber", "Oder", "Und", "Sondern", "Denn", "Weil"
     ],
     "A2": [
@@ -58,7 +58,7 @@ VOCAB_DB = {
     ],
     "B1": [
         "Erfahrung", "Erfolg", "Entscheidung", "Meinung", "Gefühl", "Beziehung", "Zukunft", "Vergangenheit", "Umwelt", "Natur", "Gesellschaft", "Politik", "Wirtschaft", "Wissenschaft", "Technik", "Beruf", "Ausbildung", "Studium", "Gehalt", "Vertrag", "Vorbereiten", "Organisieren", "Diskutieren", "Argumentieren", "Erklären", "Empfehlen", "Vorschlagen", "Warnen", "Hoffen", "Träumen", "Gefährlich", "Sicher", "Möglich", "Unmöglich", "Nötig", "Nützlich", "Schwierig", "Leicht", "Interessant", "Langweilig", "Obwohl", "Trotzdem", "Deshalb", "Deswegen", "Falls", "Damit", "Stattdessen", "Zuerst", "Schließlich", "Besonders",
-        "Abhängig", "Ablehnen", "Abmachen", "Abnehmen", "Abonnieren", "Absagen", "Abschließen", "Absolvieren", "Abstimmen", "Abwarten", "Achten", "Ändern", "Anerkennen", "Anfangen", "Anfordern", "Angeben", "Angehören", "Angreifen", "Anhalten", "Anklagen", "Ankommen", "Ankündigen", "Anmelden", "Annehmen", "Anpassen", "Anrufen", "Anschließen", "Ansehen", "Ansprechen", "Anstrengen", "Antworten", "Anwenden", "Anzeigen", "Anziehen", "Arbeiten", "Ärgern", "Aufbauen", "Aufgeben", "Aufhalten", "Aufhören", "Aufklären", "Aufmerksam", "Aufnehmen", "Aufräumen", "Aufregen", "Aufstehen", "Auftreten", "Aufwachen", "Ausbilden", "Ausdehnen",
+        "Abhängig", "Ablehnen", "Abmachen", "Abnehmen", "Abonnieren", "Absagen", "Abschließen", "Absolvieren", "Abstimmen", "Abwarten", "Achten", "Ändern", "Anerkennen", "Anfangen", "Anfordern", "Angeben", "Angehören", "Angreifen", "Anhalten", "Anklagen", "Ankommen", "Ankündigen", "Anmelden", "Annehmen", "Anpassen", "Anrufen", "Anschließen", "Ansehen", "Ansprechen", "Anstrengen", "Antworten", "Anwenden", "Anzeigen", "Anziehen", "Arbeiten", "Ärgern", "Aufbauen", "Aufgeben", "Aufhalten", "Aufhören", "Aufklären", "Aufmerksam", "Aufaufnahme", "Aufräumen", "Aufregen", "Aufstehen", "Auftreten", "Aufwachen", "Ausbilden", "Ausdehnen",
         "Ausdrücken", "Auseinander", "Ausfallen", "Ausfüllen", "Ausgeben", "Ausgehen", "Ausgleichen", "Aushalten", "Auskennen", "Auskommen", "Auslachen", "Ausleihen", "Ausmachen", "Ausnutzen", "Auspacken", "Ausprobieren", "Ausruhen", "Ausscheiden", "Ausschließen", "Aussehen", "Aussprechen", "Ausstellen", "Aussuchen", "Austauschen", "Austreten", "Ausüben", "Auswandern", "Auswählen", "Ausweisen", "Auswirken", "Ausziehen", "Backen", "Bauen", "Beachten", "Beantragen", "Beantworten", "Bebauen", "Bedanken", "Bedeuten", "Bedienen", "Bedingung", "Beeinflussen", "Beenden", "Befinden", "Befolgen", "Befreien", "Begegnen", "Begeistern", "Beginnen", "Begleiten",
         "Begrenzen", "Begründen", "Begrüßen", "Behalten", "Behandeln", "Behaupten", "Behindern", "Beibringen", "Beifügen", "Beilegen", "Beitragen", "Bekannt", "Bekommen", "Belegen", "Beleidigen", "Belohnen", "Bemühen", "Benutzen", "Benötigen", "Beraten", "Berechnen", "Bereiten", "Berichten", "Berücksichtigen", "Beruhigen", "Berühmt", "Beschädigen", "Beschäftigen", "Bescheiden", "Bescheinen", "Beschleunigen", "Beschließen", "Beschreiben", "Beschweren", "Besichtigen", "Besitzen", "Besonderer", "Besprechen", "Bestätigen", "Bestehen", "Bestellen", "Bestimmen", "Bestrafen", "Besuchen", "Beteiligen", "Betrachten", "Betreuen", "Betrügen", "Betteln", "Bevor",
         "Bevorzugen", "Bewahren", "Bewegen", "Beweisen", "Bewerben", "Bewerten", "Bewohner", "Bezahlen", "Bezeichnen", "Beziehen", "Beziehung", "Bezirk", "Bezug", "Bieten", "Bilden", "Bildung", "Billigen", "Binden", "Bitten", "Blasen", "Bleiben", "Blick", "Blind", "Blitz", "Bloß", "Blühen", "Blume", "Blut", "Boden", "Bogen", "Bohren", "Boot", "Bord", "Böse", "Braten", "Brauchen", "Brauen", "Brechen", "Breit", "Brennen", "Bringen", "Bruch", "Brücke", "Bruder", "Brust", "Bube", "Buch", "Buchen", "Bühne", "Bund"
@@ -68,7 +68,7 @@ VOCAB_DB = {
         "Abweichen", "Aneignen", "Anfordern", "Anordnen", "Anschaffen", "Anstellen", "Antreffen", "Appellieren", "Auffassen", "Aufgreifen", "Aufheben", "Aufwenden", "Ausarbeiten", "Ausdehnen", "Ausführen", "Auslösen", "Ausnutzen", "Ausstatten", "Ausüben", "Bedenken", "Begehen", "Begreifen", "Beharren", "Beifügen", "Beitragen", "Bekämpfen", "Belasten", "Belegen", "Bemängeln", "Bemessen", "Benachrichtigen", "Benachteiligen", "Beruhen", "Beschaffen", "Beseitigen", "Bestand", "Bestreiten", "Beteiligen", "Betreffen", "Beurteilen", "Bevorzugen", "Bewältigen", "Bewirken", "Beziehen", "Bezweifeln", "Bilanz", "Bündeln", "Darlegen", "Dazugehören", "Definieren",
         "Dementieren", "Differenzieren", "Diskriminieren", "Dokumentieren", "Durchdringen", "Durchführen", "Durchsetzen", "Eignen", "Einbeziehen", "Einführen", "Eingliedern", "Eingreifen", "Einhalten", "Einleiten", "Einreichen", "Einschränken", "Einsetzen", "Einstellen", "Einwenden", "Einwilligen", "Empfangen", "Empfehlen", "Entfalten", "Entgegennehmen", "Entlasten", "Entnehmen", "Entscheiden", "Entschärfen", "Entsprechen", "Entstehen", "Entwickeln", "Entwerfen", "Entziehen", "Erachten", "Erarbeiten", "Erfahren", "Erfassen", "Erfordern", "Erfüllen", "Ergänzen", "Ergreifen", "Erheben", "Erkennen", "Erlangen", "Erläutern", "Erledigen", "Erleichtern", "Ermöglichen", "Erneuern", "Ernennen",
         "Erörtern", "Erproben", "Erreichen", "Errichten", "Erscheinen", "Erschließen", "Ersetzen", "Erstatten", "Erstellen", "Erteilen", "Ertragen", "Erwarten", "Erweisen", "Erweitern", "Erwerben", "Erzielen", "Fahrlässig", "Festlegen", "Feststellen", "Filtern", "Finanzieren", "Fließen", "Folgen", "Forderung", "Förderung", "Formulieren", "Fortsetzen", "Führen", "Fügen", "Fungieren", "Garantieren", "Gedeihen", "Gefährden", "Gegenüberstellen", "Gehorchen", "Gehören", "Gelangen", "Gelten", "Genügen", "Geraten", "Gewährleisten", "Gewähren", "Gewichten", "Gewinnen", "Glauben", "Gleichen", "Gliedern", "Gönnen", "Greifen", "Grenzen",
-        "Gründen", "Handeln", "Handhaben", "Hängen", "Häufen", "Heben", "Heften", "Heilen", "Hemmen", "Herangehen", "Herleiten", "Hervorgehen", "Hervorrufen", "Hinweisen", "Hinzufügen", "Hören", "Identifizieren", "Ignorieren", "Illustrieren", "Implementieren", "Importieren", "Indizieren", "Informieren", "Integrieren", "Interessieren", "Interpretieren", "Investieren", "Irren", "Isolieren", "Justieren", "Kalkulieren", "Kämpfen", "Kategorisieren", "Kaufen", "Kehren", "Kennzeichnen", "Klären", "Klassifizieren", "Kleben", "Klingen", "Kombinieren", "Kommen", "Kommentieren", "Kommunizieren", "Kompensieren", "Komplettieren", "Konfrontieren", "Konkretisieren", "Konkurrieren", "Konstatieren"
+        "Gründen", "Handeln", "Handhaben", "Hängen", "Häufen", "Heben", "Heften", "Heilen", "Hemmen", "Herangehen", "Herleiten", "Hervorgehen", "Hervorrufen", "Hinweisen", "Hinzufügen", "Hören", "Identifizieren", "Ignorieren", "Illustrieren", "Implementieren", "Importieren", "Indizieren", "Informieren", "Integrieren", "Interessieren", "Interpretieren", "Investieren", "Irren", "Isolieren", "Justieren", "Kalkulieren", "Kämpfen", "Kategorisieren", "Kaufen", "Kehren", "Kennzeichnen", "Klären", "Klassifizieren", "Kleben", "Klingen", "Kombinieren", "Kommen", "Kommentieren", "Kommunizieren", "Kompensieren", "Kompensieren", "Konfrontieren", "Konkretisieren", "Konkurrieren", "Konstatieren"
     ],
     "C1": [
         "Auseinandersetzung", "Auswirkung", "Bedeutung", "Erkenntnis", "Fähigkeit", "Maßnahme", "Notwendigkeit", "Perspektive", "Struktur", "Vielfalt", "Anforderung", "Bewältigung", "Darstellung", "Einschätzung", "Gewährleistung", "Hintergrund", "Integration", "Kompetenz", "Nachhaltigkeit", "Umsetzung", "Analysieren", "Berücksichtigen", "Differenzieren", "Evaluieren", "Gewährleisten", "Hinterfragen", "Implementieren", "Konkretisieren", "Reflektieren", "Veranschaulichen", "Außergewöhnlich", "Beträchtlich", "Eindeutig", "Erheblich", "Gravierend", "Kontrovers", "Nachhaltig", "Präzise", "Umfangreich", "Wesentliche", "Dementsprechend", "Demnach", "Infolgedessen", "Inwiefern", "Inwieweit", "Jegliche", "Lediglich", "Nichtsdestotrotz", "Stufenweise", "Zunehmend",
@@ -162,7 +162,7 @@ def check_test_answer(u_ans, q_obj):
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY: raise Exception("Brak klucza API OpenAI.")
     client = OpenAI(api_key=API_KEY)
-    messages = [{"role": "system", "content": "You are a professional German teacher. Output ONLY valid JSON in Polish language."}]
+    messages = [{"role": "system", "content": "You are a professional German teacher. Output ONLY valid JSON. All category names must be in Polish language."}]
     if img_obj:
         buffered = BytesIO()
         img_obj.thumbnail((800, 800)); img_obj.save(buffered, format="JPEG")
@@ -386,10 +386,8 @@ elif choice == "🕹️ Quiz":
                 if st.session_state.flashcards[orig_idx].get("next_review", str(today_dt)) <= str(today_dt):
                     st.session_state.flashcards[orig_idx]["next_review"] = str(today_dt + timedelta(days=1)); force_save()
             else: st.error(f"❌ Błąd. Poprawnie: {st.session_state.q_a}")
-            
             ex_de = c.get('examples', [{}])[0].get('de') if c.get('examples') else None
             play_audio(c['de'], ex_de)
-            
             if st.button("Dalej", use_container_width=True): del st.session_state.q_c; st.rerun()
 
 elif choice == "🎴 Fiszki":
@@ -420,9 +418,9 @@ elif choice == "📸 Skaner AI":
     src = st.camera_input("Zrób zdjęcie"); up = st.file_uploader("Lub wybierz plik")
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         try:
-            with st.spinner("Przetwarzanie..."):
+            with st.spinner("Przetwarzanie obrazu..."):
                 img = Image.open(src or up).convert("RGB")
-                req = "Extract German vocabulary. Format flashcards: [{de, pl, category, examples: [{de, pl}]}]"
+                req = "Extract German vocabulary. Categories MUST be in Polish. Format: flashcards: [{de, pl, category, examples: [{de, pl}]}]"
                 res = get_openai_response(req, img_obj=img); data = parse_ai_json(res)
                 if isinstance(data, dict) and "flashcards" in data:
                     st.session_state.pending = data["flashcards"]
@@ -437,7 +435,7 @@ elif choice == "📸 Skaner AI":
                     w.update({"next_review": str(today_dt), "date_added": str(today_dt)}); st.session_state.flashcards.append(w); added += 1
             force_save(); del st.session_state.pending; st.rerun()
 
-# --- 📦 GENERATOR SŁÓW (Python Losuje -> AI Tłumaczy) ---
+# --- 📦 GENERATOR SŁÓW ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
     if "success_msg" in st.session_state: st.success(st.session_state.success_msg); del st.session_state.success_msg
@@ -448,25 +446,20 @@ elif choice == "📦 Generator słów":
                 try:
                     my_w = [x['de'].lower() for x in st.session_state.flashcards]
                     all_available = [w for w in VOCAB_DB.get(lvl, []) if w.lower() not in my_w]
-                    
                     if len(all_available) < 5:
-                        prompt = f"Generate EXACTLY 25 unique German words for level {lvl} NOT in: {my_w[:50]}. Return JSON key 'flashcards' with 'de', 'pl', 'category', and 'examples' (with 1 DE/PL sentence each)."
+                        prompt = f"Generate EXACTLY 25 German words {lvl} NOT in: {my_w[:50]}. Category names MUST be in Polish language. JSON key 'flashcards'."
                     else:
                         selection = random.sample(all_available, min(25, len(all_available)))
-                        prompt = f"""Translate THESE 25 German words to Polish: {selection}.
-                        Return JSON key 'flashcards' as list of objects: {{'de': '...', 'pl': '...', 'category': '...', 'examples': [{{'de': '...', 'pl': '...'}}]}}.
-                        For EACH word, create ONE German example sentence with its Polish translation."""
-                    
+                        prompt = f"Translate THESE words to PL: {selection}. Use Polish category names. JSON: flashcards: [{{de, pl, category, examples:[{{de,pl}}]}}]"
                     res = get_openai_response(prompt); data = parse_ai_json(res)
                     if isinstance(data, dict) and "flashcards" in data:
                         added = 0
                         for w in data["flashcards"]:
-                            t_de = w.get('de') or w.get('word'); t_pl = w.get('pl') or w.get('translation')
+                            t_de, t_pl = w.get('de') or w.get('word'), w.get('pl') or w.get('translation')
                             if t_de and t_pl and t_de.lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                                 w.update({"de": t_de, "pl": t_pl, "next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
                                 st.session_state.flashcards.append(w); added += 1
-                        st.session_state.user_data["historical_cost"] += 0.01; force_save()
-                        st.session_state.success_msg = f"🎉 Dodano dokładnie {added} nowych słówek ze zdaniami!"; st.rerun()
+                        st.session_state.user_data["historical_cost"] += 0.01; force_save(); st.session_state.success_msg = f"🎉 Dodano {added} słówek!"; st.rerun()
                 except Exception as e: st.error(f"Błąd: {e}")
 
 # --- ➕ DODAJ / 📖 SŁOWNIK ---
@@ -492,38 +485,54 @@ elif choice == "📖 Słownik":
                     if c2.form_submit_button("Usuń", use_container_width=True):
                         del st.session_state.flashcards[i]; force_save(); st.rerun()
 
+# --- 📊 STATYSTYKI (Przywrócone Tabele i Wykresy) ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki"); df = pd.DataFrame(st.session_state.flashcards)
     st.header("📊 Twoje Statystyki")
-    if df.empty: st.warning("Pusto.")
+    if df.empty: st.warning("Baza słówek jest pusta.")
     else:
         c1, c2, c3 = st.columns(3); c1.metric("Słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d"); c3.metric("Opanowane", len(df[df['next_review'].apply(is_word_mastered)]))
-        st.subheader("Historia Testów"); h = st.session_state.user_data.get("test_history", [])
-        if h: st.table(pd.DataFrame(h[::-1]).head(10))
+        
+        # PRZYWRÓCONY PODZIAŁ NA POZIOMY
+        st.subheader("🎯 Podział na poziomy")
+        stats_rows = []
+        for lvl in ["A1", "A2", "B1", "B2", "C1"]:
+            l_df = df[df['category'].str.contains(lvl, na=False)]
+            total = len(l_df)
+            know = len(l_df[l_df['next_review'].apply(is_word_mastered)]) if total > 0 else 0
+            perc = round((know/total)*100) if total > 0 else 0
+            stats_rows.append({"Poziom": lvl, "Słówek": total, "Opanowane": know, "Wiedza %": f"{perc}%"})
+        st.table(pd.DataFrame(stats_rows))
 
-# --- 👑 ADMIN (Koszty per User + Liczniki Finansowe) ---
+        # PRZYWRÓCONE NADCHODZĄCE POWTÓRKI
+        st.subheader("📅 Nadchodzące powtórki")
+        sched = []
+        for i in range(10):
+            d_target = str(today_dt + timedelta(days=i))
+            count = len(df[df['next_review'] == d_target])
+            sched.append({"Data": (today_dt + timedelta(days=i)).strftime("%d.%m"), "Słów": count})
+        st.bar_chart(pd.DataFrame(sched).set_index("Data"))
+        
+        st.subheader("📜 Historia Twoich Testów")
+        h = st.session_state.user_data.get("test_history", [])
+        if h: st.table(pd.DataFrame(h[::-1]).head(10)[["date", "score", "total", "perc"]])
+        else: st.info("Brak historii testów.")
+
+# --- 👑 ADMIN ---
 elif choice == "👑 Admin":
-    st.header("👑 Panel Admina")
-    users_db = load_j(AUTH_FILE, {})
-    adm_list = []; global_time = {m: 0.0 for m in MODULE_ORDER}
-    m1, m2 = st.columns(2)
-    t_words, t_ai_cost = 0, 0.0
+    st.header("👑 Panel Admina"); users_db = load_j(AUTH_FILE, {}); adm_list = []; global_time = {m: 0.0 for m in MODULE_ORDER}
+    m1, m2 = st.columns(2); t_words, t_ai_cost = 0, 0.0
     for usr in users_db:
-        ud = load_j(get_p(usr, "user_data"), {})
-        ub = load_j(get_p(usr, "flashcards"), [])
-        u_cost = ud.get("historical_cost", 0.0)
-        t_words += len(ub); t_ai_cost += u_cost
+        ud, ub = load_j(get_p(usr, "user_data"), {}), load_j(get_p(usr, "flashcards"), [])
+        u_cost = ud.get("historical_cost", 0.0); t_words += len(ub); t_ai_cost += u_cost
         mastery = "0%"
         if ub:
-            op = len([x for x in ub if is_word_mastered(x.get('next_review'))])
-            mastery = f"{round((op/len(ub))*100)}%"
+            op = len([x for x in ub if is_word_mastered(x.get('next_review'))]); mastery = f"{round((op/len(ub))*100)}%"
         t_s = ud.get("time_stats", {})
         for m in MODULE_ORDER: global_time[m] += t_s.get(m, 0.0)
         u_times = ", ".join([f"{m[0]}:{round(s/60)}m" for m, s in t_s.items() if s > 15])
         adm_list.append({"Użytkownik":usr, "Słów":len(ub), "Testy":len(ud.get("test_history", [])), "%":mastery, "Koszt (PLN)": round(u_cost, 2), "Ostatnio":ud.get("last_seen","Nigdy"), "Czas":u_times or "Brak"})
-    m1.metric("Łącznie słówek", t_words)
-    m2.metric("Suma kosztów AI", f"{t_ai_cost:.2f} PLN")
-    st.table(pd.DataFrame(adm_list))
+    m1.metric("Łącznie słówek", t_words); m2.metric("Suma kosztów AI", f"{t_ai_cost:.2f} PLN"); st.table(pd.DataFrame(adm_list))
     if sum(global_time.values()) > 0:
         v = [global_time[m] for m in MODULE_ORDER]; l = [f"{m}: {round(v/60,1)}m" for m, v in zip(MODULE_ORDER, v)]
         fig = go.Figure(data=[go.Bar(x=MODULE_ORDER, y=v, text=l, textposition='auto', marker_color='#1E88E5')])
@@ -542,7 +551,7 @@ elif choice == "⚙️ Moje Konto":
     lvls = ["A1", "A2", "B1", "B2", "C1"]; col_d = st.columns(5)
     for i, lvl in enumerate(lvls):
         if col_d[i].button(f"Usuń {lvl}", disabled=not conf, use_container_width=True):
-            st.session_state.flashcards = [x for x in st.session_state.flashcards if lvl in str(x.get('category',''))]
-            force_save(); st.success(f"Usunięto!"); st.rerun()
+            st.session_state.flashcards = [x for x in st.session_state.flashcards if lvl not in str(x.get('category',''))]
+            force_save(); st.success("Usunięto!"); st.rerun()
     if st.button("RESET CAŁEJ BAZY", type="primary", disabled=not conf, use_container_width=True):
         save_j(get_p(u, "flashcards"), []); st.session_state.flashcards = []; st.rerun()
