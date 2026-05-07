@@ -19,7 +19,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V214 (Forecast Chart & Stats)"
+APP_VERSION = "V215 (Forecast Chart Order Fix)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -266,7 +266,7 @@ elif choice == "📝 Testy":
                         prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
                         data = json.loads(get_openai_response(prompt))
                         st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
-                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}. Spróbuj ponownie.")
+                    except Exception as e: st.error(f"Błąd AI: {e}")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
@@ -372,7 +372,7 @@ elif choice == "📖 Słownik":
                 if st.form_submit_button("Zapisz", use_container_width=True): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
             if st.button("Usuń", key=f"del_{c['id']}", use_container_width=True): delete_word(c['id']); st.rerun()
 
-# --- 15. STATYSTYKI Z HISTORIĄ TESTÓW I WYKRESEM ---
+# --- 15. STATYSTYKI ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki"); st.header("📊 Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -392,8 +392,18 @@ elif choice == "📊 Statystyki":
                 label = (date.today() + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         
-        chart_df = pd.DataFrame(sched).set_index("Dzień")
-        st.bar_chart(chart_df)
+        # Osiągamy wymuszoną kolejność wykresu z pomocą biblioteki Plotly
+        fig = go.Figure(data=[go.Bar(
+            x=[s["Dzień"] for s in sched], 
+            y=[s["Liczba słówek"] for s in sched], 
+            marker_color='#1E88E5'
+        )])
+        fig.update_layout(
+            template="plotly_dark", 
+            xaxis=dict(type='category'), 
+            margin=dict(l=0, r=0, t=30, b=0)
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
         st.write("---")
         st.subheader("Źródła słówek")
