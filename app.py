@@ -129,32 +129,26 @@ st.session_state.flashcards = load_flashcards(u)
 
 def update_activity(m):
     curr = time.time()
-    # Obliczamy deltę czasu od ostatniej aktywności
-    last_ts = st.session_state.user_data.get("last_ts", curr)
+    # Pobieramy dane bezpośrednio z session_state, by uniknąć opóźnień bazy
+    user_data = st.session_state.user_data
+    last_ts = user_data.get("last_ts", curr)
     delta = curr - last_ts
     
-    # Rejestrujemy czas tylko jeśli przerwa była mniejsza niż 10 minut (600s)
     if 0 < delta < 600:
-        # 1. Czyszczenie nazwy modułu (usuwamy ikonki i znaki specjalne)
         clean = re.sub(r'[^\w\s]', '', m).lower().strip()
-        
-        # 2. Zamiana polskich znaków na łacińskie (żeby pasowały do CLEAN_TIME_LABELS)
         pl_map = str.maketrans("ąćęłńóśźż", "acelnoszz")
         clean = clean.translate(pl_map)
-        
-        # 3. Pobranie etykiety ze słownika (np. "powtorki" -> "Pow")
         label = CLEAN_TIME_LABELS.get(clean, "Inn")
         
-        # 4. AKTUALIZACJA - tworzymy kopię słownika, aby uniknąć błędów referencji w sesji
-        stats = dict(st.session_state.user_data.get("time_stats", {}))
+        # Aktualizacja lokalna
+        stats = dict(user_data.get("time_stats", {}))
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
     
-    # Aktualizujemy timestamp i datę ostatniego widzenia
     st.session_state.user_data["last_ts"] = curr
     st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M")
     
-    # Zapisujemy zaktualizowane dane do bazy Supabase
+    # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
 # --- 6. SIDEBAR I NAWIGACJA ---
@@ -679,37 +673,29 @@ elif choice == "⚙️ Moje Konto":
 # --- 17. ADMIN PRO ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
-    st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
+    
+    # Przycisk wymuszający przeładowanie, by zobaczyć najświeższy czas z bazy
+    if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    # 1. Pobieranie danych o wszystkich użytkownikach
+    # Pobieramy dane bezpośrednio (bez cache)
     ud_data = db.table("user_data").select("*").execute().data
-    
-    # 2. Pobieranie wszystkich fiszek zbiorczo (optymalizacja)
     all_cards_res = db.table("flashcards").select("username", "origin").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
     
     adm_list = []
     global_time = {}
-    
-    # Kody, które chcemy wyświetlać jako główne kolumny
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
-    display_names = {
-        "Pow": "Powtórki", 
-        "Trn": "Trening", 
-        "Qiz": "Quiz", 
-        "Fis": "Fiszki", 
-        "Tst": "Testy", 
-        "Inn": "Inne"
-    }
+    display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
     for user in ud_data:
         username = user["username"]
-        # Statystyki słówek dla użytkownika
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
-        
-        # Przetwarzanie statystyk czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
@@ -717,30 +703,19 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
             k_low = k.lower()
+            f_code = "Inn"
             
-            # --- LOGIKA MAPOWANIA (obsługuje stare i nowe formaty bazy) ---
-            f_code = "Inn" # Domyślnie
-            
-            # Sprawdzanie bezpośrednie kodów
-            if k in tracked_codes:
-                f_code = k
-            # Sprawdzanie rdzeni słów (odporne na polskie znaki i ikony)
+            if k in tracked_codes: f_code = k
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
             elif "qiz" in k_low or "qui" in k_low: f_code = "Qiz"
             elif "fis" in k_low: f_code = "Fis"
             elif "tst" in k_low or "tes" in k_low: f_code = "Tst"
             
-            # Dodajemy czas do wyliczonej kategorii
-            if f_code in current_user_merged:
-                current_user_merged[f_code] += seconds
-            else:
-                current_user_merged["Inn"] += seconds
-                
+            current_user_merged[f_code] += seconds
             total_sec += seconds
             global_time[f_code] = global_time.get(f_code, 0) + seconds
             
-        # 3. Dodawanie wiersza do listy wynikowej
         adm_list.append({
             "Użytkownik": username, 
             "Słów": len(user_cards), 
@@ -753,16 +728,13 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         })
     
     if not adm_list:
-        st.warning("Brak danych w systemie.")
+        st.warning("Brak danych.")
     else:
         df_admin = pd.DataFrame(adm_list)
-        
-        # WYŚWIETLANIE: Tabela główna
         st.subheader("📋 Podsumowanie użytkowników")
         st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
         
-        # WYŚWIETLANIE: Szczegółowy podział czasu
-        with st.expander("🔍 Zobacz szczegółowy podział czasu (pełne minuty)"):
+        with st.expander("🔍 Podział czasu (minuty)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
@@ -770,22 +742,3 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
                 detail_rows.append(d_row)
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
-
-        # WYŚWIETLANIE: Wykres sumaryczny
-        if global_time:
-            st.write("---")
-            chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if v >= 60}
-            if chart_data:
-                fig = go.Figure(data=[go.Bar(
-                    x=list(chart_data.keys()), 
-                    y=list(chart_data.values()), 
-                    marker_color='#FF5252',
-                    text=list(chart_data.values()),
-                    textposition='auto'
-                )])
-                fig.update_layout(
-                    template="plotly_dark", 
-                    height=400, 
-                    title="Globalny czas na modułach (minuty)"
-                )
-                st.plotly_chart(fig, use_container_width=True)
