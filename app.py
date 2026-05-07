@@ -158,20 +158,20 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
         if k in st.session_state: del st.session_state[k]
     st.session_state.l_c, st.session_state.n_m, st.session_state.u_a = choice, "ask", ""
 
-# --- 7. POWTÓRKI & TRENING (Wersja Stabilna i Szybka) ---
+# --- 7. POWTÓRKI & TRENING (Wersja ULTRA FAST z st.fragment) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki" if is_r else "Trening")
     st.header(choice)
     
-    # Pobieranie tagów
+    # 1. Filtrowanie tagów (poza fragmentem, bo rzadko zmieniane)
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
 
-    # Inicjalizacja listy
+    # 2. Inicjalizacja listy (poza fragmentem)
     if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         if is_r:
@@ -193,62 +193,69 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             del st.session_state.cur_list
             st.rerun()
     else:
-        idx = st.session_state.n_idx
-        c = cards[idx]
-        
-        # UI: Pasek postępu
-        st.progress(idx / len(cards))
-        st.write(f"Słówko **{idx + 1}** z **{len(cards)}**")
+        # --- TO JEST FRAGMENT (Tylko to będzie "migać" przy zmianie słówka) ---
+        @st.fragment
+        def flashcard_engine():
+            idx = st.session_state.n_idx
+            c = cards[idx]
+            
+            # Pasek postępu
+            st.progress(idx / len(cards))
+            st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-        # Wyświetlanie słowa
-        st.markdown(f'''
-            <div style="font-size:3em; text-align:center; padding:30px; 
-            background: #111; border:3px solid #1E88E5; border-radius:20px; margin-bottom:10px;">
-                {c["de"]}
-            </div>
-        ''', unsafe_allow_html=True)
+            # Karta
+            st.markdown(f'''
+                <div style="font-size:3em; text-align:center; padding:30px; 
+                background: #111; border:3px solid #1E88E5; border-radius:20px; margin-bottom:10px; color: white;">
+                    {c["de"]}
+                </div>
+            ''', unsafe_allow_html=True)
 
-        if st.session_state.n_m == "ask":
-            # Formularz z przyciskiem (poprawny)
-            with st.form(key=f"ask_form_{idx}", clear_on_submit=True):
-                u_in = st.text_input("Tłumaczenie (PL):")
-                if st.form_submit_button("Sprawdź", use_container_width=True):
-                    st.session_state.u_a = u_in
-                    st.session_state.n_m = "res"
-                    st.rerun()
-        else:
-            # Widok odpowiedzi
-            is_correct = normalize_text(st.session_state.u_a) == normalize_text(c['pl'])
-            if is_correct:
-                st.success(f"✅ Dobrze: {c['pl']}")
+            if st.session_state.n_m == "ask":
+                with st.form(key=f"f_{idx}", clear_on_submit=True):
+                    u_in = st.text_input("Tłumaczenie (PL):")
+                    if st.form_submit_button("Sprawdź", use_container_width=True):
+                        st.session_state.u_a = u_in
+                        st.session_state.n_m = "res"
+                        st.rerun(scope="fragment") # Odświeża TYLKO ten fragment!
             else:
-                st.error(f"❌ Poprawnie: {c['pl']}")
-            
-            exs = c.get("examples", [])
-            fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-            if fex:
-                st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
-            
-            play_audio(c['de'], fex)
-
-            if is_r:
-                st.write("Jak oceniasz?")
-                col1, col2, col3 = st.columns(3)
-                d = None
-                if col1.button("🔴 Słabo"): d = 1
-                if col2.button("🟡 Średnio"): d = 3
-                if col3.button("🟢 Dobrze"): d = 7
+                # Widok odpowiedzi
+                is_correct = normalize_text(st.session_state.u_a) == normalize_text(c['pl'])
+                if is_correct:
+                    st.success(f"✅ Dobrze: {c['pl']}")
+                else:
+                    st.error(f"❌ Poprawnie: {c['pl']}")
                 
-                if d:
-                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
-                    st.session_state.n_idx += 1
-                    st.session_state.n_m = "ask"
-                    st.rerun()
-            else:
-                if st.button("Dalej ➡️", use_container_width=True):
-                    st.session_state.n_idx += 1
-                    st.session_state.n_m = "ask"
-                    st.rerun()
+                # Przykłady i audio
+                exs = c.get("examples", [])
+                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                if fex:
+                    st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
+                
+                play_audio(c['de'], fex)
+
+                # Przycisk "Dalej" / "Oceny"
+                if is_r:
+                    st.write("Jak oceniasz?")
+                    col1, col2, col3 = st.columns(3)
+                    d = None
+                    if col1.button("🔴 Słabo"): d = 1
+                    if col2.button("🟡 Średnio"): d = 3
+                    if col3.button("🟢 Dobrze"): d = 7
+                    
+                    if d:
+                        update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
+                        st.session_state.n_idx += 1
+                        st.session_state.n_m = "ask"
+                        st.rerun(scope="fragment")
+                else:
+                    if st.button("Dalej ➡️", use_container_width=True):
+                        st.session_state.n_idx += 1
+                        st.session_state.n_m = "ask"
+                        st.rerun(scope="fragment")
+
+        # Wywołanie fragmentu
+        flashcard_engine()
 
 # --- 8. QUIZ ---
 elif choice == "🕹️ Quiz":
