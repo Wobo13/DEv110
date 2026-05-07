@@ -693,40 +693,38 @@ elif choice == "📊 Statystyki":
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
             
-            # Kompletna mapa skrótów z bazy na pełne, ładne nazwy
+            # Kompletna mapa skrótów z bazy na pełne nazwy (bez Admina)
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
                 "Fis": "Fiszki", "Tst": "Testy", "Gen": "Generator słów", 
                 "Skn": "Skaner AI", "Dod": "Dodaj", "Słn": "Słownik", 
-                "Sta": "Statystyki", "Kon": "Moje Konto", "Adm": "Admin", "Inn": "Inne"
+                "Sta": "Statystyki", "Kon": "Moje Konto", "Inn": "Inne"
             }
             
             # Twarda lista definiująca poprawną kolejność z paska nawigacji
             nav_order = [
                 "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", 
                 "Generator słów", "Skaner AI", "Dodaj", "Słownik", 
-                "Statystyki", "Moje Konto", "Admin", "Inne"
+                "Statystyki", "Moje Konto", "Inne"
             ]
             
             # Agregacja minut do pełnych nazw (zapobiega dublowaniu kategorii)
             aggregated_mins = {name: 0 for name in nav_order}
             
             for code, sec in time_stats.items():
+                # Jeśli kod to 'Adm' lub cokolwiek nierozpoznanego, wrzucamy do 'Inne'
                 name = display_names.get(code, "Inne")
                 if name not in aggregated_mins:
-                    name = "Inne" # Wychwytuje starsze, błędne wpisy i wrzuca do "Inne"
+                    name = "Inne" 
                 aggregated_mins[name] += sec
             
             t_data = []
             for name in nav_order:
                 mins = int(aggregated_mins[name] // 60)
-                if mins > 0:
-                    t_data.append({"Moduł": name, "Minuty": mins})
+                # Dodajemy WSZYSTKIE moduły, nawet jeśli mają 0 minut, dla zachowania spójności
+                t_data.append({"Moduł": name, "Minuty": mins})
             
-            if t_data:
-                st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
-            else:
-                st.info("Ucz się więcej, aby zobaczyć statystyki czasu!")
+            st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
 
         with col_top2:
             st.subheader("🧠 Fazy zapamiętywania")
