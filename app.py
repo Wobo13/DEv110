@@ -475,4 +475,37 @@ elif choice == "👑 Admin":
         for m in MODULE_ORDER: 
             global_time[m] += t_s.get(m, 0.0)
             
-        u_times = ", ".join([f"{m[0]}:{round(s/6
+        u_times = ", ".join([f"{m[0]}:{round(s/60)}m" for m,s in t_s.items() if s > 15])
+        adm_list.append({
+            "Użytkownik": usr, 
+            "Słów": len(ub), 
+            "AI (Skaner)": ai_n, 
+            "% Wiedzy": mastery, 
+            "Ostatnio": ud.get("last_seen", "Nigdy"), 
+            "Czas": u_times or "Brak"
+        })
+    
+    m1.metric("Łącznie słówek w systemie", sum(x['Słów'] for x in adm_list))
+    total_spent = sum(load_j(get_p(usr_n, 'user_data'), {}).get('historical_cost', 0) for usr_n in users)
+    m2.metric("Pozostały Bonus AI", f"{BONUS_START - total_spent:.2f} PLN")
+    
+    st.table(pd.DataFrame(adm_list))
+    
+    total_g = sum(global_time.values())
+    if total_g > 0:
+        vals = [global_time[m] for m in MODULE_ORDER]
+        labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
+        
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    x=MODULE_ORDER, 
+                    y=vals, 
+                    text=labels, 
+                    textposition='auto', 
+                    marker_color='#1E88E5'
+                )
+            ]
+        )
+        fig.update_layout(template="plotly_dark", height=450)
+        st.plotly_chart(fig, use_container_width=True)
