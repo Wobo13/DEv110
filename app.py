@@ -635,18 +635,23 @@ elif choice == "📦 Generator słów":
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
 
+    # Obsługa komunikatu o sukcesie po zapisie i odświeżeniu
+    if "scan_msg" in st.session_state:
+        st.success(st.session_state.scan_msg)
+        del st.session_state.scan_msg
+
     # 1. Inicjalizacja tymczasowej listy w sesji, jeśli nie istnieje
     if "temp_scanned" not in st.session_state:
         st.session_state.temp_scanned = []
 
     # --- WIDOK 1: PRZETWARZANIE OBRAZU ---
     if not st.session_state.temp_scanned:
-        st.write("Wgraj zdjęcie lub zrób fotkę notatek, aby AI wyciągnęła z nich słówka.")
+        st.write("Wgraj zdjęcie lub zrób fotkę notatek, aby AI wyciągnęła z nich nowe słówka.")
         t1, t2 = st.tabs(["📁 Wgraj plik", "📷 Zrób zdjęcie"])
         
         img_to_process = None
         with t1:
-            uploaded_file = st.file_uploader("Wybierz zdjęcie", type=["png", "jpg", "jpeg"])
+            uploaded_file = st.file_uploader("Wybierz zdjęcie (PNG, JPG)", type=["png", "jpg", "jpeg"])
             if uploaded_file: img_to_process = uploaded_file
         with t2:
             camera_file = st.camera_input("Zrób zdjęcie")
@@ -654,34 +659,60 @@ elif choice == "📸 Skaner AI":
 
         if img_to_process:
             if st.button("🚀 Analizuj i przygotuj listę", type="primary", use_container_width=True):
-                with st.spinner("AI czyta tekst i przygotowuje fiszki..."):
+                with st.spinner("AI analizuje tekst, wyklucza duplikaty i generuje przykłady..."):
                     try:
+                        # Pobieramy obecne niemieckie słówka z bazy (małe litery, bez spacji), by filtrować duble
+                        existing_de = {str(w.get('de', '')).lower().strip() for w in st.session_state.flashcards}
+                        
                         image = Image.open(img_to_process)
+                        
+                        # Wzmocniony i bardzo precyzyjny prompt
                         prompt = """
-                        Przeanalizuj zdjęcie. Znajdź niemieckie słówka/wyrażenia.
-                        Dla każdego: 1. Poprawny niemiecki (z rodzajnikiem). 2. Polskie tłumaczenie. 
-                        3. Tagi (część mowy, kategoria). 4. Zdanie przykładowe (DE + PL).
-                        Zwróć TYLKO JSON: {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
+                        Przeanalizuj zdjęcie. Znajdź na nim niemieckie słówka, wyrażenia lub fragmenty notatek.
+                        Dla każdego znalezionego pojęcia:
+                        1. Podaj poprawny niemiecki (z rodzajnikiem dla rzeczowników).
+                        2. Podaj polskie tłumaczenie. 
+                        3. MUSISZ wygenerować dokładnie 3 tagi, rozdzielone przecinkami: część mowy, kategoria tematyczna oraz przewidywany poziom CEFR (np. "Rzeczownik, Dom, A1").
+                        4. BEZWZGLĘDNIE wygeneruj 1 naturalne zdanie przykładowe po niemiecku z jego polskim tłumaczeniem. Każde słowo musi mieć przykład!
+                        Zwróć TYLKO JSON w formacie: {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
                         """
+                        
                         raw_res = get_openai_response(prompt, img_obj=image)
                         raw_res = raw_res.replace("```json", "").replace("```", "").strip()
                         data = json.loads(raw_res)
                         
                         items = data.get("flashcards", data.get("words", []))
+                        
                         if items:
-                            st.session_state.temp_scanned = items
-                            st.rerun()
+                            # Logika odrzucania duplikatów
+                            unique_items = []
+                            skipped_count = 0
+                            
+                            for item in items:
+                                word_de = str(item.get("de", "")).lower().strip()
+                                if word_de and word_de not in existing_de:
+                                    unique_items.append(item)
+                                else:
+                                    skipped_count += 1
+
+                            if unique_items:
+                                st.session_state.temp_scanned = unique_items
+                                if skipped_count > 0:
+                                    st.toast(f"ℹ️ Pominięto {skipped_count} słówek (znajdują się już w Twojej bazie).")
+                                st.rerun()
+                            else:
+                                st.warning(f"AI znalazło na zdjęciu słówka (łącznie: {len(items)}), ale wszystkie masz już w swoim słowniku!")
                         else:
-                            st.warning("Nie znaleziono słówek na zdjęciu.")
+                            st.warning("Nie znaleziono czytelnych słówek na zdjęciu.")
+                            
                     except Exception as e:
-                        st.error(f"Błąd analizy: {e}")
+                        st.error(f"Błąd analizy AI: {e}")
 
-    # --- WIDOK 2: EDYCJA I WERYFIKACJA (Tylko jeśli mamy coś w poczekalni) ---
+    # --- WIDOK 2: EDYCJA I WERYFIKACJA ---
     else:
-        st.subheader("📝 Zweryfikuj i edytuj słówka przed dodaniem")
-        st.info("Możesz poprawić teksty, zmienić tagi lub usunąć niechciane wiersze.")
+        st.subheader("📝 Zweryfikuj i edytuj nowe słówka przed dodaniem")
+        st.info("Pominięto duplikaty. Sprawdź, czy AI poprawnie wygenerowało przykłady i tagi (w tym poziomy).")
 
-        # Używamy fragmentu, aby edycja była płynna
         @st.fragment
         def review_scanned_items():
             temp_list = st.session_state.temp_scanned
@@ -692,21 +723,27 @@ elif choice == "📸 Skaner AI":
                 with st.container(border=True):
                     c1, c2, c3, c4 = st.columns([3, 3, 3, 1])
                     
-                    # Pola edycyjne
-                    new_de = c1.text_input("Niemiecki (DE)", item['de'], key=f"sc_de_{i}")
-                    new_pl = c2.text_input("Polski (PL)", item['pl'], key=f"sc_pl_{i}")
-                    new_cat = c3.text_input("Tagi", item['category'], key=f"sc_cat_{i}")
+                    new_de = c1.text_input("Niemiecki (DE)", item.get('de', ''), key=f"sc_de_{i}")
+                    new_pl = c2.text_input("Polski (PL)", item.get('pl', ''), key=f"sc_pl_{i}")
+                    new_cat = c3.text_input("Tagi (z poziomami)", item.get('category', ''), key=f"sc_cat_{i}")
                     
-                    # Przycisk usuwania wiersza
-                    if c4.button("🗑️", key=f"sc_del_{i}", help="Usuń z listy"):
+                    if c4.button("🗑️", key=f"sc_del_{i}", help="Usuń słowo z listy do dodania"):
                         to_delete = i
 
-                    # Zachowujemy przykłady w tle (nie edytujemy ich w tej tabeli dla czytelności)
+                    # Podgląd przykładowego zdania
+                    examples = item.get('examples', [])
+                    if examples and len(examples) > 0:
+                        ex_de = examples[0].get('de', '')
+                        ex_pl = examples[0].get('pl', '')
+                        st.caption(f"💡 Przykład: **{ex_de}** (*{ex_pl}*)")
+                    else:
+                        st.caption("⚠️ Brak wygenerowanego przykładu dla tego słówka.")
+
                     updated_list.append({
                         "de": new_de,
                         "pl": new_pl,
                         "category": new_cat,
-                        "examples": item.get('examples', [])
+                        "examples": examples
                     })
 
             if to_delete is not None:
@@ -721,30 +758,34 @@ elif choice == "📸 Skaner AI":
                 st.rerun()
 
             if col_act2.button("✅ Zapisz wybrane słówka", type="primary", use_container_width=True):
-                with st.spinner("Zapisywanie do bazy..."):
+                with st.spinner("Zapisywanie słówek do chmury..."):
                     insert_payload = []
                     for card in updated_list:
-                        insert_payload.append({
-                            "username": u,
-                            "de": card["de"],
-                            "pl": card["pl"],
-                            "category": card["category"],
-                            "examples": card["examples"],
-                            "next_review": str(date.today()),
-                            "origin": "Skaner"
-                        })
+                        if str(card["de"]).strip() and str(card["pl"]).strip():
+                            insert_payload.append({
+                                "username": u,
+                                "de": str(card["de"]).strip(),
+                                "pl": str(card["pl"]).strip(),
+                                "category": str(card["category"]).strip(),
+                                "examples": card["examples"],
+                                "next_review": str(date.today()),
+                                "origin": "Skaner"
+                            })
                     
                     if insert_payload:
                         get_db().table("flashcards").insert(insert_payload).execute()
+                        
+                        # Aktualizacja lokalnego stanu
                         st.session_state.flashcards = load_flashcards(u)
                         st.session_state.user_data["historical_cost"] += 0.05
                         save_user_data(u, st.session_state.user_data)
                         
-                        # Czyścimy poczekalnię i pokazujemy sukces
                         count = len(insert_payload)
                         del st.session_state.temp_scanned
-                        st.session_state.acc_msg = f"✅ Pomyślnie dodano {count} zweryfikowanych słówek!"
+                        st.session_state.scan_msg = f"✅ Gotowe! Pomyślnie dodano {count} zweryfikowanych słówek do Twojej bazy."
                         st.rerun()
+                    else:
+                        st.error("Wszystkie pola słówek są puste. Nie zapisano danych.")
 
         review_scanned_items()
 
