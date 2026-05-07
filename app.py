@@ -537,29 +537,74 @@ elif choice == "📝 Testy":
 # --- 11. GENERATOR ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator")
+    
+    # --- WYŚWIETLANIE WYNIKÓW PO OSTATNIM GENEROWANIU ---
+    if "last_generated" in st.session_state:
+        st.success(f"🎉 Pomyślnie wygenerowano i dodano {len(st.session_state.last_generated)} nowych słówek!")
+        
+        # Tabela ze spisem dodanych słówek
+        df_new = pd.DataFrame(st.session_state.last_generated)
+        st.dataframe(df_new, use_container_width=True, hide_index=True)
+        
+        if st.button("Ukryj listę", use_container_width=True):
+            del st.session_state.last_generated
+            st.rerun()
+            
+        st.write("---")
+    # ----------------------------------------------------
+
     cols = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner("AI pobiera słówka z chmury..."):
+            with st.spinner(f"AI pobiera i analizuje słówka dla poziomu {lvl}... To potrwa tylko chwilę."):
                 try:
+                    # Pobieranie bazy i odfiltrowanie już posiadanych
                     res_lib = get_db().table("vocab_library").select("word").eq("level", lvl).execute()
                     my_w = [x['de'].lower() for x in st.session_state.flashcards]
                     avail = [w['word'] for w in res_lib.data if w['word'].lower() not in my_w]
+                    
+                    if not avail:
+                        st.warning(f"Masz już wszystkie słówka z poziomu {lvl} w swojej bazie!")
+                        st.stop()
+                        
                     sel = random.sample(avail, min(25, len(avail)))
+                    
+                    # Generowanie danych przez AI
                     prompt = f"Przetłumacz i otaguj: {sel}. JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"..., {lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
                     data = json.loads(get_openai_response(prompt))
                     
-                    added = 0
+                    # --- OPTYMALIZACJA: BULK INSERT (ZAPIS ZBIORCZY) ---
+                    insert_payload = []
+                    display_list = [] # Do wyświetlenia użytkownikowi
+                    
                     for w in data.get("flashcards", []):
-                        save_word(u, {**w, "next_review": str(date.today()), "origin": "Generator"})
-                        added += 1
+                        card = {
+                            "username": u,
+                            "de": w.get("de", ""),
+                            "pl": w.get("pl", ""),
+                            "category": w.get("category", ""),
+                            "examples": w.get("examples", []),
+                            "next_review": str(date.today()),
+                            "origin": "Generator"
+                        }
+                        insert_payload.append(card)
+                        display_list.append({"Niemiecki (DE)": card["de"], "Polski (PL)": card["pl"]})
                     
-                    # Symulacja przypisywania kosztu API za wygenerowanie danych
-                    st.session_state.user_data["historical_cost"] += (added * 0.005) # Przyjęte średnio pół grosza za słowo z przykładem
-                    save_user_data(u, st.session_state.user_data)
-                    
-                    st.success(f"Pomyślnie dodano {added} słówek!"); st.rerun()
-                except Exception as e: st.error(f"Błąd AI: {e}")
+                    if insert_payload:
+                        # Jedno zapytanie do bazy zamiast 25! (Ogromny skok wydajności)
+                        get_db().table("flashcards").insert(insert_payload).execute()
+                        
+                        added = len(insert_payload)
+                        # Symulacja przypisywania kosztu API
+                        st.session_state.user_data["historical_cost"] += (added * 0.005) 
+                        save_user_data(u, st.session_state.user_data)
+                        
+                        # Zapisanie listy do sesji, aby przetrwała st.rerun()
+                        st.session_state.last_generated = display_list
+                        st.rerun()
+                        
+                except Exception as e: 
+                    st.error(f"Wystąpił błąd AI: {e}")
 
 # --- 12. SKANER ---
 elif choice == "📸 Skaner AI":
