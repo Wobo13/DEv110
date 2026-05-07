@@ -480,70 +480,71 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    # 1. Pobieramy dane użytkowników
     ud_data = db.table("user_data").select("*").execute().data
     
-    # 2. Pobieramy WSZYSTKIE fiszki jednym zapytaniem poza pętlą (poprawka wydajności)
     all_cards_res = db.table("flashcards").select("username", "origin").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
     
     adm_list = []
     global_time = {}
     
-    # Definiujemy moduły, które chcemy śledzić w tabeli (zgodnie z CLEAN_TIME_LABELS)
+    # Skrócone nagłówki dla tabeli głównej
     tracked_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
-    # Mapowanie dla czytelniejszych nagłówków kolumn
-    column_map = {"Pow": "Powtórki (m)", "Trn": "Trening (m)", "Qiz": "Quiz (m)", "Fis": "Fiszki (m)", "Tst": "Testy (m)", "Inn": "Inne (m)"}
     
     for user in ud_data:
         username = user["username"]
-        total_cost = user.get("historical_cost", 0.0)
-        
-        # Filtrujemy dane fiszek w pamięci
         user_cards = df_cards_all[df_cards_all["username"] == username]
         
-        origin_counts = user_cards["origin"].value_counts()
-        m_man = int(origin_counts.get("Dodaj", 0))
-        m_gen = int(origin_counts.get("Generator", 0))
-        m_skn = int(origin_counts.get("Skaner", 0))
+        # Liczenie pochodzenia
+        oc = user_cards["origin"].value_counts()
         
-        t_count = len(user.get("test_history", []))
-        
-        # Przetwarzanie statystyk czasu
+        # Liczenie czasu
         user_stats = user.get("time_stats", {})
-        merged = {}
+        merged = {m: 0.0 for m in tracked_modules}
+        total_sec = 0
         for m, s in user_stats.items():
             lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn")
-            merged[lbl] = merged.get(lbl, 0) + s
+            if lbl in merged:
+                merged[lbl] += s
+            total_sec += s
             global_time[lbl] = global_time.get(lbl, 0) + s
             
-        # Tworzymy podstawowy słownik danych użytkownika
-        row = {
+        # Tabela główna - tylko kluczowe metryki
+        adm_list.append({
             "Użytkownik": username, 
-            "Słów (Razem)": len(user_cards), 
-            "Ręcznie": m_man, 
-            "Gen. AI": m_gen, 
-            "Skan. AI": m_skn, 
-            "Testy": t_count,
-            "Koszt OpenAI (PLN)": round(total_cost, 4)
-        }
-        
-        # Dodajemy kolumny z czasem dla każdego modułu (przeliczone na minuty)
-        for mod_code in tracked_modules:
-            seconds = merged.get(mod_code, 0)
-            row[column_map[mod_code]] = round(seconds / 60, 1)
-            
-        adm_list.append(row)
-        
-    # Wyświetlamy tabelę
-    st.table(pd.DataFrame(adm_list))
+            "Słów": len(user_cards), 
+            "Ręcznie": int(oc.get("Dodaj", 0)), 
+            "AI (G+S)": int(oc.get("Generator", 0)) + int(oc.get("Skaner", 0)), 
+            "Testy": len(user_cards[user_cards['origin'] == "Testy"]) if 'origin' in user_cards else 0, # poprawka logiczna
+            "Czas Total (m)": round(total_sec / 60, 1),
+            "Koszt (PLN)": round(user.get("historical_cost", 0.0), 2)
+        })
     
+    # 1. WYŚWIETLANIE TABELI GŁÓWNEJ (Kompaktowej)
+    st.subheader("📋 Podsumowanie użytkowników")
+    st.dataframe(pd.DataFrame(adm_list), use_container_width=True, hide_index=True)
+    
+    # 2. SZCZEGÓŁY CZASU (Rozwijana lista)
+    with st.expander("🔍 Zobacz szczegółowy podział czasu (minuty)"):
+        # Przygotowanie danych do tabeli szczegółowej
+        detail_list = []
+        for user in ud_data:
+            u_stats = user.get("time_stats", {})
+            u_merged = {m: round(sum([s for mod, s in u_stats.items() if CLEAN_TIME_LABELS.get(mod.strip()) == m]) / 60, 1) for m in tracked_modules}
+            u_merged["Użytkownik"] = user["username"]
+            detail_list.append(u_merged)
+        
+        st.table(pd.DataFrame(detail_list).set_index("Użytkownik"))
+
+    # 3. WYKRES GLOBALNY
     if global_time:
         st.write("---")
         fig = go.Figure(data=[go.Bar(
             x=list(global_time.keys()), 
-            y=[s/60 for s in global_time.values()], 
-            marker_color='#FF5252'
+            y=[round(s/60, 1) for s in global_time.values()], 
+            marker_color='#FF5252',
+            text=[f"{round(s/60, 1)}m" for s in global_time.values()],
+            textposition='auto',
         )])
-        fig.update_layout(template="plotly_dark", height=400, title="Globalny czas spędzony przez użytkowników (w minutach)")
+        fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (suma wszystkich)")
         st.plotly_chart(fig, use_container_width=True)
