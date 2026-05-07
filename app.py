@@ -692,15 +692,34 @@ elif choice == "📊 Statystyki":
         with col_top1:
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
+            
+            # Kompletna mapa skrótów z bazy na pełne, ładne nazwy
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
-                "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"
+                "Fis": "Fiszki", "Tst": "Testy", "Gen": "Generator słów", 
+                "Skn": "Skaner AI", "Dod": "Dodaj", "Słn": "Słownik", 
+                "Sta": "Statystyki", "Kon": "Moje Konto", "Adm": "Admin", "Inn": "Inne"
             }
             
-            t_data = []
+            # Twarda lista definiująca poprawną kolejność z paska nawigacji
+            nav_order = [
+                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", 
+                "Generator słów", "Skaner AI", "Dodaj", "Słownik", 
+                "Statystyki", "Moje Konto", "Admin", "Inne"
+            ]
+            
+            # Agregacja minut do pełnych nazw (zapobiega dublowaniu kategorii)
+            aggregated_mins = {name: 0 for name in nav_order}
+            
             for code, sec in time_stats.items():
-                name = display_names.get(code, code)
-                mins = int(sec // 60)
+                name = display_names.get(code, "Inne")
+                if name not in aggregated_mins:
+                    name = "Inne" # Wychwytuje starsze, błędne wpisy i wrzuca do "Inne"
+                aggregated_mins[name] += sec
+            
+            t_data = []
+            for name in nav_order:
+                mins = int(aggregated_mins[name] // 60)
                 if mins > 0:
                     t_data.append({"Moduł": name, "Minuty": mins})
             
