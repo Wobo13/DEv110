@@ -480,18 +480,29 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    ud = db.table("user_data").select("*").execute().data
+    # 1. Pobieramy dane użytkowników
+    ud_data = db.table("user_data").select("*").execute().data
+    
+    # 2. POPRAWKA WYDAJNOŚCI: Pobieramy WSZYSTKIE fiszki jednym zapytaniem poza pętlą
+    all_cards_res = db.table("flashcards").select("username", "origin").execute().data
+    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
+    
     adm_list = []
     global_time = {}
     
-    for user in ud:
+    for user in ud_data:
         username = user["username"]
         total_cost = user.get("historical_cost", 0.0)
-        cards = db.table("flashcards").select("origin").eq("username", username).execute().data
         
-        m_man = len([x for x in cards if x.get("origin") == "Dodaj"])
-        m_gen = len([x for x in cards if x.get("origin") == "Generator"])
-        m_skn = len([x for x in cards if x.get("origin") == "Skaner"])
+        # 3. POPRAWKA WYDAJNOŚCI: Filtrujemy dane w pamięci (Pandas) zamiast pytać bazę w pętli
+        user_cards = df_cards_all[df_cards_all["username"] == username]
+        
+        # Szybkie liczenie statystyk pochodzenia
+        origin_counts = user_cards["origin"].value_counts()
+        m_man = int(origin_counts.get("Dodaj", 0))
+        m_gen = int(origin_counts.get("Generator", 0))
+        m_skn = int(origin_counts.get("Skaner", 0))
+        
         t_count = len(user.get("test_history", []))
         
         merged = {}
@@ -504,7 +515,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         adm_list.append({
             "Użytkownik": username, 
-            "Słów (Razem)": len(cards), 
+            "Słów (Razem)": len(user_cards), 
             "Ręcznie": m_man, 
             "Gen. AI": m_gen, 
             "Skan. AI": m_skn, 
