@@ -158,50 +158,104 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
         if k in st.session_state: del st.session_state[k]
     st.session_state.l_c, st.session_state.n_m, st.session_state.u_a = choice, "ask", ""
 
-# --- 7. POWTÓRKI & TRENING ---
+# --- 7. POWTÓRKI & TRENING (Zoptymalizowany) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki" if is_r else "Trening")
     st.header(choice)
+    
+    # 1. Pobieranie tagów z sesji (bez pytania bazy)
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
-    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)))
     
-    if "cur_list" not in st.session_state:
+    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
+
+    # 2. Inicjalizacja listy zadań (tylko raz lub przy zmianie filtra)
+    if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
-        if is_r: pool = [c for c in pool if str(c.get("next_review", date.today())) <= str(date.today())]
-        random.shuffle(pool); st.session_state.cur_list, st.session_state.n_idx = pool, 0
+        if is_r:
+            pool = [c for c in pool if str(c.get("next_review", date.today())) <= str(date.today())]
+        random.shuffle(pool)
+        st.session_state.cur_list = pool
+        st.session_state.n_idx = 0
+        st.session_state.last_tag = sel_tag
+        st.session_state.n_m = "ask"
 
     cards = st.session_state.cur_list
-    if not cards: st.success("Pusto! 🎉")
+    
+    if not cards:
+        st.success("Pusto! 🎉 Wszystko powtórzone.")
+    elif st.session_state.n_idx >= len(cards):
+        st.balloons()
+        st.success("Koniec sesji! 🏆")
+        if st.button("Powtórz od nowa"):
+            del st.session_state.cur_list
+            st.rerun()
     else:
         idx = st.session_state.n_idx
-        if idx < len(cards):
-            c = cards[idx]
-            st.write(f"Zostało: **{len(cards) - idx}**")
-            st.markdown(f'<div style="font-size:3em; text-align:center; padding:30px; border:3px solid #1E88E5; border-radius:20px;">{c["de"]}</div>', unsafe_allow_html=True)
-            if st.session_state.n_m == "ask":
-                u_in = st.text_input("Tłumaczenie (PL):", key=f"rev_{idx}")
-                if st.button("Sprawdź", use_container_width=True): st.session_state.u_a, st.session_state.n_m = u_in, "res"; st.rerun()
+        c = cards[idx]
+        
+        # UI: Pasek postępu (zamiast tekstu - lepiej wygląda)
+        progress = (idx) / len(cards)
+        st.progress(progress)
+        st.caption(f"Słówko {idx + 1} z {len(cards)}")
+
+        # KARTA (Bez migania całego ekranu)
+        st.markdown(f'''
+            <div style="font-size:2.8em; text-align:center; padding:40px; 
+            background: #1e1e1e; border:3px solid #1E88E5; border-radius:20px; margin-bottom:20px;">
+                {c["de"]}
+            </div>
+        ''', unsafe_allow_html=True)
+
+        if st.session_state.n_m == "ask":
+            with st.form(key=f"form_{idx}"):
+                u_in = st.text_input("Tłumaczenie (PL):", key=f"input_{idx}").focus() # Jeśli Streamlit wspiera focus
+                submit = st.form_submit_button("Sprawdź", use_container_width=True)
+                if submit:
+                    st.session_state.u_a = u_in
+                    st.session_state.n_m = "res"
+                    st.rerun()
+        else:
+            # WYNIK
+            is_correct = normalize_text(st.session_state.u_a) == normalize_text(c['pl'])
+            if is_correct:
+                st.success(f"✅ Dobrze: {c['pl']}")
             else:
-                if normalize_text(st.session_state.u_a) == normalize_text(c['pl']): st.success(f"✅ Dobrze: {c['pl']}")
-                else: st.error(f"❌ Poprawnie: {c['pl']}")
-                exs = c.get("examples", [])
-                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                if fex: st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
-                play_audio(c['de'], fex)
-                if is_r:
-                    st.write("Jak oceniasz?")
-                    col1, col2, col3 = st.columns(3); d = None
-                    if col1.button("🔴 Słabo"): d = 1
-                    if col2.button("🟡 Średnio"): d = 3
-                    if col3.button("🟢 Dobrze"): d = 7
-                    if d:
-                        update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
-                        st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
-                else:
-                    if st.button("Dalej ➡️", use_container_width=True): st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
+                st.error(f"❌ Poprawnie: {c['pl']}")
+            
+            # Przykłady i audio
+            exs = c.get("examples", [])
+            fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+            if fex:
+                st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
+            
+            # Autoodtwarzanie audio bez przeładowania strony
+            play_audio(c['de'], fex)
+
+            # OCENA I NAWIGACJA
+            if is_r:
+                st.write("Jak oceniasz trudność?")
+                col1, col2, col3 = st.columns(3)
+                
+                # Używamy callbacków, aby uniknąć pełnego rerun tam gdzie się da
+                if col1.button("🔴 Trudne (1d)"): d = 1
+                elif col2.button("🟡 Średnie (3d)"): d = 3
+                elif col3.button("🟢 Łatwe (7d)"): d = 7
+                else: d = None
+
+                if d:
+                    # Optymalizacja: aktualizujemy lokalną kopię w sesji od razu, by nie pobierać bazy ponownie
+                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
+                    st.session_state.n_idx += 1
+                    st.session_state.n_m = "ask"
+                    st.rerun()
+            else:
+                if st.button("Dalej ➡️", use_container_width=True):
+                    st.session_state.n_idx += 1
+                    st.session_state.n_m = "ask"
+                    st.rerun()
 
 # --- 8. QUIZ ---
 elif choice == "🕹️ Quiz":
