@@ -8,7 +8,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V147"
+APP_VERSION = "V148"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -38,14 +38,11 @@ def play_audio(txt):
     except: pass
 
 # --- AUTO-DETEKCJA DZIAŁAJĄCEGO MODELU AI ---
-def get_ai_response(content, is_vision=False):
+def get_ai_response(content):
     genai.configure(api_key=API_KEY)
     
-    # Modele podzielone na kategorie (wizyjne i tekstowe). Najpierw 1.5, potem niezawodne 1.0.
-    if is_vision:
-        models_to_test = ["gemini-1.5-flash", "gemini-1.0-pro-vision-latest", "gemini-pro-vision"]
-    else:
-        models_to_test = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"]
+    # Testujemy tylko najnowsze, oficjalnie wspierane modele
+    models_to_test = ["gemini-1.5-flash", "gemini-1.5-pro"]
         
     last_err = ""
     for m_name in models_to_test:
@@ -58,7 +55,7 @@ def get_ai_response(content, is_vision=False):
             last_err = str(e)
             continue
             
-    raise Exception(f"Brak dostępu do jakiegokolwiek modelu. Twój klucz API odrzuca połączenia. Szczegóły: {last_err}")
+    raise Exception(f"BLOKADA KLUCZA API (404 v1beta). Twoje środowisko lub klucz odrzuca połączenia. \n1. Zaktualizuj bibliotekę na PC: pip install -U google-generativeai \n2. Jeśli jesteś w UE, upewnij się, że projekt w Google Cloud ma aktywne płatności (wymóg weryfikacji). \nSzczegóły: {last_err}")
 
 def parse_ai_json(text):
     try:
@@ -223,14 +220,13 @@ elif choice == "📸 Skaner AI":
     update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie"); up = st.file_uploader("Lub wybierz plik")
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         try:
-            with st.spinner("AI analizuje obraz (Szukam dostępnego modelu)..."):
-                txt = get_ai_response(["Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]", Image.open(src or up).convert("RGB")], is_vision=True)
+            with st.spinner("AI analizuje..."):
+                txt = get_ai_response(["Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]", Image.open(src or up).convert("RGB")])
                 data = parse_ai_json(txt)
                 if data:
-                    st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.01; st.rerun()
+                    st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.015; st.rerun()
                 else: st.error("AI zwróciło nieprawidłowy format danych.")
         except Exception as e: st.error(str(e))
-        
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
         if st.button("✅ ZAPISZ DO BAZY", use_container_width=True):
@@ -244,11 +240,11 @@ elif choice == "📦 Generator słów":
     update_activity("Generator"); cols = st.columns(5); lvls = ["A1", "A2", "B1", "B2", "C1"]
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"AI generuje słówka dla poziomu {lvl} (Szukam modelu)..."):
+            with st.spinner(f"AI generuje słówka dla poziomu {lvl}..."):
                 try:
                     exist = [x['de'] for x in st.session_state.flashcards[:300]]
                     p = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
-                    txt = get_ai_response(p, is_vision=False)
+                    txt = get_ai_response(p)
                     data = parse_ai_json(txt)
                     if data:
                         added = 0
@@ -256,7 +252,7 @@ elif choice == "📦 Generator słów":
                             if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                                 w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
                                 st.session_state.flashcards.append(w); added += 1
-                        st.session_state.user_data["historical_cost"] += 0.005
+                        st.session_state.user_data["historical_cost"] += 0.01
                         save_j(get_p(u, "flashcards"), st.session_state.flashcards)
                         st.success(f"Dodano {added} nowych słówek!"); st.rerun()
                     else: st.error("AI nie zwróciło poprawnego formatu JSON.")
@@ -346,6 +342,7 @@ elif choice == "⚙️ Moje Konto":
 # --- 👑 ADMIN ---
 elif choice == "👑 Admin":
     st.header("👑 Panel Admina Master")
+    st.warning("⚠️ Pamiętaj: Dane z komputera (Lokalne) i linku .streamlit.app (Chmura) są oddzielne.")
     users = load_j(AUTH_FILE, {}); adm_list = []; global_time = {m: 0.0 for m in MODULE_ORDER}
     m1, m2 = st.columns(2)
     
