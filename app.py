@@ -7,7 +7,7 @@ import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V153"
+APP_VERSION = "V154"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -46,50 +46,51 @@ def play_audio(txt):
     except: 
         pass
 
-# --- OPCJA ATOMOWA AI (REST API - BEZ BIBLIOTEKI GOOGLE) ---
+# --- NIEZAWODNE REST API ---
+def get_best_model():
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        models = resp.json().get('models', [])
+        valid_models = [m['name'].split('/')[-1] for m in models if 'generateContent' in m.get('supportedGenerationMethods', [])]
+        for pref in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.0-pro"]:
+            if pref in valid_models:
+                return pref
+        if valid_models:
+            return valid_models[0]
+    return "gemini-1.5-flash" # Fallback domyślny
+
 def get_ai_response(prompt_text, img_obj=None):
     if not API_KEY:
         raise Exception("Brak klucza API w konfiguracji.")
         
-    models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    endpoints = ["v1", "v1beta"]
-    last_err = ""
+    model_name = get_best_model()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
+    headers = {'Content-Type': 'application/json'}
     
-    for m in models:
-        for v in endpoints:
-            url = f"https://generativelanguage.googleapis.com/{v}/models/{m}:generateContent?key={API_KEY}"
-            headers = {'Content-Type': 'application/json'}
-            parts = [{"text": prompt_text}]
+    parts = [{"text": prompt_text}]
+    
+    if img_obj:
+        if "1.0-pro" in model_name and "vision" not in model_name:
+            raise Exception("Twój klucz obsługuje tylko stary model tekstowy. Obrazy nie są obsługiwane. Włącz Generative Language API w Google Cloud.")
+        buffered = BytesIO()
+        img_obj.thumbnail((800, 800))
+        img_obj.save(buffered, format="JPEG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": img_b64
+            }
+        })
             
-            if img_obj:
-                # Starszy model tekstowy nie wspiera obrazów, więc go omijamy w Skanerze
-                if m == "gemini-pro" or m == "gemini-1.0-pro":
-                    pass 
-                else:
-                    buffered = BytesIO()
-                    img_obj.thumbnail((800, 800))
-                    img_obj.save(buffered, format="JPEG")
-                    img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                    parts.append({
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": img_b64
-                        }
-                    })
-                    
-            payload = {"contents": [{"parts": parts}]}
-            
-            try:
-                resp = requests.post(url, headers=headers, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data['candidates'][0]['content']['parts'][0]['text']
-                else:
-                    last_err = f"[{m} na {v}] Błąd HTTP {resp.status_code}: {resp.text}"
-            except Exception as e:
-                last_err = str(e)
-                
-    raise Exception(f"Google całkowicie odrzuca połączenia API dla tego klucza. Ostatni log: {last_err}")
+    payload = {"contents": [{"parts": parts}]}
+    
+    resp = requests.post(url, headers=headers, json=payload)
+    if resp.status_code == 200:
+        return resp.json()['candidates'][0]['content']['parts'][0]['text']
+    else:
+        raise Exception(f"Błąd HTTP {resp.status_code}: {resp.text}")
 
 def parse_ai_json(text):
     try:
@@ -111,7 +112,6 @@ if "auth" not in st.session_state:
             st.session_state.auth = True
             st.session_state.user = ss[tk]
 
-# Naprawa NameError na telefonie
 if "u_a" not in st.session_state: 
     st.session_state.u_a = ""
 if "n_m" not in st.session_state: 
@@ -165,7 +165,7 @@ def update_activity(m="Inne"):
     delta = curr - st.session_state.user_data.get("last_ts", curr)
     if 0 < delta < 600:
         stats = st.session_state.user_data.get("time_stats", {})
-        m_clean = m.strip("📅 🚀 🕹️ 🎴 📸 📦 ➕ 📖 📊 ⚙️ ")
+        m_clean = m.strip("📅 🚀 🕹️ 🎴 📸 📦 ➕ 📖 📊 ⚙️ 🩺 ")
         stats[m_clean] = stats.get(m_clean, 0) + delta
         st.session_state.user_data["time_stats"] = stats
     st.session_state.user_data["last_ts"] = curr
@@ -186,7 +186,7 @@ if st.sidebar.button("Wyloguj", use_container_width=True):
 
 menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📸 Skaner AI", "📦 Generator słów", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
 if u == ADMIN_USER: 
-    menu.append("👑 Admin")
+    menu.extend(["🩺 Diagnostyka API", "👑 Admin"])
 choice = st.sidebar.radio("Nawigacja", menu)
 
 if "l_c" not in st.session_state or st.session_state.l_c != choice:
@@ -200,7 +200,7 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
 def is_correct(a, c): 
     return a.strip().lower() in [s.strip().lower() for s in re.split(r'[/,;]', c)]
 
-# --- 📅 POWTÓRKI / 🚀 TRENING ---
+# --- MODUŁY ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki" if is_r else "Trening")
@@ -255,7 +255,6 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     st.session_state.n_m = "ask"
                     st.rerun()
 
-# --- 🎴 FISZKI ---
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki")
     st.header("🎴 Fiszki")
@@ -297,7 +296,6 @@ elif choice == "🎴 Fiszki":
         if st.session_state.f_flipped: 
             play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
 
-# --- 📸 SKANER AI (REST API) ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner")
     src = st.camera_input("Zrób zdjęcie")
@@ -316,7 +314,7 @@ elif choice == "📸 Skaner AI":
                     st.session_state.user_data["historical_cost"] += 0.015
                     st.rerun()
                 else: 
-                    st.error("AI odpowiedziało, ale nie zwróciło formatu JSON.")
+                    st.error("AI odpowiedziało, ale nie w formacie JSON.")
         except Exception as e: 
             st.error(str(e))
             
@@ -330,7 +328,6 @@ elif choice == "📸 Skaner AI":
             del st.session_state.pending
             st.rerun()
 
-# --- 📦 GENERATOR SŁÓW (REST API) ---
 elif choice == "📦 Generator słów":
     update_activity("Generator")
     cols = st.columns(5)
@@ -338,7 +335,7 @@ elif choice == "📦 Generator słów":
     
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"Pobieranie {lvl} przez REST API..."):
+            with st.spinner(f"AI generuje słówka dla {lvl}..."):
                 try:
                     exist = [x['de'] for x in st.session_state.flashcards[:300]]
                     p = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
@@ -357,11 +354,10 @@ elif choice == "📦 Generator słów":
                         st.success(f"Dodano {added} nowych słówek!")
                         st.rerun()
                     else: 
-                        st.error("Wadliwy format zwrócony przez serwer.")
+                        st.error("AI zwróciło zły format.")
                 except Exception as e: 
                     st.error(str(e))
 
-# --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz")
     all_c = st.session_state.flashcards
@@ -384,7 +380,7 @@ elif choice == "🕹️ Quiz":
                     st.rerun()
         else:
             if st.session_state.get("u_q") == st.session_state.q_a: 
-                st.success("✅ Brawo! To poprawna odpowiedź.")
+                st.success("✅ Brawo!")
             else: 
                 st.error(f"❌ Błąd. Poprawnie: {st.session_state.q_a}")
                 
@@ -394,7 +390,6 @@ elif choice == "🕹️ Quiz":
                 del st.session_state.q_c
                 st.rerun()
 
-# --- ➕ DODAJ RĘCZNIE ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj słówko ręcznie")
     update_activity("Dodaj")
@@ -408,7 +403,6 @@ elif choice == "➕ Dodaj":
                 save_j(get_p(u,"flashcards"), st.session_state.flashcards)
                 st.success("Słówko dodane!")
 
-# --- 📖 SŁOWNIK ---
 elif choice == "📖 Słownik":
     update_activity("Słownik")
     kats = ["Wszystkie"] + sorted(list(set([c.get("category","Inne") for c in st.session_state.flashcards])))
@@ -432,7 +426,6 @@ elif choice == "📖 Słownik":
                         save_j(get_p(u,"flashcards"), st.session_state.flashcards)
                         st.rerun()
 
-# --- 📊 STATYSTYKI ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -448,7 +441,6 @@ elif choice == "📊 Statystyki":
         stats_df = pd.DataFrame([{"Data": (today_dt + timedelta(days=i)).strftime("%d.%m"), "Słów": len(df[df['next_review']==str(today_dt + timedelta(days=i))])} for i in range(10)])
         st.bar_chart(stats_df.set_index("Data"))
 
-# --- ⚙️ MOJE KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     update_activity("Konto")
@@ -490,7 +482,29 @@ elif choice == "⚙️ Moje Konto":
         st.session_state.flashcards = []
         st.rerun()
 
-# --- 👑 ADMIN ---
+elif choice == "🩺 Diagnostyka API":
+    st.header("🩺 Diagnostyka Klucza API")
+    if st.button("Sprawdź dostępne modele", type="primary"):
+        with st.spinner("Pytam serwery Google..."):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+            resp = requests.get(url)
+            if resp.status_code == 200:
+                models = resp.json().get('models', [])
+                valid_models = [m['name'].split('/')[-1] for m in models if 'generateContent' in m.get('supportedGenerationMethods', [])]
+                if valid_models:
+                    st.success("Klucz działa poprawnie. Twój klucz ma dostęp do poniższych modeli:")
+                    for vm in valid_models:
+                        if "1.5" in vm:
+                            st.markdown(f"- 🟢 **{vm}** (Idealny!)")
+                        else:
+                            st.markdown(f"- 🟡 {vm}")
+                else:
+                    st.warning("Klucz łączy się poprawnie, ale nie udostępniono mu żadnych modeli tekstowych.")
+            else:
+                st.error("Błąd połączenia. Google odrzuca klucz.")
+                st.json(resp.json())
+                st.info("Pamiętaj: Musisz ręcznie włączyć **Generative Language API** w panelu Google Cloud.")
+
 elif choice == "👑 Admin":
     st.header("👑 Panel Admina Master")
     st.warning("⚠️ Pamiętaj: Dane z komputera (Lokalne) i linku .streamlit.app (Chmura) są oddzielne.")
