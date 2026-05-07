@@ -17,13 +17,12 @@ import plotly.graph_objects as go
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V163 (OpenAI Edition)"
+APP_VERSION = "V164 (OpenAI Perfected)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
-BONUS_START = 1089.0
 
-# Pobieranie klucza API (sprawdza oba na wszelki wypadek)
+# Pobieranie klucza API (OpenAI)
 API_KEY = st.secrets.get("OPENAI_API_KEY") or st.secrets.get("GEMINI_API_KEY") or st.session_state.get("manual_api_key", "")
 
 MODULE_ORDER = [
@@ -383,11 +382,13 @@ elif choice == "📸 Skaner AI":
                 with st.spinner("Skanowanie i tworzenie przykładowych zdań..."):
                     img = Image.open(src or up).convert("RGB")
                     
+                    # Mocny prompt wymuszający zdania i polskie kategorie
                     req_txt = (
                         "Extract German vocabulary from this image and translate to Polish. "
                         "You MUST generate 1-2 practical German example sentences (with Polish translations) for EACH extracted word to provide context. "
+                        "Assign a broad, descriptive category in POLISH to each word (e.g., 'Jedzenie', 'Praca', 'Dom'). Do NOT use grammatical terms like 'Nomen'. "
                         "Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: "
-                        "[{'de':'word', 'pl':'translation', 'category':'Skaner', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
+                        "[{'de':'word', 'pl':'translation', 'category':'Polish Category Name', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
                     )
                     
                     res_text = get_openai_response(req_txt, img_obj=img)
@@ -442,18 +443,20 @@ elif choice == "📦 Generator słów":
             if not API_KEY:
                 st.error("Brak klucza API OpenAI.")
             else:
-                with st.spinner(f"Generowanie słówek i zdań kontekstowych dla {lvl}..."):
+                with st.spinner(f"Generowanie dokładnie 25 słówek i zdań kontekstowych dla {lvl}..."):
                     try:
                         exist = []
                         for x in st.session_state.flashcards[:300]:
                             exist.append(x['de'])
                             
+                        # Żelazny prompt
                         prompt = (
-                            f"Generate 25 unique German words suitable for level {lvl}. "
+                            f"Generate EXACTLY 25 unique German words suitable for level {lvl}. You MUST provide exactly 25 words, no less. "
+                            "Assign a diverse, descriptive category in POLISH to each word (e.g., 'Rodzina', 'Podróże', 'Zdrowie', 'Czynności'). DO NOT use grammatical categories like 'Nomen' or 'Verben'. "
                             "You MUST include 1-2 practical example sentences (German and Polish translation) for EACH word. "
                             f"Skip these words: {exist}. "
                             "Output a JSON object containing a single key 'flashcards', which is a list of objects in this exact format: "
-                            "[{'de':'word', 'pl':'translation', 'category':'category name', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
+                            "[{'de':'word', 'pl':'translation', 'category':'Polish Category Name', 'examples':[{'de':'sentence', 'pl':'sentence translation'}]}]"
                         )
                         
                         res_text = get_openai_response(prompt)
@@ -471,7 +474,12 @@ elif choice == "📦 Generator słów":
                                     w["next_review"] = str(today_dt)
                                     w["date_added"] = str(today_dt)
                                     cat_name = w.get('category', 'Inne')
-                                    w["category"] = f"{lvl} - {cat_name}"
+                                    # Czasami AI dodaje poziom, zapobiegamy powielaniu
+                                    if lvl not in cat_name:
+                                        w["category"] = f"{lvl} - {cat_name}"
+                                    else:
+                                        w["category"] = cat_name
+                                        
                                     if "examples" not in w:
                                         w["examples"] = []
                                     st.session_state.flashcards.append(w)
@@ -731,12 +739,15 @@ elif choice == "👑 Admin":
     total_words = sum(x['Słów'] for x in adm_list)
     m1.metric("Łącznie słówek w systemie", total_words)
     
+    # Zmiana: Szacunkowe koszty w aplikacji a prawdziwe w OpenAI
     total_spent = 0.0
     for usr_n in users:
         usr_data = load_j(get_p(usr_n, 'user_data'), {})
         total_spent += usr_data.get('historical_cost', 0.0)
         
-    m2.metric("Pozostały Bonus AI", f"{BONUS_START - total_spent:.2f} PLN")
+    m2.metric("Szacunkowy koszt w apce", f"{total_spent:.2f} PLN")
+    
+    st.markdown("[🔗 **Sprawdź prawdziwe i dokładne zużycie środków bezpośrednio na koncie OpenAI (Billing/Usage)**](https://platform.openai.com/usage)")
     
     st.table(pd.DataFrame(adm_list))
     
