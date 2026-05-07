@@ -257,7 +257,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         # Wywołanie fragmentu
         flashcard_engine()
 
-# --- 8. QUIZ (Wersja ULTRA FAST z st.fragment) ---
+# --- 8. QUIZ (Wersja z rozszerzonym Audio) ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz")
     st.header("🕹️ Quiz")
@@ -267,14 +267,11 @@ elif choice == "🕹️ Quiz":
     if len(all_c) < 4: 
         st.warning("Dodaj min. 4 słówka, aby uruchomić quiz.")
     else:
-        # Silnik Quizu jako fragment
         @st.fragment
         def quiz_engine():
-            # Inicjalizacja pytania, jeśli nie istnieje
             if "q_c" not in st.session_state:
                 idx = random.randrange(len(all_c))
                 t = all_c[idx]
-                # Losowanie dystraktorów
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
                 distractors = random.sample(other_pls, min(3, len(other_pls)))
                 opts = distractors + [t['pl']]
@@ -293,32 +290,37 @@ elif choice == "🕹️ Quiz":
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
             
             if st.session_state.q_s == "ask":
-                # Wyświetlanie opcji jako przyciski
                 for o in st.session_state.q_o:
                     if st.button(o, key=f"btn_{o}", use_container_width=True):
                         st.session_state.u_q = o
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
             else:
-                # Wynik odpowiedzi
                 if st.session_state.u_q == st.session_state.q_a:
-                    st.success("✅ Świetnie! To poprawna odpowiedź.")
+                    st.success("✅ Świetnie!")
                 else:
-                    st.error(f"❌ Niestety nie. Poprawnie: **{st.session_state.q_a}**")
+                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}**")
                 
-                # Audio po udzieleniu odpowiedzi
-                play_audio(q_c['de'])
+                # --- LOGIKA AUDIO ZE ZDANIEM ---
+                exs = q_c.get("examples", [])
+                # Sprawdzamy czy przykład istnieje i czy jest poprawnym formatem
+                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
-                # Przycisk do następnego pytania
+                if fex:
+                    st.info(f"💡 Przykład: {fex}")
+                    # play_audio automatycznie doda pauzę między słowem a zdaniem dzięki Twojej definicji funkcji
+                    play_audio(q_c['de'], fex)
+                else:
+                    play_audio(q_c['de'])
+                # ------------------------------
+
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
-                    # Usuwamy dane obecnego pytania, aby przy następnym obiegu wylosowało nowe
                     del st.session_state.q_c
                     del st.session_state.q_a
                     del st.session_state.q_o
                     del st.session_state.q_s
                     st.rerun(scope="fragment")
 
-        # Uruchomienie fragmentu
         quiz_engine()
 
 # --- 9. FISZKI (Naprawiony HTML) ---
