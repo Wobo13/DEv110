@@ -1,13 +1,14 @@
 import streamlit as st
-import json, os, random, re, hashlib, pandas as pd, secrets, requests, base64
+import json, os, random, re, hashlib, pandas as pd, secrets
 from datetime import datetime, date, timedelta
 from io import BytesIO
 from PIL import Image
+import google.generativeai as genai
 import time
 import plotly.graph_objects as go
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V151"
+APP_VERSION = "V152"
 ADMIN_USER = "wobo"
 AUTH_FILE, SESSIONS_FILE = "users_auth.json", "sessions.json"
 BONUS_START = 1089.0
@@ -36,43 +37,6 @@ def play_audio(txt):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- OPCJA ATOMOWA: BEZPOŚREDNIE POŁĄCZENIE Z GOOGLE API (BEZ BIBLIOTEKI) ---
-def get_ai_response(prompt_text, img_obj=None):
-    if not API_KEY:
-        raise Exception("Brak klucza API. Uzupełnij w konfiguracji.")
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    
-    parts = [{"text": prompt_text}]
-    
-    if img_obj:
-        buffered = BytesIO()
-        img_obj.thumbnail((800, 800)) # Kompresja dla szybkości
-        img_obj.save(buffered, format="JPEG")
-        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": img_b64
-            }
-        })
-        
-    payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {"response_mime_type": "application/json"}
-    }
-    
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise Exception(f"Błąd HTTP {response.status_code}: {response.text}")
-        
-    res_json = response.json()
-    try:
-        return res_json['candidates'][0]['content']['parts'][0]['text']
-    except Exception as e:
-        raise Exception(f"Niezrozumiała odpowiedź serwera: {res_json}")
-
 def parse_ai_json(text):
     try:
         match = re.search(r'\[.*\]', text, re.DOTALL)
@@ -91,7 +55,6 @@ if "auth" not in st.session_state:
         if tk in ss:
             st.session_state.auth, st.session_state.user = True, ss[tk]
 
-# Inicjalizacja kluczowych zmiennych (Naprawa NameError)
 if "u_a" not in st.session_state: st.session_state.u_a = ""
 if "n_m" not in st.session_state: st.session_state.n_m = "ask"
 
@@ -231,20 +194,23 @@ elif choice == "🎴 Fiszki":
         if c3.button("Dalej ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
         if st.session_state.f_flipped: play_audio(f"{c['de']} . . " + " . . ".join([e['de'] for e in c.get('examples', [])]))
 
-# --- 📸 SKANER AI (REST API) ---
+# --- 📸 SKANER AI (STABILNY MODEL 1.0 VISION) ---
 elif choice == "📸 Skaner AI":
     update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie"); up = st.file_uploader("Lub wybierz plik")
     if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
         try:
-            with st.spinner("AI analizuje obraz (REST API)..."):
-                img_to_send = Image.open(src or up).convert("RGB")
+            with st.spinner("AI analizuje obraz..."):
+                genai.configure(api_key=API_KEY)
+                model = genai.GenerativeModel('gemini-pro-vision')
                 prompt = "Extract German-Polish vocabulary. Return ONLY JSON list: [{'de':'...', 'pl':'...', 'category':'Skaner', 'examples':[{'de':'...', 'pl':'...'}]}]"
-                txt = get_ai_response(prompt, img_obj=img_to_send)
-                data = parse_ai_json(txt)
+                img = Image.open(src or up).convert("RGB")
+                response = model.generate_content([prompt, img])
+                
+                data = parse_ai_json(response.text)
                 if data:
                     st.session_state.pending = data; st.session_state.user_data["historical_cost"] += 0.015; st.rerun()
-                else: st.error("AI zwróciło nieprawidłowy format danych.")
-        except Exception as e: st.error(str(e))
+                else: st.error("AI nie zwróciło poprawnego formatu JSON.")
+        except Exception as e: st.error(f"Błąd AI: {e}")
         
     if "pending" in st.session_state:
         ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
@@ -254,34 +220,36 @@ elif choice == "📸 Skaner AI":
                 st.session_state.flashcards.append(w)
             save_j(get_p(u, "flashcards"), st.session_state.flashcards); del st.session_state.pending; st.rerun()
 
-# --- 📦 GENERATOR SŁÓW (REST API) ---
+# --- 📦 GENERATOR SŁÓW (STABILNY MODEL 1.0 TEXT) ---
 elif choice == "📦 Generator słów":
     update_activity("Generator"); cols = st.columns(5); lvls = ["A1", "A2", "B1", "B2", "C1"]
     for i, lvl in enumerate(lvls):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"AI generuje słówka dla poziomu {lvl} (REST API)..."):
+            with st.spinner(f"AI generuje słówka dla poziomu {lvl}..."):
                 try:
+                    genai.configure(api_key=API_KEY)
+                    model = genai.GenerativeModel('gemini-pro')
                     exist = [x['de'] for x in st.session_state.flashcards[:300]]
-                    p = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
-                    txt = get_ai_response(p)
-                    data = parse_ai_json(txt)
+                    prompt = f"Generate 25 unique German words level {lvl}. Polish categories. Skip: {exist}. Return ONLY JSON: [{{'de':'...', 'pl':'...', 'category':'...', 'examples':[{{'de':'...', 'pl':'...'}}]}}]"
+                    response = model.generate_content(prompt)
+                    
+                    data = parse_ai_json(response.text)
                     if data:
                         added = 0
                         for w in data:
                             if w['de'].lower() not in [x['de'].lower() for x in st.session_state.flashcards]:
                                 w.update({"next_review": str(today_dt), "date_added": str(today_dt), "category": f"{lvl} - {w.get('category','Inne')}"})
                                 st.session_state.flashcards.append(w); added += 1
-                        st.session_state.user_data["historical_cost"] += 0.01
+                        st.session_state.user_data["historical_cost"] += 0.005
                         save_j(get_p(u, "flashcards"), st.session_state.flashcards)
                         st.success(f"Dodano {added} nowych słówek!"); st.rerun()
                     else: st.error("AI nie zwróciło poprawnego formatu JSON.")
-                except Exception as e: st.error(str(e))
+                except Exception as e: st.error(f"Błąd AI: {e}")
 
 # --- 🕹️ QUIZ ---
 elif choice == "🕹️ Quiz":
     update_activity("Quiz"); all_c = st.session_state.flashcards
-    if len(all_c) < 4: 
-        st.warning("Dodaj min. 4 słówka do bazy!")
+    if len(all_c) < 4: st.warning("Dodaj min. 4 słówka do bazy!")
     else:
         if "q_c" not in st.session_state:
             t = random.choice(all_c); opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]
@@ -378,7 +346,7 @@ elif choice == "👑 Admin":
         u_times = ", ".join([f"{m[0]}:{round(s/60)}m" for m,s in t_s.items() if s > 15])
         adm_list.append({"Użytkownik": usr, "Słówek": len(ub), "AI (Skaner)": ai_n, "% Wiedzy": mastery, "Ostatnio": ud.get("last_seen", "Nigdy"), "Czas": u_times or "Brak"})
     
-    m1.metric("Łącznie słówek w systemie", sum(x['Słówek'] for x in adm_list))
+    m1.metric("Łącznie słówek w systemie", sum(x['Słów'] for x in adm_list))
     total_spent = sum(load_j(get_p(usr_n, 'user_data'), {}).get('historical_cost', 0) for usr_n in users)
     m2.metric("Pozostały Bonus AI", f"{BONUS_START - total_spent:.2f} PLN")
     st.table(pd.DataFrame(adm_list))
@@ -386,5 +354,4 @@ elif choice == "👑 Admin":
     total_g = sum(global_time.values())
     if total_g > 0:
         vals = [global_time[m] for m in MODULE_ORDER]; labels = [f"{m}: {round(v/60,1)} min" for m, v in zip(MODULE_ORDER, vals)]
-        fig = go.Figure(data=[go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='auto', marker_color='#1E88E5')])
-        fig.update_layout(template="plotly_dark", height=450); st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(data=[go.Bar(x=MODULE_ORDER, y=vals, text=labels, textposition='auto',
