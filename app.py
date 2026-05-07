@@ -14,12 +14,12 @@ from PIL import Image
 import plotly.graph_objects as go
 from postgrest import SyncPostgrestClient
 
-# --- 1. KONFIGURACJA (Secrets) ---
+# --- 1. KONFIGURACJA (Z Twoich Secrets) ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V208 (Permanent Audio & In-Card Context)"
+APP_VERSION = "V209 (Fiszki UI Fix & Full Restore)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -91,11 +91,12 @@ if "auth" not in st.session_state:
 if not st.session_state.auth:
     st.title(f"🚀 Niemiecki Master {APP_VERSION}")
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
+    db = get_db()
     with t1:
         un = st.text_input("Użytkownik").lower().strip()
         pw = st.text_input("Hasło", type="password")
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
-            res = get_db().table("users_auth").select("*").eq("username", un).execute()
+            res = db.table("users_auth").select("*").eq("username", un).execute()
             if res.data and res.data[0]["password_hash"] == hashlib.sha256(str.encode(pw)).hexdigest():
                 st.session_state.auth, st.session_state.user = True, un
                 st.query_params["token"] = un; st.rerun()
@@ -166,23 +167,21 @@ if choice == "📅 Powtórki":
             else:
                 if normalize_text(st.session_state.u_a) == normalize_text(c['pl']): st.success(f"✅ Dobrze: {c['pl']}")
                 else: st.error(f"❌ Poprawnie: {c['pl']}")
-                
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 if fex: st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
                 audio_file = get_audio_bytes(c['de'], fex)
                 if audio_file: st.audio(audio_file, format="audio/mp3", autoplay=True)
-                
-                st.write("Jak oceniasz to słowo?")
+                st.write("Jak oceniasz?")
                 col1, col2, col3 = st.columns(3); d = None
-                if col1.button("🔴 Słabo (1d)"): d = 1
-                if col2.button("🟡 Średnio (3d)"): d = 3
-                if col3.button("🟢 Dobrze (7d)"): d = 7
+                if col1.button("🔴 Słabo"): d = 1
+                if col2.button("🟡 Średnio"): d = 3
+                if col3.button("🟢 Dobrze"): d = 7
                 if d:
                     update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
                     st.session_state.n_idx += 1; st.session_state.n_m = "ask"; st.rerun()
 
-# --- 8. MODUŁ: FISZKI (Usprawnione Audio i Kontekst) ---
+# --- 8. MODUŁ: FISZKI (Poprawione Renderowanie HTML) ---
 elif choice == "🎴 Fiszki":
     update_activity("Fiszki"); st.header("🎴 Fiszki")
     if "f_idx" not in st.session_state: st.session_state.f_idx = 0
@@ -197,7 +196,7 @@ elif choice == "🎴 Fiszki":
         if st.session_state.f_idx >= len(cards): st.session_state.f_idx = 0
         c = cards[st.session_state.f_idx]
         
-        # Przygotowanie treści odwrotu (Polski + Zdania)
+        # Logika Odwrotu Karty
         ex_html = ""
         exs = c.get("examples", [])
         fex_de = None
@@ -205,9 +204,9 @@ elif choice == "🎴 Fiszki":
             if exs and isinstance(exs, list) and len(exs) > 0:
                 fex_de = exs[0].get('de','')
                 ex_html = f"""
-                <div style='margin-top:20px; padding-top:20px; border-top:1px solid #444; font-size:0.5em; opacity:0.9;'>
-                    <div style='color:#FFEB3B;'>🇩🇪 {exs[0].get('de','')}</div>
-                    <div style='color:white;'>🇵🇱 {exs[0].get('pl','')}</div>
+                <div style='margin-top:20px; padding-top:20px; border-top:1px solid #444;'>
+                    <div style='color:#FFEB3B; font-size:1.2rem;'>🇩🇪 {exs[0].get('de','')}</div>
+                    <div style='color:white; font-size:1.2rem; opacity:0.8;'>🇵🇱 {exs[0].get('pl','')}</div>
                 </div>
                 """
         
@@ -215,15 +214,16 @@ elif choice == "🎴 Fiszki":
         color = "#2E7D32" if st.session_state.f_flipped else "#C62828"
         label = "POLSKI" if st.session_state.f_flipped else "DEUTSCH"
         
+        # Renderowanie pancerne
         st.markdown(f"""
             <div style="min-height:380px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#111; border:5px solid {color}; border-radius:40px; color:white; text-align:center; padding:30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-                <div style="color:{color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:0.8em;">{label}</div>
-                <div style="font-size:3.2em; font-weight:700; line-height:1.1;">{display_text}</div>
+                <div style="color:{color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:0.9em;">{label}</div>
+                <div style="font-size:3.5em; font-weight:700; line-height:1.1; margin-bottom:10px;">{display_text}</div>
                 {ex_html}
             </div>
         """, unsafe_allow_html=True)
         
-        # Audio Player - stały po obróceniu
+        # Stałe Audio pod kartą
         if st.session_state.f_flipped:
             audio_f = get_audio_bytes(c['de'], fex_de)
             if audio_f:
@@ -234,16 +234,14 @@ elif choice == "🎴 Fiszki":
         c1, c2, c3 = st.columns([1, 2, 1])
         if c1.button("⬅️ Poprzednia", use_container_width=True): 
             st.session_state.f_idx -= 1; st.session_state.f_flipped = False; st.rerun()
-        
         if c2.button("🔄 OBRÓĆ KARTĘ", type="primary", use_container_width=True):
             st.session_state.f_flipped = not st.session_state.f_flipped; st.rerun()
-            
         if c3.button("Następna ➡️", use_container_width=True): 
             st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
     else:
-        st.warning("Brak słówek w tej kategorii.")
+        st.warning("Brak słówek.")
 
-# --- 9. MODUŁ: SŁOWNIK (Pełna Edycja) ---
+# --- 9. MODUŁ: SŁOWNIK ---
 elif choice == "📖 Słownik":
     update_activity("Słownik"); st.header("📖 Twój Słownik")
     all_tags = set()
@@ -251,9 +249,7 @@ elif choice == "📖 Słownik":
     col1, col2 = st.columns([1, 2])
     f_tag = col1.selectbox("Filtr:", ["Wszystkie"] + sorted(list(all_tags)))
     search = col2.text_input("Szukaj:")
-    
     filtered = [c for c in st.session_state.flashcards if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())]
-    
     for c in filtered:
         with st.expander(f"📝 {c['de']} - {c['pl']}"):
             with st.form(f"ed_{c['id']}"):
@@ -263,34 +259,39 @@ elif choice == "📖 Słownik":
             if st.button("USUŃ", key=f"del_{c['id']}", use_container_width=True):
                 delete_word(c['id']); st.rerun()
 
-# --- 10. GENERATOR (Pancerne AI) ---
+# --- 10. MODUŁY AI: GENERATOR & SKANER ---
 elif choice == "📦 Generator słów":
     update_activity("Generator"); st.header("📦 Generator z Chmury SQL")
     cols = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
         if cols[i].button(lvl, use_container_width=True):
-            with st.spinner(f"AI pobiera 25 słówek {lvl}..."):
+            with st.spinner(f"Pobieram 25 słówek {lvl}..."):
                 try:
                     res_lib = get_db().table("vocab_library").select("word").eq("level", lvl).execute()
                     my_w = [x['de'].lower() for x in st.session_state.flashcards]
                     avail = [w['word'] for w in res_lib.data if w['word'].lower() not in my_w]
                     sel = random.sample(avail, min(25, len(avail)))
-                    prompt = f"Przetłumacz na polski i otaguj tematycznie: {sel}. JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"..., {lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
+                    prompt = f"Przetłumacz: {sel}. JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"..., {lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
                     data = json.loads(get_openai_response(prompt))
-                    for w in data.get("flashcards", []):
-                        if isinstance(w, dict) and 'de' in w:
-                            save_word(u, {**w, "next_review": str(date.today()), "origin": "Generator"})
-                    st.success("Słówka dodane do bazy!"); time.sleep(1); st.rerun()
+                    for w in data.get("flashcards", []): save_word(u, {**w, "next_review": str(date.today()), "origin": "Generator"})
+                    st.success("Gotowe!"); st.rerun()
                 except Exception as e: st.error(f"Błąd AI: {e}")
 
-# --- 11. ADMIN (Full Analityka) ---
+elif choice == "📸 Skaner AI":
+    update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie")
+    if src and st.button("ANALIZUJ"):
+        res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
+        for w in json.loads(res).get("flashcards", []): save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
+        st.success("Dodano!"); st.rerun()
+
+# --- 11. ADMIN & STATYSTYKI ---
 elif choice == "👑 Admin":
     st.header("👑 Panel Administratora")
     st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     db = get_db(); ud = db.table("user_data").select("*").execute().data
     adm_list = []; global_time = {}
     for user in ud:
-        username = user["username"]
+        username = user["username"]; total_cost = user.get("historical_cost", 0.0)
         cards = db.table("flashcards").select("origin").eq("username", username).execute().data
         m_man = len([x for x in cards if x.get("origin") == "Dodaj"])
         m_gen = len([x for x in cards if x.get("origin") == "Generator"])
@@ -299,13 +300,13 @@ elif choice == "👑 Admin":
         for m, s in user.get("time_stats", {}).items():
             lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn"); merged[lbl] = merged.get(lbl, 0) + s; global_time[lbl] = global_time.get(lbl, 0) + s
         u_times = ", ".join([f"{l}:{round(s/60)}m" for l, s in merged.items() if s > 15])
-        adm_list.append({"Użytkownik":username, "Słów":len(cards), "Ręcznie":m_man, "Gen":m_gen, "Skan":m_skn, "Czas":u_times, "Koszt":round(user.get("historical_cost",0),4)})
+        adm_list.append({"Użytkownik":username, "Słów":len(cards), "Ręcznie":m_man, "Gen":m_gen, "Skan":m_skn, "Czas":u_times, "Koszt":round(total_cost,4)})
     st.table(pd.DataFrame(adm_list))
     if global_time:
         fig = go.Figure(data=[go.Bar(x=list(global_time.keys()), y=list(global_time.values()), marker_color='#1E88E5')])
         fig.update_layout(template="plotly_dark", height=400, title="Czas globalny (min)"); st.plotly_chart(fig, use_container_width=True)
 
-# --- 12. TESTY, SKANER, DODAJ, KONTO ---
+# --- 12. TESTY, DODAJ, KONTO ---
 elif choice == "📝 Testy":
     update_activity("Testy"); st.header("📝 Egzamin")
     if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek.")
@@ -338,28 +339,15 @@ elif choice == "📝 Testy":
                         st.session_state.test_idx += 1; st.rerun()
             else: st.success(f"Wynik: {st.session_state.test_score}/{len(qs)}"); del st.session_state.test_q
 
-elif choice == "📸 Skaner AI":
-    update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie")
-    if src and st.button("ANALIZUJ"):
-        res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
-        for w in json.loads(res).get("flashcards", []): save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
-        st.success("Dodano!"); st.rerun()
-
 elif choice == "➕ Dodaj":
-    with st.form("add"):
+    with st.form("manual"):
         de, pl, ca = st.text_input("DE"), st.text_input("PL"), st.text_input("Tagi")
         if st.form_submit_button("Zapisz"):
             save_word(u, {"de":de, "pl":pl, "category":ca, "next_review":str(date.today()), "origin":"Dodaj"}); st.rerun()
 
-elif choice == "📊 Statystyki":
-    df = pd.DataFrame(st.session_state.flashcards)
-    if not df.empty:
-        c1, c2 = st.columns(2); c1.metric("Baza", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
-        st.table(df.groupby('origin').size())
-
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Konto")
-    conf = st.checkbox("Potwierdzam usuwanie danych")
+    conf = st.checkbox("Potwierdzam usuwanie")
     col_d = st.columns(5)
     for lvl in ["A1", "A2", "B1", "B2", "C1"]:
         if col_d[["A1", "A2", "B1", "B2", "C1"].index(lvl)].button(lvl, disabled=not conf):
