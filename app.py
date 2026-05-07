@@ -676,10 +676,67 @@ elif choice == "📖 Słownik":
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
+    ud = st.session_state.user_data
+    
     if not df.empty:
-        c1, c2 = st.columns(2); c1.metric("Wielkość Bazy", len(df)); c2.metric("Passa Nauki", f"{st.session_state.user_data['streak']} dni")
+        # 1. Metryki główne (Wielkość bazy i Passa)
+        c1, c2 = st.columns(2)
+        c1.metric("Wielkość Bazy", len(df))
+        c2.metric("Passa Nauki", f"{ud.get('streak', 0)} dni")
         
         st.write("---")
+        
+        # 2. KOLUMNY: Czas nauki (Punkt 1) oraz Fazy zapamiętywania (Punkt 3)
+        col_top1, col_top2 = st.columns(2)
+        
+        with col_top1:
+            st.subheader("⏱️ Czas nauki (minuty)")
+            time_stats = ud.get("time_stats", {})
+            display_names = {
+                "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
+                "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"
+            }
+            
+            t_data = []
+            for code, sec in time_stats.items():
+                name = display_names.get(code, code)
+                mins = int(sec // 60)
+                if mins > 0:
+                    t_data.append({"Moduł": name, "Minuty": mins})
+            
+            if t_data:
+                st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("Ucz się więcej, aby zobaczyć statystyki czasu!")
+
+        with col_top2:
+            st.subheader("🧠 Fazy zapamiętywania")
+            today = date.today()
+            # Definiujemy progi dla faz zapamiętywania
+            phase_counts = {"Słaba (1-2 dni)": 0, "Średnia (3-6 dni)": 0, "Silna (7+ dni)": 0}
+            
+            for _, row in df.iterrows():
+                try:
+                    # Zamieniamy datę z bazy na obiekt date
+                    rev_str = str(row.get('next_review', today))
+                    rev_date = datetime.strptime(rev_str, "%Y-%m-%d").date()
+                    diff = (rev_date - today).days
+                    
+                    if diff <= 1: 
+                        phase_counts["Słaba (1-2 dni)"] += 1
+                    elif 2 <= diff <= 6: 
+                        phase_counts["Średnia (3-6 dni)"] += 1
+                    else: 
+                        phase_counts["Silna (7+ dni)"] += 1
+                except:
+                    phase_counts["Słaba (1-2 dni)"] += 1
+            
+            p_list = [{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]
+            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+
+        st.write("---")
+        
+        # 3. Tabela z prognozą powtórek
         st.subheader("📅 Prognoza powtórek (kolejne 10 dni)")
         sched = []
         for i in range(10):
@@ -692,13 +749,12 @@ elif choice == "📊 Statystyki":
                 label = (date.today() + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         
-        # Nowa tabela z prognozą zamiast wykresu
         df_sched = pd.DataFrame(sched)
         st.dataframe(df_sched, use_container_width=True, hide_index=True)
 
         st.write("---")
         
-        # Wyświetlanie tabel z poziomami i źródłami obok siebie
+        # 4. Tabele Poziomów i Źródeł (Obok siebie)
         col_stats1, col_stats2 = st.columns(2)
         
         with col_stats1:
@@ -709,17 +765,12 @@ elif choice == "📊 Statystyki":
             
             today_str = str(date.today())
             
-            # Przeszukiwanie tagów w poszukiwaniu poziomów i sprawdzanie statusu opanowania
             if 'category' in df.columns:
                 for _, row in df.iterrows():
                     cat = row.get('category')
-                    if pd.isna(cat) or not cat: 
-                        continue
-                        
+                    if pd.isna(cat) or not cat: continue
                     cat_str = str(cat).upper()
                     next_rev = str(row.get('next_review', today_str))
-                    
-                    # Słówko uznajemy za "opanowane" jeśli jego powtórka jest w przyszłości
                     is_mastered = next_rev > today_str
                     
                     for lvl in levels:
@@ -728,20 +779,14 @@ elif choice == "📊 Statystyki":
                             if is_mastered:
                                 level_mastered[lvl] += 1
             
-            # Generowanie danych do tabeli z procentami
             level_data = []
             for lvl in levels:
                 total = level_totals[lvl]
                 mastered = level_mastered[lvl]
                 perc = int(round((mastered / total) * 100)) if total > 0 else 0
-                level_data.append({
-                    "Poziom": lvl, 
-                    "Słówek": total, 
-                    "Opanowane": f"{perc}%"
-                })
+                level_data.append({"Poziom": lvl, "Słówek": total, "Opanowane": f"{perc}%"})
                 
-            df_levels = pd.DataFrame(level_data)
-            st.dataframe(df_levels, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(level_data), use_container_width=True, hide_index=True)
             
         with col_stats2:
             st.subheader("📌 Źródła pozyskania")
@@ -752,7 +797,7 @@ elif choice == "📊 Statystyki":
         
     st.write("---")
     st.subheader("📝 Historia rozwiązanych testów")
-    t_hist = st.session_state.user_data.get("test_history", [])
+    t_hist = ud.get("test_history", [])
     if t_hist:
         hist_df = pd.DataFrame(t_hist)[::-1]
         hist_df = hist_df[["date", "score", "total", "perc"]]
