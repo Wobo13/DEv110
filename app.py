@@ -323,50 +323,78 @@ elif choice == "🕹️ Quiz":
 
         quiz_engine()
 
-# --- 9. FISZKI (Naprawiony HTML) ---
+# --- 9. FISZKI (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "🎴 Fiszki":
-    update_activity("Fiszki"); st.header("🎴 Fiszki")
+    update_activity("Fiszki")
+    st.header("🎴 Fiszki")
+    
+    # Inicjalizacja stanu (poza fragmentem, aby zachować ciągłość przy zmianie modułu)
     if "f_idx" not in st.session_state: st.session_state.f_idx = 0
     if "f_flipped" not in st.session_state: st.session_state.f_flipped = False
+    
+    # Pobieranie tagów do filtra
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
-    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)))
+    
+    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="f_tag_sel")
     cards = [c for c in st.session_state.flashcards if sel_tag == "Wszystkie" or sel_tag in str(c.get('category',''))]
-    if cards:
-        if st.session_state.f_idx >= len(cards): st.session_state.f_idx = 0
-        c = cards[st.session_state.f_idx]
-        txt = c["pl"] if st.session_state.f_flipped else c["de"]
-        color = "#2E7D32" if st.session_state.f_flipped else "#C62828"
-        label = "POLSKI" if st.session_state.f_flipped else "DEUTSCH"
 
-        # Czysta, bezpieczna karta bez zagnieżdżonego HTML z przykładami
-        st.markdown(f"""
-        <div style="min-height:250px; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#111; border:5px solid {color}; border-radius:40px; color:white; text-align:center; padding:30px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-            <div style="color:{color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:0.9em;">{label}</div>
-            <div style="font-size:3.5em; font-weight:700; line-height:1.1; margin-bottom:10px;">{txt}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.write("")
-        
-        # Przykłady wyświetlane jako natywny moduł Streamlit po obróceniu
-        if st.session_state.f_flipped:
-            exs = c.get("examples", [])
-            if exs and isinstance(exs, list) and len(exs) > 0:
-                de_ex = exs[0].get('de','')
-                pl_ex = exs[0].get('pl','')
-                st.info(f"🇩🇪 **{de_ex}**\n\n🇵🇱 {pl_ex}")
-                play_audio(c['de'], de_ex)
-            else:
-                play_audio(c['de'])
-        
-        st.write("")
-        c1, c2, c3 = st.columns([1, 2, 1])
-        if c1.button("⬅️ Poprzednia", use_container_width=True): st.session_state.f_idx -= 1; st.session_state.f_flipped = False; st.rerun()
-        if c2.button("🔄 OBRÓĆ KARTĘ", type="primary", use_container_width=True): st.session_state.f_flipped = not st.session_state.f_flipped; st.rerun()
-        if c3.button("Następna ➡️", use_container_width=True): st.session_state.f_idx += 1; st.session_state.f_flipped = False; st.rerun()
-    else: st.warning("Brak słówek.")
+    if not cards:
+        st.warning("Brak słówek w wybranej kategorii.")
+    else:
+        # Silnik Fiszek jako izolowany fragment
+        @st.fragment
+        def flashcards_ui():
+            # Zabezpieczenie indeksu
+            if st.session_state.f_idx >= len(cards): st.session_state.f_idx = 0
+            if st.session_state.f_idx < 0: st.session_state.f_idx = len(cards) - 1
+            
+            c = cards[st.session_state.f_idx]
+            txt = c["pl"] if st.session_state.f_flipped else c["de"]
+            color = "#2E7D32" if st.session_state.f_flipped else "#C62828"
+            label = "POLSKI" if st.session_state.f_flipped else "DEUTSCH"
+
+            # Renderowanie graficzne karty (HTML)
+            st.markdown(f"""
+                <div style="min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; 
+                background:#111; border:5px solid {color}; border-radius:40px; color:white; text-align:center; padding:30px; 
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px;">
+                    <div style="color:{color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:0.9em;">{label}</div>
+                    <div style="font-size:3.5em; font-weight:700; line-height:1.1; margin-bottom:10px;">{txt}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Obsługa przykładów i dźwięku (widoczne po obróceniu)
+            if st.session_state.f_flipped:
+                exs = c.get("examples", [])
+                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                if fex:
+                    st.info(f"🇩🇪 **{fex}**\n\n🇵🇱 {exs[0].get('pl','')}")
+                    play_audio(c['de'], fex)
+                else:
+                    play_audio(c['de'])
+            
+            # Nawigacja - używamy st.rerun(scope="fragment") dla maksymalnej płynności
+            st.write("")
+            c1, c2, c3 = st.columns([1, 2, 1])
+            
+            if c1.button("⬅️ Poprzednia", use_container_width=True):
+                st.session_state.f_idx -= 1
+                st.session_state.f_flipped = False
+                st.rerun(scope="fragment")
+                
+            if c2.button("🔄 OBRÓĆ KARTĘ", type="primary", use_container_width=True):
+                st.session_state.f_flipped = not st.session_state.f_flipped
+                st.rerun(scope="fragment")
+                
+            if c3.button("Następna ➡️", use_container_width=True):
+                st.session_state.f_idx += 1
+                st.session_state.f_flipped = False
+                st.rerun(scope="fragment")
+
+        # Uruchomienie interfejsu
+        flashcards_ui()
 
 # --- 10. TESTY ---
 elif choice == "📝 Testy":
