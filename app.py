@@ -488,10 +488,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     adm_list = []
     global_time = {}
     
-    # Skróty do agregacji
-    tracked_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
-    # Pełne nazwy do tabeli szczegółowej
-    full_names_map = {
+    # Skróty używane w systemie
+    tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
+    # Mapowanie skrótów na pełne nazwy do wyświetlania
+    display_names = {
         "Pow": "Powtórki", 
         "Trn": "Trening", 
         "Qiz": "Quiz", 
@@ -503,60 +503,72 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     for user in ud_data:
         username = user["username"]
         user_cards = df_cards_all[df_cards_all["username"] == username]
-        
         oc = user_cards["origin"].value_counts()
         
         user_stats = user.get("time_stats", {})
-        merged = {m: 0 for m in tracked_modules}
+        
+        # Przygotowujemy licznik dla tego konkretnego użytkownika
+        current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
-        for m, s in user_stats.items():
-            lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn")
-            if lbl in merged:
-                merged[lbl] += s
-            total_sec += s
-            global_time[lbl] = global_time.get(lbl, 0) + s
+        
+        for raw_module_name, seconds in user_stats.items():
+            # Czyścimy nazwę modułu i pobieramy jego skrót z CLEAN_TIME_LABELS
+            clean_name = raw_module_name.strip()
+            module_code = CLEAN_TIME_LABELS.get(clean_name, "Inn")
             
-        # Tabela główna - zaokrąglenie do pełnych liczb
+            # Dodajemy do sumy użytkownika i sumy globalnej
+            if module_code in current_user_merged:
+                current_user_merged[module_code] += seconds
+            else:
+                current_user_merged["Inn"] += seconds
+                
+            total_sec += seconds
+            global_time[module_code] = global_time.get(module_code, 0) + seconds
+            
+        # 1. Dane do Tabeli Głównej
         adm_list.append({
             "Użytkownik": username, 
             "Słów": len(user_cards), 
             "Ręcznie": int(oc.get("Dodaj", 0)), 
             "AI (G+S)": int(oc.get("Generator", 0)) + int(oc.get("Skaner", 0)), 
             "Testy": int(len(user_cards[user_cards['origin'] == "Testy"])) if 'origin' in user_cards else 0,
-            "Czas Total (min)": int(total_sec // 60), # Pełne minuty
-            "Koszt (PLN)": round(user.get("historical_cost", 0.0), 2)
+            "Czas Total (min)": int(total_sec // 60),
+            "Koszt (PLN)": round(user.get("historical_cost", 0.0), 2),
+            "__raw_stats": current_user_merged # ukryte dane do tabeli szczegółowej
         })
     
-    st.subheader("📋 Podsumowanie użytkowników")
-    st.dataframe(pd.DataFrame(adm_list), use_container_width=True, hide_index=True)
+    df_admin = pd.DataFrame(adm_list)
     
-    # SZCZEGÓŁY CZASU (Pełne nazwy i liczby całkowite)
+    st.subheader("📋 Podsumowanie użytkowników")
+    # Wyświetlamy wszystko oprócz ukrytych statystyk
+    st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
+    
+    # 2. Dane do Tabeli Szczegółowej (Naprawione liczenie)
     with st.expander("🔍 Zobacz szczegółowy podział czasu (pełne minuty)"):
-        detail_list = []
-        for user in ud_data:
-            u_stats = user.get("time_stats", {})
-            # Budujemy wiersz z pełnymi nazwami kolumn
-            row = {"Użytkownik": user["username"]}
-            for short, full in full_names_map.items():
-                # Sumujemy sekundy dla danego modułu i zamieniamy na pełne minuty
-                sec = sum([s for mod, s in u_stats.items() if CLEAN_TIME_LABELS.get(mod.strip()) == short])
-                row[full] = int(sec // 60)
-            detail_list.append(row)
+        detail_rows = []
+        for index, row in df_admin.iterrows():
+            d_row = {"Użytkownik": row["Użytkownik"]}
+            for code in tracked_codes:
+                # Pobieramy pełną nazwę dla kolumny i sekundy z ukrytego słownika
+                full_name = display_names[code]
+                d_row[full_name] = int(row["__raw_stats"][code] // 60)
+            detail_rows.append(d_row)
         
-        st.dataframe(pd.DataFrame(detail_list), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-    # WYKRES GLOBALNY
+    # 3. Wykres Globalny
     if global_time:
         st.write("---")
-        # Mapowanie kluczy globalnych na pełne nazwy do wykresu
-        full_global_time = {full_names_map.get(k, k): int(v // 60) for k, v in global_time.items()}
+        # Mapowanie kluczy na pełne nazwy
+        chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if v > 0}
         
-        fig = go.Figure(data=[go.Bar(
-            x=list(full_global_time.keys()), 
-            y=list(full_global_time.values()), 
-            marker_color='#FF5252',
-            text=list(full_global_time.values()),
-            textposition='auto',
-        )])
-        fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (suma minut)")
-        st.plotly_chart(fig, use_container_width=True)
+        if chart_data:
+            fig = go.Figure(data=[go.Bar(
+                x=list(chart_data.keys()), 
+                y=list(chart_data.values()), 
+                marker_color='#FF5252',
+                text=list(chart_data.values()),
+                textposition='auto',
+            )])
+            fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (suma minut)")
+            st.plotly_chart(fig, use_container_width=True)
