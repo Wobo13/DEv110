@@ -396,11 +396,15 @@ elif choice == "🎴 Fiszki":
         # Uruchomienie interfejsu
         flashcards_ui()
 
-# --- 10. TESTY ---
+# --- 10. TESTY (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "📝 Testy":
-    update_activity("Testy"); st.header("📝 Test")
-    if len(st.session_state.flashcards) < 5: st.warning("Min. 5 słówek do wygenerowania testu.")
+    update_activity("Testy")
+    st.header("📝 Test")
+    
+    if len(st.session_state.flashcards) < 5:
+        st.warning("Dodaj min. 5 słówek, aby wygenerować test.")
     else:
+        # Etap 1: Konfiguracja testu (poza fragmentem, aby przycisk "Generuj" działał globalnie)
         if "test_q" not in st.session_state:
             n_q = st.slider("Liczba pytań", 5, 20, 5)
             if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
@@ -409,56 +413,95 @@ elif choice == "📝 Testy":
                         sample = random.sample(st.session_state.flashcards, n_q)
                         prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
                         data = json.loads(get_openai_response(prompt))
-                        st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
-                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}. Spróbuj ponownie.")
+                        st.session_state.test_q = data["questions"]
+                        st.session_state.test_idx = 0
+                        st.session_state.test_score = 0
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd AI: {e}. Spróbuj ponownie.")
+        
         else:
-            qs = st.session_state.test_q; t_idx = st.session_state.test_idx
-            if t_idx < len(qs):
-                q = qs[t_idx]; st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
-                st.markdown(f"### {q.get('sentence','?')}")
-                correct = str(q.get('correct',''))
+            # Etap 2: Silnik testu jako FRAGMENT
+            @st.fragment
+            def test_engine():
+                qs = st.session_state.test_q
+                t_idx = st.session_state.test_idx
                 
-                if q.get('type') == "QUIZ":
-                    opts = list(set(q.get('distractors', []) + [correct])); random.shuffle(opts)
-                    cols = st.columns(2)
-                    for i, o in enumerate(opts):
-                        if cols[i%2].button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
-                            st.session_state.test_q[t_idx]['user_ans'] = o
-                            if o == correct: st.session_state.test_score += 1; st.toast("Dobrze!")
-                            else: st.error(f"Źle. Poprawnie: {correct}"); time.sleep(1)
-                            st.session_state.test_idx += 1; st.rerun()
-                else:
-                    ans = st.text_input("Twoja odpowiedź:", key=f"in_{t_idx}")
-                    if st.button("Zatwierdź"):
-                        st.session_state.test_q[t_idx]['user_ans'] = ans
-                        if normalize_text(ans) == normalize_text(correct): st.session_state.test_score += 1; st.toast("OK!")
-                        else: st.error(f"Poprawnie: {correct}"); time.sleep(1)
-                        st.session_state.test_idx += 1; st.rerun()
-            else:
-                score, total = st.session_state.test_score, len(qs)
-                perc = round((score/total)*100) if total > 0 else 0
-                st.markdown(f'<div style="text-align:center; padding:20px; border-radius:15px; background:#111; border:2px solid #1E88E5;"><h1>Twój wynik: {score}/{total} ({perc}%)</h1></div>', unsafe_allow_html=True)
-                
-                st.write("---")
-                st.write("### Podsumowanie odpowiedzi:")
-                for i, q in enumerate(qs):
-                    u_ans = str(q.get('user_ans', 'Brak'))
-                    c_ans = str(q.get('correct', ''))
-                    is_correct = normalize_text(u_ans) == normalize_text(c_ans)
-                    icon = "✅" if is_correct else "❌"
-                    color = "#76ff7b" if is_correct else "#ff4b4b"
+                if t_idx < len(qs):
+                    q = qs[t_idx]
                     
-                    with st.expander(f"{icon} Pytanie {i+1}: {q.get('sentence', '')}"):
-                        st.write(f"Twoja odpowiedź: <strong style='color:{color}'>{u_ans}</strong>", unsafe_allow_html=True)
-                        if not is_correct:
-                            st.write(f"Poprawna odpowiedź: <strong style='color:#76ff7b'>{c_ans}</strong>", unsafe_allow_html=True)
+                    # Pasek postępu testu
+                    st.progress(t_idx / len(qs))
+                    st.caption(f"Pytanie {t_idx + 1} z {len(qs)}")
+                    
+                    st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
+                    st.markdown(f"### {q.get('sentence','?')}")
+                    
+                    correct = str(q.get('correct',''))
+                    
+                    if q.get('type') == "QUIZ":
+                        opts = list(set(q.get('distractors', []) + [correct]))
+                        random.shuffle(opts)
+                        
+                        cols = st.columns(2)
+                        for i, o in enumerate(opts):
+                            if cols[i%2].button(o, key=f"t_btn_{t_idx}_{o}", use_container_width=True):
+                                st.session_state.test_q[t_idx]['user_ans'] = o
+                                if o == correct:
+                                    st.session_state.test_score += 1
+                                    st.toast("Dobrze! ✅")
+                                else:
+                                    st.toast("Źle ❌")
+                                st.session_state.test_idx += 1
+                                st.rerun(scope="fragment")
+                    else:
+                        # Obsługa pytań otwartych wewnątrz fragmentu
+                        with st.form(key=f"test_form_{t_idx}", clear_on_submit=True):
+                            ans = st.text_input("Twoja odpowiedź:")
+                            if st.form_submit_button("Zatwierdź"):
+                                st.session_state.test_q[t_idx]['user_ans'] = ans
+                                if normalize_text(ans) == normalize_text(correct):
+                                    st.session_state.test_score += 1
+                                    st.toast("Dobrze! ✅")
+                                else:
+                                    st.toast("Źle ❌")
+                                st.session_state.test_idx += 1
+                                st.rerun(scope="fragment")
+                
+                else:
+                    # Podsumowanie wyników (koniec fragmentu)
+                    score, total = st.session_state.test_score, len(qs)
+                    perc = round((score/total)*100) if total > 0 else 0
+                    
+                    st.markdown(f'''
+                        <div style="text-align:center; padding:30px; border-radius:20px; 
+                        background:#111; border:3px solid #1E88E5; margin-bottom:20px;">
+                            <h1 style="margin:0;">Wynik: {score}/{total}</h1>
+                            <h2 style="color:#1E88E5; margin:0;">{perc}%</h2>
+                        </div>
+                    ''', unsafe_allow_html=True)
+                    
+                    # Tabela z odpowiedziami (podgląd błędów)
+                    with st.expander("📝 Zobacz szczegóły odpowiedzi"):
+                        for i, q_res in enumerate(qs):
+                            u_a = q_res.get('user_ans', 'Brak')
+                            c_a = q_res.get('correct', '')
+                            is_ok = normalize_text(u_a) == normalize_text(c_a)
+                            st.write(f"**{i+1}.** {q_res.get('sentence')} -> {'✅' if is_ok else '❌'}")
+                            if not is_ok:
+                                st.caption(f"Twoja: {u_a} | Poprawna: {c_a}")
 
-                st.write("---")
-                if st.button("Zakończ i zapisz wynik", use_container_width=True, type="primary"):
-                    st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
-                    save_user_data(u, st.session_state.user_data)
-                    del st.session_state.test_q
-                    st.rerun()
+                    if st.button("Zakończ i zapisz do statystyk", use_container_width=True, type="primary"):
+                        st.session_state.user_data["test_history"].append({
+                            "date": datetime.now().strftime("%d.%m %H:%M"), 
+                            "score": score, "total": total, "perc": perc
+                        })
+                        save_user_data(u, st.session_state.user_data)
+                        del st.session_state.test_q # Resetuje test i wychodzi z fragmentu
+                        st.rerun()
+
+            # Uruchomienie silnika testu
+            test_engine()
 
 # --- 11. GENERATOR ---
 elif choice == "📦 Generator słów":
