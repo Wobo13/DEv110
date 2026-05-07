@@ -19,8 +19,8 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V216 (Auth Duplicate ID Fix)"
-ADMIN_USER = "wobo"
+APP_VERSION = "V217 (Admin Security & Reg Fix)"
+ADMIN_USER = "wobo" # Tylko ten login ma dostęp do panelu Admina
 
 CLEAN_TIME_LABELS = {
     "Powtórki": "Pow", "Trening": "Trn", "Quiz": "Qiz", "Fiszki": "Fis",
@@ -73,10 +73,7 @@ def save_user_data(username, data):
 
 def load_flashcards(username):
     db = get_db(); res = db.table("flashcards").select("*").eq("username", username).order("id").execute()
-    cards = res.data if res.data else []
-    for c in cards:
-        if not c.get("origin"): c["origin"] = "Dodaj"
-    return cards
+    return res.data if res.data else []
 
 def save_word(username, word_obj):
     db = get_db(); word_obj["username"] = username
@@ -86,7 +83,7 @@ def save_word(username, word_obj):
 def update_word(word_id, fields): get_db().table("flashcards").update(fields).eq("id", word_id).execute()
 def delete_word(word_id): get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE ---
+# --- 4. LOGOWANIE I REJESTRACJA ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
     if "token" in st.query_params:
@@ -98,27 +95,28 @@ if not st.session_state.auth:
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
     with t1:
-        # Dodane unikalne klucze (key)
-        un = st.text_input("Użytkownik", key="login_user").lower().strip()
-        pw = st.text_input("Hasło", type="password", key="login_pass")
+        un = st.text_input("Użytkownik", key="l_u").lower().strip()
+        pw = st.text_input("Hasło", type="password", key="l_p")
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
             res = db.table("users_auth").select("*").eq("username", un).execute()
             if res.data and res.data[0]["password_hash"] == hash_pw(pw):
                 st.session_state.auth, st.session_state.user = True, un
                 st.query_params["token"] = un; st.rerun()
-            else: st.error("Błędne dane")
+            else: st.error("Błędne dane logowania")
     with t2:
-        # Dodane unikalne klucze (key)
-        rn = st.text_input("Nowy użytkownik", key="reg_user").lower().strip()
-        rp = st.text_input("Hasło", type="password", key="reg_pass")
+        rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
+        rp = st.text_input("Hasło", type="password", key="r_p")
         if st.button("Załóż konto"):
             if len(rn) > 2 and len(rp) > 3:
                 check = db.table("users_auth").select("*").eq("username", rn).execute()
                 if not check.data:
                     get_db().table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
-                    load_user_data(rn); st.success("Konto gotowe! Zaloguj się."); st.rerun()
-                else: st.error("Użytkownik już istnieje!")
-            else: st.warning("Użytkownik min. 3 znaki, Hasło min. 4 znaki.")
+                    load_user_data(rn)
+                    st.success("Konto gotowe! Zaraz zostaniesz przekierowany do logowania...")
+                    time.sleep(2) # Czas na przeczytanie komunikatu
+                    st.rerun()
+                else: st.error("Ten użytkownik jest już zajęty!")
+            else: st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
 # --- 5. START SESJI ---
@@ -139,16 +137,21 @@ def update_activity(m):
 
 update_activity("Inne")
 
-# --- 6. SIDEBAR & MENU ---
+# --- 6. SIDEBAR I NAWIGACJA (Admin Security Fix) ---
 st.sidebar.title(f"👤 {u.capitalize()}")
 st.sidebar.caption(f"Wersja: {APP_VERSION}")
 st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
 if st.sidebar.button("Wyloguj", use_container_width=True):
     st.query_params.clear(); st.session_state.clear(); st.rerun()
 
-menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📝 Testy", "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto", "👑 Admin"]
+# Dynamiczne budowanie menu - Admin widoczny tylko dla 'wobo'
+menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📝 Testy", "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
+if u == ADMIN_USER:
+    menu.append("👑 Admin")
+
 choice = st.sidebar.radio("Nawigacja", menu)
 
+# Resetowanie stanów przy zmianie modułu
 if "l_c" not in st.session_state or st.session_state.l_c != choice:
     for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
         if k in st.session_state: del st.session_state[k]
@@ -170,7 +173,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         random.shuffle(pool); st.session_state.cur_list, st.session_state.n_idx = pool, 0
 
     cards = st.session_state.cur_list
-    if not cards: st.success("Pusto! 🎉")
+    if not cards: st.success("Pusto! Dobra robota. 🎉")
     else:
         idx = st.session_state.n_idx
         if idx < len(cards):
@@ -273,14 +276,12 @@ elif choice == "📝 Testy":
                         prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
                         data = json.loads(get_openai_response(prompt))
                         st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
-                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}. Spróbuj ponownie.")
+                    except Exception as e: st.error(f"Błąd AI: {e}")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
-                q = qs[t_idx]; st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
-                st.markdown(f"### {q.get('sentence','?')}")
+                q = qs[t_idx]; st.info(f"💡 Podpowiedź: {q.get('hint','brak')}"); st.write(f"#### {q.get('sentence','?')}")
                 correct = str(q.get('correct',''))
-                
                 if q.get('type') == "QUIZ":
                     opts = list(set(q.get('distractors', []) + [correct])); random.shuffle(opts)
                     for o in opts:
@@ -300,27 +301,15 @@ elif choice == "📝 Testy":
                 score, total = st.session_state.test_score, len(qs)
                 perc = round((score/total)*100) if total > 0 else 0
                 st.markdown(f'<div style="text-align:center; padding:20px; border-radius:15px; background:#111; border:2px solid #1E88E5;"><h1>Twój wynik: {score}/{total} ({perc}%)</h1></div>', unsafe_allow_html=True)
-                
                 st.write("---")
-                st.write("### Podsumowanie odpowiedzi:")
                 for i, q in enumerate(qs):
-                    u_ans = str(q.get('user_ans', 'Brak'))
-                    c_ans = str(q.get('correct', ''))
+                    u_ans, c_ans = str(q.get('user_ans', 'Brak')), str(q.get('correct', ''))
                     is_correct = normalize_text(u_ans) == normalize_text(c_ans)
-                    icon = "✅" if is_correct else "❌"
-                    color = "#76ff7b" if is_correct else "#ff4b4b"
-                    
-                    with st.expander(f"{icon} Pytanie {i+1}: {q.get('sentence', '')}"):
-                        st.write(f"Twoja odpowiedź: <strong style='color:{color}'>{u_ans}</strong>", unsafe_allow_html=True)
-                        if not is_correct:
-                            st.write(f"Poprawna odpowiedź: <strong style='color:#76ff7b'>{c_ans}</strong>", unsafe_allow_html=True)
-
-                st.write("---")
+                    with st.expander(f"{'✅' if is_correct else '❌'} Pytanie {i+1}: {q.get('sentence', '')}"):
+                        st.write(f"Twoja: **{u_ans}** | Poprawna: **{c_ans}**")
                 if st.button("Zakończ i zapisz wynik", use_container_width=True, type="primary"):
                     st.session_state.user_data["test_history"].append({"date": datetime.now().strftime("%d.%m %H:%M"), "score": score, "total": total, "perc": perc})
-                    save_user_data(u, st.session_state.user_data)
-                    del st.session_state.test_q
-                    st.rerun()
+                    save_user_data(u, st.session_state.user_data); del st.session_state.test_q; st.rerun()
 
 # --- 11. GENERATOR ---
 elif choice == "📦 Generator słów":
@@ -341,10 +330,9 @@ elif choice == "📦 Generator słów":
                     st.success("Dodano!"); st.rerun()
                 except Exception as e: st.error(f"Błąd: {e}")
 
-# --- 12. SKANER ---
+# --- 12. SKANER AI ---
 elif choice == "📸 Skaner AI":
-    update_activity("Skaner"); st.header("📸 Skaner AI")
-    src = st.camera_input("Zrób zdjęcie")
+    update_activity("Skaner"); src = st.camera_input("Zrób zdjęcie")
     if src and st.button("Analizuj"):
         res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
         for w in json.loads(res).get("flashcards", []): save_word(u, {**w, "origin":"Skaner", "next_review":str(date.today())})
@@ -352,10 +340,9 @@ elif choice == "📸 Skaner AI":
 
 # --- 13. DODAJ ---
 elif choice == "➕ Dodaj":
-    st.header("➕ Dodaj")
     with st.form("manual"):
         de, pl, ca = st.text_input("Niemiecki"), st.text_input("Polski"), st.text_input("Tagi")
-        if st.form_submit_button("Zapisz", use_container_width=True):
+        if st.form_submit_button("Zapisz"):
             save_word(u, {"de":de, "pl":pl, "category":ca, "next_review":str(date.today()), "origin":"Dodaj"}); st.rerun()
 
 # --- 14. SŁOWNIK ---
@@ -364,20 +351,16 @@ elif choice == "📖 Słownik":
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
-    
     col1, col2 = st.columns([1, 2])
-    f_tag = col1.selectbox("Filtruj kategorię:", ["Wszystkie"] + sorted(list(all_tags)))
-    search = col2.text_input("Szukaj słowa:")
-    
+    f_tag = col1.selectbox("Filtruj:", ["Wszystkie"] + sorted(list(all_tags)))
+    search = col2.text_input("Szukaj:")
     filtered = [c for c in st.session_state.flashcards if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())]
-    
-    st.write(f"Znaleziono: **{len(filtered)}**")
     for c in filtered:
         with st.expander(f"📝 {c['de']} - {c['pl']}"):
             with st.form(f"ed_{c['id']}"):
                 n_de, n_pl, n_ca = st.text_input("DE", c['de']), st.text_input("PL", c['pl']), st.text_input("Tagi", c.get('category',''))
-                if st.form_submit_button("Zapisz", use_container_width=True): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
-            if st.button("Usuń", key=f"del_{c['id']}", use_container_width=True): delete_word(c['id']); st.rerun()
+                if st.form_submit_button("Zapisz"): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
+            if st.button("Usuń", key=f"del_{c['id']}"): delete_word(c['id']); st.rerun()
 
 # --- 15. STATYSTYKI ---
 elif choice == "📊 Statystyki":
@@ -385,76 +368,46 @@ elif choice == "📊 Statystyki":
     df = pd.DataFrame(st.session_state.flashcards)
     if not df.empty:
         c1, c2 = st.columns(2); c1.metric("Baza słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
-        
         st.write("---")
-        st.subheader("📅 Prognoza powtórek (najbliższe 10 dni)")
+        st.subheader("📅 Prognoza powtórek")
         sched = []
         for i in range(10):
-            target_date = str(date.today() + timedelta(days=i))
-            if i == 0:
-                count = len(df[df['next_review'] <= target_date])
-                label = "Dzisiaj"
-            else:
-                count = len(df[df['next_review'] == target_date])
-                label = (date.today() + timedelta(days=i)).strftime("%d.%m")
-            sched.append({"Dzień": label, "Liczba słówek": count})
-        
-        fig = go.Figure(data=[go.Bar(
-            x=[s["Dzień"] for s in sched], 
-            y=[s["Liczba słówek"] for s in sched], 
-            marker_color='#1E88E5'
-        )])
-        fig.update_layout(
-            template="plotly_dark", 
-            xaxis=dict(type='category'), 
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
+            target = str(date.today() + timedelta(days=i))
+            count = len(df[df['next_review'] <= target]) if i == 0 else len(df[df['next_review'] == target])
+            label = "Dzisiaj" if i == 0 else (date.today() + timedelta(days=i)).strftime("%d.%m")
+            sched.append({"Dzień": label, "Słów": count})
+        fig = go.Figure(data=[go.Bar(x=[s["Dzień"] for s in sched], y=[s["Słów"] for s in sched], marker_color='#1E88E5')])
+        fig.update_layout(template="plotly_dark", xaxis=dict(type='category'), margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig, use_container_width=True)
-
         st.write("---")
-        st.subheader("Źródła słówek")
-        origin_counts = df['origin'].value_counts().reset_index()
-        origin_counts.columns = ['Źródło', 'Liczba słówek']
-        st.table(origin_counts)
-    
-    st.write("---")
-    st.subheader("📝 Historia rozwiązanych testów")
-    t_hist = st.session_state.user_data.get("test_history", [])
-    if t_hist:
-        hist_df = pd.DataFrame(t_hist)[::-1]
-        hist_df = hist_df[["date", "score", "total", "perc"]]
-        hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
-        st.dataframe(hist_df, use_container_width=True, hide_index=True)
-    else:
-        st.info("Brak rozwiązanych testów.")
+        t_hist = st.session_state.user_data.get("test_history", [])
+        if t_hist:
+            st.subheader("📝 Historia testów")
+            h_df = pd.DataFrame(t_hist)[::-1][["date", "score", "total", "perc"]]
+            h_df.columns = ["Data", "Wynik", "Pytań", "%"]
+            st.dataframe(h_df, use_container_width=True, hide_index=True)
 
 # --- 16. KONTO ---
 elif choice == "⚙️ Moje Konto":
-    st.header("⚙️ Zarządzanie Kontem")
+    st.header("⚙️ Moje Konto")
     with st.expander("🔑 Zmień hasło"):
         with st.form("pw"):
             o, n = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password")
-            if st.form_submit_button("Zmień", use_container_width=True):
+            if st.form_submit_button("Zmień"):
                 db = get_db(); res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(o):
-                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute(); st.success("OK!")
-    
-    st.divider(); st.subheader("🗑️ Usuwanie danych")
-    conf = st.checkbox("Potwierdzam chęć usunięcia danych")
-    
-    st.write("Usuń konkretny poziom:")
+                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute(); st.success("Zmieniono!")
+    st.divider(); conf = st.checkbox("Potwierdzam usuwanie")
     col_d = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
         if col_d[i].button(lvl, disabled=not conf):
             get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute(); st.rerun()
-    
-    st.write("---")
-    if st.button("🔥 ZRESETUJ CAŁĄ MOJĘ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
+    if st.button("🔥 ZRESETUJ WSZYSTKO", type="primary", disabled=not conf, use_container_width=True):
         get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
 
-# --- 17. ADMIN ---
-elif choice == "👑 Admin":
-    st.header("👑 Admin")
+# --- 17. ADMIN (Protected) ---
+elif choice == "👑 Admin" and u == ADMIN_USER:
+    st.header("👑 Panel Administratora")
     db = get_db(); ud = db.table("user_data").select("*").execute().data
     adm_list = []
     for user in ud:
@@ -464,5 +417,5 @@ elif choice == "👑 Admin":
         for m, s in user.get("time_stats", {}).items():
             lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn"); merged[lbl] = merged.get(lbl, 0) + s
         u_times = ", ".join([f"{l}:{round(s/60)}m" for l, s in merged.items() if s > 1])
-        adm_list.append({"Użytkownik":username, "Słów":len(cards), "Ręcznie":len([x for x in cards if x['origin']=='Dodaj']), "Gen":len([x for x in cards if x['origin']=='Generator']), "Skan":len([x for x in cards if x['origin']=='Skaner']), "Czas":u_times, "Koszt":round(total_cost,4)})
+        adm_list.append({"Użytkownik":username, "Słów":len(cards), "Czas":u_times, "Koszt":round(total_cost,4)})
     st.table(pd.DataFrame(adm_list))
