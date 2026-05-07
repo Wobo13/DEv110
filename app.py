@@ -431,7 +431,7 @@ elif choice == "🎴 Fiszki":
 
 # --- 10. TESTY (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "📝 Testy":
-     st.header("📝 Test")
+    st.header("📝 Test")
     
     if len(st.session_state.flashcards) < 5:
         st.warning("Dodaj min. 5 słówek, aby wygenerować test.")
