@@ -654,23 +654,69 @@ elif choice == "➕ Dodaj":
 # --- 14. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
+    
+    # 1. Pobranie unikalnych tagów
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
+    # 2. Wyszukiwarka i filtry
     col1, col2 = st.columns([1, 2])
     f_tag = col1.selectbox("Filtruj kategorię:", ["Wszystkie"] + sorted(list(all_tags)))
-    search = col2.text_input("Szukaj słowa:")
+    search = col2.text_input("Szukaj słowa (DE lub PL):", placeholder="Wpisz fragment słowa...")
     
-    filtered = [c for c in st.session_state.flashcards if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())]
+    # 3. Logika filtrowania
+    filtered = [
+        c for c in st.session_state.flashcards 
+        if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) 
+        and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())
+    ]
     
-    st.write(f"Znaleziono: **{len(filtered)}**")
-    for c in filtered:
-        with st.expander(f"📝 {c['de']} - {c['pl']}"):
+    st.write("---")
+    st.subheader(f"Znaleziono słówek: {len(filtered)}")
+    
+    # Zabezpieczenie przed renderowaniem tysięcy elementów (co zamuli przeglądarkę)
+    MAX_DISPLAY = 50
+    if len(filtered) > MAX_DISPLAY:
+        st.warning(f"Wyników jest bardzo dużo. Wyświetlam pierwsze {MAX_DISPLAY}. Użyj wyszukiwarki, aby doprecyzować.")
+        display_list = filtered[:MAX_DISPLAY]
+    else:
+        display_list = filtered
+        
+    if not display_list:
+        st.info("Brak słówek spełniających kryteria.")
+        
+    # 4. Wyświetlanie wyników
+    for c in display_list:
+        with st.expander(f"🇩🇪 {c['de']} ➔ 🇵🇱 {c['pl']}"):
+            
+            # Dodatkowe informacje
+            st.caption(f"🗓️ Następna powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')}")
+            
+            # Przycisk Audio
+            if st.button("🔊 Odsłuchaj wymowę", key=f"audio_{c['id']}", use_container_width=True):
+                play_audio(c['de'])
+            
+            # Tryb Edycji
             with st.form(f"ed_{c['id']}"):
-                n_de, n_pl, n_ca = st.text_input("DE", c['de']), st.text_input("PL", c['pl']), st.text_input("Tagi", c.get('category',''))
-                if st.form_submit_button("Zapisz", use_container_width=True): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
-            if st.button("Usuń", key=f"del_{c['id']}", use_container_width=True): delete_word(c['id']); st.rerun()
+                n_de = st.text_input("Niemiecki (DE)", c['de'])
+                n_pl = st.text_input("Polski (PL)", c['pl'])
+                n_ca = st.text_input("Kategorie / Tagi", c.get('category',''))
+                
+                if st.form_submit_button("💾 Zapisz zmiany", use_container_width=True):
+                    update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca})
+                    # KLUCZOWE: Odświeżenie pamięci podręcznej po edycji
+                    st.session_state.flashcards = load_flashcards(u)
+                    st.toast("Zmiany zapisane!")
+                    st.rerun()
+                    
+            # Usuwanie poza formularzem
+            if st.button("🗑️ Usuń to słówko", key=f"del_{c['id']}", type="primary", use_container_width=True):
+                delete_word(c['id'])
+                # KLUCZOWE: Odświeżenie pamięci podręcznej po usunięciu
+                st.session_state.flashcards = load_flashcards(u)
+                st.toast("Słówko usunięte!")
+                st.rerun()
 
 # --- 15. STATYSTYKI ---
 elif choice == "📊 Statystyki":
