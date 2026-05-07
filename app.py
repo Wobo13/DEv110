@@ -622,17 +622,9 @@ elif choice == "📊 Statystyki":
                 label = (date.today() + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         
-        fig = go.Figure(data=[go.Bar(
-            x=[s["Dzień"] for s in sched], 
-            y=[s["Liczba słówek"] for s in sched], 
-            marker_color='#1E88E5'
-        )])
-        fig.update_layout(
-            template="plotly_dark", 
-            xaxis=dict(type='category'), 
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        # Nowa tabela z prognozą zamiast wykresu
+        df_sched = pd.DataFrame(sched)
+        st.dataframe(df_sched, use_container_width=True, hide_index=True)
 
         st.write("---")
         
@@ -679,14 +671,14 @@ elif choice == "📊 Statystyki":
                 })
                 
             df_levels = pd.DataFrame(level_data)
-            st.table(df_levels)
+            st.dataframe(df_levels, use_container_width=True, hide_index=True)
             
         with col_stats2:
             st.subheader("📌 Źródła pozyskania")
             if 'origin' in df.columns:
                 origin_counts = df['origin'].value_counts().reset_index()
                 origin_counts.columns = ['Źródło', 'Liczba słówek']
-                st.table(origin_counts)
+                st.dataframe(origin_counts, use_container_width=True, hide_index=True)
         
     st.write("---")
     st.subheader("📝 Historia rozwiązanych testów")
