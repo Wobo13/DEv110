@@ -3,3 +3,4 @@ google-generativeai
 Pillow
 pandas
 gTTS
+plotly
