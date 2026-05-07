@@ -20,17 +20,28 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V200 (Generator Restored)"
+# --- KONFIGURACJA APKI ---
+APP_VERSION = "V201 (Full Reconstruction - SQL Fix)"
 ADMIN_USER = "wobo"
+BONUS_START = 1089.0
 
-# MAPOWANIE NAZW DLA STATYSTYK
+# MAPOWANIE NAZW DLA STATYSTYK (Ujednolicenie)
 CLEAN_TIME_LABELS = {
-    "Powtórki": "Pow", "Nauka": "Pow", "Trening": "Trn", "Quiz": "Qiz",
-    "Fiszki": "Fis", "Testy": "Tst", "Skaner": "Skn", "Generator": "Gen",
-    "Dodaj": "Dod", "Słownik": "Słn", "Konto": "Inn", "Inne": "Inn"
+    "Powtórki": "Pow", "Nauka": "Pow", "Pow": "Pow", "Nau": "Pow",
+    "Trening": "Trn", "Trn": "Trn",
+    "Quiz": "Qiz", "Qiz": "Qiz",
+    "Fiszki": "Fis", "Fis": "Fis",
+    "Testy": "Tst", "Tst": "Tst",
+    "Skaner": "Skn", "Skaner AI": "Skn",
+    "Generator": "Gen", "Generator słów": "Gen",
+    "Dodaj": "Dod", "➕ Dodaj": "Dod",
+    "Słownik": "Słn", "📖 Słownik": "Słn",
+    "Konto": "Inn", "Moje Konto": "Inn", "Inne": "Inn", "Inn": "Inn"
 }
 
-# --- 2. POTĘŻNA BAZA SŁÓWEK (1250 SŁÓW) ---
+MODULE_ORDER = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Skaner", "Generator", "Dodaj", "Słownik"]
+
+# --- 2. POTĘŻNA WEWNĘTRZNA BAZA SŁÓWEK (1250 SŁÓW) ---
 VOCAB_DB = {
     "A1": ["Apfel", "Brot", "Haus", "Auto", "Schule", "Lehrer", "Wasser", "Milch", "Tisch", "Stuhl", "Buch", "Stift", "Kind", "Mutter", "Vater", "Freund", "Stadt", "Land", "Weg", "Zeit", "Essen", "Trinken", "Schlafen", "Lernen", "Arbeiten", "Gehen", "Kommen", "Hören", "Sehen", "Sprechen", "Groß", "Klein", "Gut", "Schlecht", "Schön", "Hässlich", "Alt", "Jung", "Neu", "Kalt", "Heute", "Morgen", "Gestern", "Woche", "Jahr", "Tag", "Nacht", "Name", "Zahl", "Geld", "Hund", "Katze", "Baum", "Blume", "Sonne", "Mond", "Regen", "Schnee", "Wind", "Bett", "Zimmer", "Küche", "Bad", "Fenster", "Tür", "Schlüssel", "Tasche", "Gabel", "Löffel", "Messer", "Teller", "Tasse", "Glas", "Saft", "Kaffee", "Tee", "Zucker", "Salz", "Fleisch", "Fisch", "Gemüse", "Obst", "Banane", "Ei", "Käse", "Reis", "Nudeln", "Kuchen", "Zeitung", "Radio", "Handy", "Fahrrad", "Zug", "Bus", "Bahnhof", "Flughafen", "Hotel", "Arzt", "Krankenhaus", "Apotheke", "Arbeit", "Pause", "Ferien", "Urlaub", "Meer", "Berg", "Wald", "Straße", "Platz", "Garten", "Park", "Schrank", "Sofa", "Lampe", "Bild", "Uhr", "Kleidung", "Hose", "Hemd", "Rock", "Kleid", "Schuh", "Jacke", "Mantel", "Hut", "Brille", "Kopf", "Hand", "Fuß", "Bein", "Arm", "Auge", "Ohr", "Nase", "Mund", "Haar", "Herz", "Frühstück", "Mittagessen", "Abendessen", "Kochen", "Backen", "Waschen", "Putzen", "Kaufen", "Verkaufen", "Bezahlen", "Rechnen", "Schreiben", "Lesen", "Singen", "Tanzen", "Spielen", "Laufen", "Schwimmen", "Reisen", "Besuchen", "Fragen", "Antworten", "Wissen", "Denken", "Glauben", "Hoffen", "Lieben", "Hassen", "Lachen", "Weinen", "Warten", "Suchen", "Finden", "Helfen", "Geben", "Nehmen", "Bringen", "Zeigen", "Sagen", "Erzählen", "Erklären", "Verstehen", "Vergessen", "Wichtig", "Richtig", "Falsch", "Einfach", "Schwer", "Leicht", "Heiß", "Warm", "Trocken", "Nass", "Hell", "Dunkel", "Laut", "Leise", "Schnell", "Langsam", "Müde", "Krank", "Gesund", "Glücklich", "Traurig", "Sauer", "Süß", "Bitter", "Teuer", "Billig", "Reich", "Arm", "Sauber", "Schmutzig", "Voll", "Leer", "Offen", "Geschlossen", "Erster", "Letzter", "Nächster", "Hier", "Dort", "Überall", "Nirgendwo", "Immer", "Oft", "Manchmal", "Selten", "Nie", "Vielleicht", "Sicher", "Gerne", "Zusammen", "Allein", "Wenig", "Viel", "Genug", "Echt", "Wirklich", "Wieder", "Noch", "Schon", "Erst", "Dann", "Danach", "Zuerst", "Schließlich", "Aber", "Oder", "Und", "Sondern", "Denn", "Weil"],
     "A2": ["Urlaub", "Reise", "Bahnhof", "Flugzeug", "Hotel", "Küche", "Kühlschrank", "Gabel", "Löffel", "Messer", "Kleidung", "Hose", "Hemd", "Schuh", "Wetter", "Regen", "Sonne", "Wolke", "Gesundheit", "Krankheit", "Arzt", "Medizin", "Körper", "Kopf", "Hand", "Fuß", "Sport", "Spiel", "Musik", "Film", "Besuchen", "Verstehen", "Vergessen", "Bestellen", "Bezahlen", "Wohnen", "Mieten", "Kaufen", "Verkaufen", "Feiern", "Wichtig", "Wahr", "Falsch", "Fertig", "Glücklich", "Traurig", "Müde", "Sauer", "Süß", "Heiß", "Abwaschen", "Anrufen", "Anziehen", "Aufräumen", "Ausgeben", "Aussehen", "Baden", "Bedeuten", "Beeilen", "Benutzen", "Berichten", "Beschreiben", "Besichtigen", "Bestimmen", "Besprechen", "Bewerben", "Bezahlen", "Buchen", "Buchstabieren", "Danken", "Dauern", "Diskutieren", "Drucken", "Duschen", "Einkaufen", "Einladen", "Einziehen", "Enden", "Entschuldigen", "Erinnern", "Erkennen", "Erlauben", "Erleben", "Erzählen", "Fehlen", "Feiern", "Fernsehen", "Frühstücken", "Fühlen", "Füttern", "Gehören", "Gewinnen", "Glauben", "Grillen", "Grüßen", "Heiraten", "Hoffen", "Holen", "Interessieren", "Kämmen", "Kennenlernen", "Klettern", "Klingeln", "Klopf", "Kochen", "Korrigieren", "Kosten", "Lächeln", "Laden", "Landem", "Laufen", "Leiden", "Leihen", "Leiten", "Lernen", "Liefern", "Lösen", "Lügen", "Machen", "Malen", "Meinen", "Merken", "Mieten", "Mitbringen", "Mitkommen", "Mitmachen", "Mitteilen", "Nachsehen", "Nennen", "Notieren", "Öffnen", "Organisieren", "Packen", "Parken", "Passieren", "Planen", "Probieren", "Prüfen", "Putzen", "Rauchen", "Regnen", "Reisen", "Renovieren", "Reparieren", "Reservieren", "Riechen", "Rufen", "Sammeln", "Schalten", "Schenken", "Schicken", "Schmecken", "Schminken", "Schneiden", "Schneien", "Schreiben", "Schwimmen", "Segeln", "Sehen", "Senden", "Setzen", "Singen", "Sitzen", "Sparen", "Spazieren", "Speichern", "Spielen", "Sprechen", "Springen", "Spülen", "Starten", "Stecken", "Stehen", "Stehlen", "Steigen", "Stellen", "Sterben", "Stimmen", "Stören", "Studieren", "Suchen", "Surfen", "Tanken", "Tanzen", "Tauschen", "Teilen", "Teilnehmen", "Telefonieren", "Tragen", "Träumen", "Treffen", "Trennen", "Trinken", "Trocknen", "Tun", "Überweisen", "Üben", "Übernachten", "Übersetzen", "Überweisen", "Umziehen", "Unterhalten", "Unterschreiben", "Untersuch", "Verabreden", "Verabschieden", "Verändern", "Verbessern", "Verbieten", "Verdienen", "Vergleichen", "Vergrößern", "Verkaufen", "Verlängern", "Verlassen", "Verlieren", "Vermieten", "Vermuten", "Verpassen", "Verreisen", "Verschieben", "Versprechen", "Verstehen", "Versuchen", "Verteilen", "Vertrauen", "Verursachen", "Verwenden", "Verzeihen", "Vorbereiten", "Vorstellen", "Wählen", "Wandern", "Warten", "Waschen", "Wechseln", "Wecken", "Wehtun", "Weitergehen", "Werden", "Werfen", "Wiederholen", "Wissen", "Wohnen", "Wünschen", "Zahlen", "Zeichnen", "Zeigen", "Zuhören", "Zumachen"],
@@ -58,7 +69,8 @@ def normalize_text(t):
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY: raise Exception("Brak klucza OpenAI API.")
     client = OpenAI(api_key=API_KEY)
-    messages = [{"role": "system", "content": "Jesteś profesjonalnym nauczycielem niemieckiego. Odpowiadaj WYŁĄCZNIE w formacie JSON po polsku. Kategorie tematyczne muszą być po polsku. Do każdego słowa dodaj 'examples' jako listę z jednym obiektem {de, pl}."}]
+    # Wzmocnienie prośby o polskie kategorie w system prompt
+    messages = [{"role": "system", "content": "You are a professional German teacher. Output ONLY valid JSON. All category names MUST be in Polish language. Descriptive thematic categories (e.g. 'Owoce', 'Biuro') are required. Format examples as list of {de, pl}."}]
     if img_obj:
         buffered = BytesIO(); img_obj.thumbnail((800, 800)); img_obj.save(buffered, format="JPEG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -90,6 +102,7 @@ def load_flashcards(username):
     db = get_db()
     res = db.table("flashcards").select("*").eq("username", username).execute()
     cards = res.data if res.data else []
+    # Migracja pola origin i upewnienie się że to lista
     for c in cards:
         if not c.get("origin"):
             cat = str(c.get("category", "")).lower()
@@ -97,9 +110,13 @@ def load_flashcards(username):
     return cards
 
 def save_word(username, word_obj):
+    db = get_db()
     word_obj["username"] = username
     if "examples" not in word_obj: word_obj["examples"] = []
-    get_db().table("flashcards").insert(word_obj).execute()
+    # Zapewnienie nazwy kolumny category (zamiast kategoria)
+    if "kategoria" in word_obj:
+        word_obj["category"] = word_obj.pop("kategoria")
+    db.table("flashcards").insert(word_obj).execute()
 
 def delete_word(word_id):
     get_db().table("flashcards").delete().eq("id", word_id).execute()
@@ -115,6 +132,10 @@ def play_audio(txt, example_txt=None):
         f = BytesIO(); tts = gTTS(text=full, lang='de'); tts.write_to_fp(f); f.seek(0)
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
+
+def check_test_answer(u_ans, q_obj):
+    u = normalize_text(u_ans); c = normalize_text(q_obj.get('correct', ''))
+    return u == c if u and c else False
 
 # --- 7. LOGOWANIE ---
 if "auth" not in st.session_state:
@@ -187,8 +208,7 @@ if "l_c" not in st.session_state or st.session_state.l_c != choice:
         if k in st.session_state: del st.session_state[k]
     st.session_state.l_c, st.session_state.n_m, st.session_state.u_a = choice, "ask", ""
 
-# --- 10. MODUŁY ---
-
+# --- 10. MODUŁY NAUKI ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     update_activity("Powtórki")
@@ -209,15 +229,17 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             if st.session_state.n_m == "ask":
                 with st.form("ans_f"):
                     u_in = st.text_input("Tłumaczenie (PL):")
-                    if st.form_submit_button("Sprawdź"):
+                    if st.form_submit_button("Sprawdź", use_container_width=True):
                         st.session_state.u_a, st.session_state.n_m = u_in, "res"; st.rerun()
             else:
                 if normalize_text(st.session_state.u_a) == normalize_text(c['pl']): st.success(f"✅ Dobrze: {c['pl']}")
                 else: st.error(f"❌ Poprawnie: {c['pl']}")
                 exs = c.get("examples", [])
-                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs)>0 else None
+                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 if isinstance(exs, list):
-                    for ex in exs: st.markdown(f"🇩🇪 {ex['de']}<br>🇵🇱 {ex.get('pl','')}", unsafe_allow_html=True)
+                    for ex in exs:
+                        if isinstance(ex, dict) and 'de' in ex:
+                            st.markdown(f"🇩🇪 {ex['de']}<br>🇵🇱 {ex.get('pl','')}", unsafe_allow_html=True)
                 play_audio(c['de'], fex)
                 if is_r:
                     c1, c2, c3 = st.columns(3); d = None
@@ -236,13 +258,12 @@ elif choice == "🕹️ Quiz":
     else:
         if "q_c" not in st.session_state:
             idx = random.randrange(len(all_c)); t = all_c[idx]
-            opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]; random.shuffle(opts)
+            opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], min(3, len(all_c)-1)) + [t['pl']]; random.shuffle(opts)
             st.session_state.update({"q_idx":idx, "q_c":t, "q_a":t['pl'], "q_o":opts, "q_s":"ask"})
         st.write(f"### Jak przetłumaczysz: **{st.session_state.q_c['de']}**")
         if st.session_state.q_s == "ask":
             for o in st.session_state.q_o:
-                if st.button(o, key=o, use_container_width=True):
-                    st.session_state.u_q, st.session_state.q_s = o, "res"; st.rerun()
+                if st.button(o, key=o, use_container_width=True): st.session_state.u_q, st.session_state.q_s = o, "res"; st.rerun()
         else:
             c = st.session_state.q_c
             if normalize_text(st.session_state.get("u_q")) == normalize_text(st.session_state.q_a): st.success("✅ Brawo!")
@@ -280,15 +301,27 @@ elif choice == "📦 Generator słów":
                 try:
                     my_w = [x['de'].lower() for x in st.session_state.flashcards]
                     available = [w for w in VOCAB_DB[lvl] if w.lower() not in my_w]
+                    # Losowanie 25 słów
                     sel = random.sample(available, min(25, len(available)))
-                    prompt = f"Przetłumacz te słowa na polski: {sel}. Podaj polskie kategorie i po 1 zdaniu przykładowym. JSON key 'flashcards' jako lista obiektów."
+                    prompt = f"Przetłumacz te słowa na polski: {sel}. Podaj polskie kategorie i po 1 zdaniu przykładowym dla każdego. JSON key 'flashcards' jako lista obiektów."
                     res_raw = get_openai_response(prompt)
                     data = parse_ai_json(res_raw)
                     if data and "flashcards" in data:
+                        added = 0
                         for w in data["flashcards"]:
-                            save_word(u, {**w, "next_review":str(today_dt), "origin":"Generator", "category":f"{lvl}-{w.get('category','Inne')}"})
+                            # Zapewnienie mapowania kolumn SQL
+                            cat_raw = w.get('category') or w.get('kategoria') or "Inne"
+                            save_word(u, {
+                                "de": w.get('de'), 
+                                "pl": w.get('pl'), 
+                                "category": f"{lvl}-{cat_raw}",
+                                "next_review": str(today_dt), 
+                                "origin": "Generator",
+                                "examples": w.get('examples', [])
+                            })
+                            added += 1
                         st.session_state.user_data["historical_cost"] += 0.01
-                        st.session_state.gen_msg = f"Dodano 25 słówek {lvl}!"
+                        st.session_state.gen_msg = f"Dodano {added} słówek {lvl}!"
                         st.rerun()
                 except Exception as e: st.error(f"Błąd generatora: {e}")
 
@@ -299,7 +332,7 @@ elif choice == "📝 Testy":
         if "test_q" not in st.session_state:
             n_q = st.slider("Pytania", 5, 20, 5)
             if st.button("🚀 GENERUJ TEST", type="primary"):
-                with st.spinner("Przygotowuję..."):
+                with st.spinner("AI przygotowuje..."):
                     sample = random.sample(st.session_state.flashcards, n_q)
                     words = ", ".join([f"{w['de']} ({w['pl']})" for w in sample])
                     prompt = f"Generuj test dla: {words}. Podaj 'hint' (PL context), 'sentence' (DE), 'correct' (DE). For QUIZ provide 3 'distractors'. JSON 'questions'."
@@ -338,6 +371,22 @@ elif choice == "📝 Testy":
                 save_user_data(u, st.session_state.user_data); st.success(f"Wynik: {score}/{total} ({perc}%)")
                 if st.button("Koniec"): del st.session_state.test_q; st.rerun()
 
+elif choice == "📸 Skaner AI":
+    update_activity("Skaner"); src = st.camera_input("Zdjęcie"); up = st.file_uploader("Lub plik")
+    if (src or up) and st.button("🚀 ANALIZUJ", use_container_width=True):
+        try:
+            with st.spinner("Analiza obrazu..."):
+                res = get_openai_response("Extract German vocabulary. Format JSON key 'flashcards'.", Image.open(src or up))
+                data = parse_ai_json(res)
+                if "flashcards" in data: st.session_state.pending = data["flashcards"]; st.session_state.user_data["historical_cost"] += 0.02; st.rerun()
+        except Exception as e: st.error(f"Błąd AI: {e}")
+    if "pending" in st.session_state:
+        ed = st.data_editor(pd.DataFrame(st.session_state.pending), use_container_width=True)
+        if st.button("✅ ZAPISZ"):
+            for w in ed.to_dict('records'):
+                if 'de' in w and 'pl' in w: save_word(u, {"de":w['de'], "pl":w['pl'], "category":w.get('category','Skaner'), "next_review":str(today_dt), "origin":"Skaner"})
+            del st.session_state.pending; st.success("Dodano!"); st.rerun()
+
 elif choice == "➕ Dodaj":
     st.header("Dodaj słówko")
     with st.form("man_f"):
@@ -355,7 +404,7 @@ elif choice == "📖 Słownik":
 # --- 12. STATYSTYKI & ADMIN (PRZYWRÓCONE) ---
 elif choice == "📊 Statystyki":
     update_activity("Inn"); df = pd.DataFrame(st.session_state.flashcards)
-    st.header("Twoje Statystyki")
+    st.header("📊 Twoje Statystyki")
     if not df.empty:
         c1, c2, c3 = st.columns(3); c1.metric("Słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
         kn = len(df[df['next_review'].apply(lambda x: (date.fromisoformat(x)-date.today()).days >= 7 if x else False)])
@@ -367,11 +416,14 @@ elif choice == "📊 Statystyki":
             total = len(l_df); know = len(l_df[l_df['next_review'].apply(lambda x: (date.fromisoformat(x)-date.today()).days >= 7 if x else False)]) if total > 0 else 0
             stats.append({"Poziom":l, "Słów":total, "Opanowane":know, "%":f"{round((know/total)*100) if total > 0 else 0}%"})
         st.table(pd.DataFrame(stats))
-        st.subheader("Historia Testów")
+        st.subheader("Nadchodzące powtórki")
+        sched = [{"Data": (today_dt + timedelta(days=i)).strftime("%d.%m"), "Słów": len(df[df['next_review'] == str(today_dt + timedelta(days=i))])} for i in range(10)]
+        st.bar_chart(pd.DataFrame(sched).set_index("Data"))
+        st.subheader("📜 Historia Testów")
         st.table(pd.DataFrame(st.session_state.user_data.get("test_history", [])[::-1]).head(10))
 
 elif choice == "👑 Admin":
-    st.header("Panel Admina"); st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage")
+    st.header("👑 Panel Admina"); st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage")
     db = get_db(); ud = db.table("user_data").select("*").execute().data
     adm_list = []; total_cost = 0.0; global_time = {}
     for user in ud:
@@ -385,25 +437,28 @@ elif choice == "👑 Admin":
             lbl = CLEAN_TIME_LABELS.get(m.strip(), "Inn"); merged[lbl] = merged.get(lbl, 0) + s; global_time[lbl] = global_time.get(lbl, 0) + s
         u_times = ", ".join([f"{l}:{round(s/60)}m" for l, s in merged.items() if s > 15])
         adm_list.append({"Użytkownik":username, "Słów":len(cards), "Ręcznie":m_man, "Gen":m_gen, "Skan":m_skn, "Testy":len(user.get("test_history",[])), "Czas":u_times, "Koszt":round(user.get("historical_cost",0),4)})
-    st.table(pd.DataFrame(adm_list))
+    st.columns(2)[0].metric("Łącznie słówek", sum(x['Słów'] for x in adm_list))
+    st.columns(2)[1].metric("Suma kosztów AI", f"{total_cost:.2f} PLN"); st.table(pd.DataFrame(adm_list))
     if global_time:
         fig = go.Figure(data=[go.Bar(x=list(global_time.keys()), y=list(global_time.values()), marker_color='#1E88E5')])
-        fig.update_layout(template="plotly_dark", height=400, title="Czas globalny (min)"); st.plotly_chart(fig, use_container_width=True)
+        fig.update_layout(template="plotly_dark", height=400, title="Globalny czas (minuty)"); st.plotly_chart(fig, use_container_width=True)
 
 elif choice == "⚙️ Moje Konto":
-    st.header("Moje Konto"); update_activity("Inn")
-    with st.expander("Zmień hasło"):
+    st.header("⚙️ Moje Konto"); update_activity("Inn")
+    with st.expander("🔑 Zmień hasło"):
         with st.form("pw_f"):
             o, n, cp = st.text_input("Stare", type="password"), st.text_input("Nowe", type="password"), st.text_input("Powtórz", type="password")
             if st.form_submit_button("Zmień"):
                 db = get_db(); res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(o) and n == cp:
-                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute(); st.success("Zmieniono!")
-    st.divider(); st.subheader("🗑️ Usuwanie poziomów")
-    conf = st.checkbox("Potwierdzam usuwanie")
+                    db.table("users_auth").update({"password_hash": hash_pw(n)}).eq("username", u).execute(); st.success("OK!")
+    st.divider(); st.subheader("🗑️ Usuwanie danych")
+    conf = st.checkbox("Potwierdzam chęć usunięcia danych")
     lvls = ["A1", "A2", "B1", "B2", "C1"]
     col_d = st.columns(5)
     for i, lvl in enumerate(lvls):
-        if col_d[i].button(lvl, disabled=not conf):
+        if col_d[i].button(lvl, key=f"del_{lvl}", disabled=not conf):
             get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute()
             st.success(f"Usunięto {lvl}!"); st.rerun()
+    if st.button("RESET CAŁEJ MOJEJ BAZY", type="primary", disabled=not conf):
+        get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
