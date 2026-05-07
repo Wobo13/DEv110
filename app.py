@@ -19,7 +19,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V214 (Stats Table Fix & UI Polish)"
+APP_VERSION = "V214 (Forecast Chart & Stats)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -276,9 +276,8 @@ elif choice == "📝 Testy":
                 
                 if q.get('type') == "QUIZ":
                     opts = list(set(q.get('distractors', []) + [correct])); random.shuffle(opts)
-                    cols = st.columns(2)
-                    for i, o in enumerate(opts):
-                        if cols[i%2].button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
+                    for o in opts:
+                        if st.button(o, key=f"t_{t_idx}_{o}", use_container_width=True):
                             st.session_state.test_q[t_idx]['user_ans'] = o
                             if o == correct: st.session_state.test_score += 1; st.toast("Dobrze!")
                             else: st.error(f"Źle. Poprawnie: {correct}"); time.sleep(1)
@@ -373,15 +372,31 @@ elif choice == "📖 Słownik":
                 if st.form_submit_button("Zapisz", use_container_width=True): update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca}); st.rerun()
             if st.button("Usuń", key=f"del_{c['id']}", use_container_width=True): delete_word(c['id']); st.rerun()
 
-# --- 15. STATYSTYKI ---
+# --- 15. STATYSTYKI Z HISTORIĄ TESTÓW I WYKRESEM ---
 elif choice == "📊 Statystyki":
     update_activity("Statystyki"); st.header("📊 Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
     if not df.empty:
         c1, c2 = st.columns(2); c1.metric("Baza słówek", len(df)); c2.metric("Passa", f"{st.session_state.user_data['streak']} d")
-        st.subheader("Źródła słówek")
         
-        # Oczyszczenie tabelki "origin" by wyglądała profesjonalnie
+        st.write("---")
+        st.subheader("📅 Prognoza powtórek (najbliższe 10 dni)")
+        sched = []
+        for i in range(10):
+            target_date = str(date.today() + timedelta(days=i))
+            if i == 0:
+                count = len(df[df['next_review'] <= target_date])
+                label = "Dzisiaj"
+            else:
+                count = len(df[df['next_review'] == target_date])
+                label = (date.today() + timedelta(days=i)).strftime("%d.%m")
+            sched.append({"Dzień": label, "Liczba słówek": count})
+        
+        chart_df = pd.DataFrame(sched).set_index("Dzień")
+        st.bar_chart(chart_df)
+
+        st.write("---")
+        st.subheader("Źródła słówek")
         origin_counts = df['origin'].value_counts().reset_index()
         origin_counts.columns = ['Źródło', 'Liczba słówek']
         st.table(origin_counts)
@@ -391,7 +406,6 @@ elif choice == "📊 Statystyki":
     t_hist = st.session_state.user_data.get("test_history", [])
     if t_hist:
         hist_df = pd.DataFrame(t_hist)[::-1]
-        # Bezpieczne ułożenie kolumn, aby zawsze trafiały we właściwe miejsce
         hist_df = hist_df[["date", "score", "total", "perc"]]
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
