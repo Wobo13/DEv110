@@ -542,7 +542,7 @@ elif choice == "📦 Generator słów":
     if "last_generated" in st.session_state:
         st.success(f"🎉 Pomyślnie wygenerowano i dodano {len(st.session_state.last_generated)} nowych słówek!")
         
-        # Tabela ze spisem dodanych słówek
+        # Tabela ze spisem dodanych słówek (teraz pokazuje też tagi)
         df_new = pd.DataFrame(st.session_state.last_generated)
         st.dataframe(df_new, use_container_width=True, hide_index=True)
         
@@ -555,9 +555,8 @@ elif choice == "📦 Generator słów":
 
     cols = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
-        # Dodany unikalny klucz dla przycisku, aby zapobiec gubieniu stanu
         if cols[i].button(lvl, use_container_width=True, key=f"gen_btn_{lvl}"):
-            with st.spinner(f"AI pobiera i analizuje słówka dla poziomu {lvl}... To potrwa tylko chwilę."):
+            with st.spinner(f"AI pobiera i analizuje słówka dla poziomu {lvl}... To potrwa kilka sekund."):
                 try:
                     # Pobieranie bazy i odfiltrowanie już posiadanych
                     res_lib = get_db().table("vocab_library").select("word").eq("level", lvl).execute()
@@ -570,51 +569,64 @@ elif choice == "📦 Generator słów":
                         
                     sel = random.sample(avail, min(25, len(avail)))
                     
-                    # Generowanie danych przez AI
-                    prompt = f"Przetłumacz i otaguj: {sel}. Zwróć wynik TYLKO w formacie JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"{lvl}\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
+                    # Generowanie danych przez AI - wymuszamy generowanie tematyki i części mowy
+                    prompt = f"Przetłumacz i otaguj słowa: {sel}. Dodaj minimum 2 tagi (część mowy oraz kategoria tematyczna). Zwróć wynik TYLKO w formacie JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"Rzeczownik, Dom\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
                     
                     raw_res = get_openai_response(prompt)
-                    # Pancerne czyszczenie odpowiedzi w razie gdyby OpenAI dodało znaczniki Markdown
                     raw_res = raw_res.replace("```json", "").replace("```", "").strip()
                     data = json.loads(raw_res)
                     
-                    # Czasem AI nazywa listę 'words' zamiast 'flashcards', zabezpieczamy się
                     flashcards_data = data.get("flashcards", data.get("words", []))
                     
                     insert_payload = []
                     display_list = [] # Do wyświetlenia użytkownikowi
                     
                     for w in flashcards_data:
+                        # 1. Pobieramy tagi od AI
+                        raw_cat = w.get("category", "")
+                        
+                        # 2. Rozbijamy, czyścimy ze spacji i zmieniamy z małych na duże litery (np. rzeczownik -> Rzeczownik)
+                        tags = [t.strip().capitalize() for t in str(raw_cat).split(",") if t.strip()]
+                        
+                        # 3. Usuwamy złośliwe/pomieszane poziomy, które mogło dodać AI
+                        clean_tags = [t for t in tags if t.upper() not in ["A1", "A2", "B1", "B2", "C1"]]
+                        
+                        # 4. Twardo doklejamy wciśnięty na przycisku poziom
+                        clean_tags.append(lvl)
+                        final_cat = ", ".join(clean_tags)
+                        
                         card = {
                             "username": u,
                             "de": w.get("de", ""),
                             "pl": w.get("pl", ""),
-                            "category": w.get("category", lvl),
+                            "category": final_cat,
                             "examples": w.get("examples", []),
                             "next_review": str(date.today()),
                             "origin": "Generator"
                         }
                         insert_payload.append(card)
-                        display_list.append({"Niemiecki (DE)": card["de"], "Polski (PL)": card["pl"]})
+                        display_list.append({
+                            "Niemiecki (DE)": card["de"], 
+                            "Polski (PL)": card["pl"],
+                            "Tagi": final_cat
+                        })
                     
                     if insert_payload:
-                        # Jedno zapytanie do bazy (Ogromny skok wydajności)
+                        # Jedno zapytanie do bazy (Ogromny skok wydajności w komunikacji z Supabase)
                         get_db().table("flashcards").insert(insert_payload).execute()
                         
                         added = len(insert_payload)
-                        # Symulacja przypisywania kosztu API
                         st.session_state.user_data["historical_cost"] += (added * 0.005) 
                         save_user_data(u, st.session_state.user_data)
                         
-                        # --- KLUCZOWA ZMIANA: POBRANIE NOWYCH FISZEK DO PAMIĘCI APLIKACJI ---
+                        # Aktualizacja lokalnej bazy
                         st.session_state.flashcards = load_flashcards(u)
                         
                         # Zapisanie listy do sesji, aby przetrwała st.rerun()
                         st.session_state.last_generated = display_list
                         st.rerun()
                     else:
-                        # Jeśli payload jest pusty, AI nie zwróciło danych prawidłowo
-                        st.error("AI zwróciło pustą odpowiedź lub błędny format. Spróbuj kliknąć jeszcze raz.")
+                        st.error("AI zwróciło pustą odpowiedź. Spróbuj kliknąć jeszcze raz.")
                         
                 except Exception as e: 
                     st.error(f"Wystąpił błąd podczas pracy AI: {e}")
