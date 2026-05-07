@@ -157,31 +157,46 @@ def update_activity(m):
     # Zapisujemy zaktualizowane dane do bazy Supabase
     save_user_data(u, st.session_state.user_data)
 
-# Wywołanie początkowe - domyślnie startujemy w kategorii Inne
-update_activity("Inne")
-
 # --- 6. SIDEBAR I NAWIGACJA ---
 st.sidebar.title(f"👤 {u.capitalize()}")
 st.sidebar.caption(f"Wersja: {APP_VERSION}")
 st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
-if st.sidebar.button("Wyloguj", use_container_width=True):
-    st.query_params.clear(); st.session_state.clear(); st.rerun()
 
-menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📝 Testy", "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
+if st.sidebar.button("Wyloguj", use_container_width=True):
+    st.query_params.clear()
+    st.session_state.clear()
+    st.rerun()
+
+menu = [
+    "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
+    "📝 Testy", "📦 Generator słów", "📸 Skaner AI", 
+    "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"
+]
+
 if u == ADMIN_USER:
     menu.append("👑 Admin")
 
+# 1. Pobranie wyboru użytkownika
 choice = st.sidebar.radio("Nawigacja", menu)
 
+# 2. KLUCZOWA POPRAWKA: Jedyne, centralne wywołanie aktualizacji czasu.
+# System sam wyczyści ikonki i dopasuje czas do wybranego modułu.
+update_activity(choice)
+
+# 3. Logika czyszczenia sesji przy zmianie modułu
 if "l_c" not in st.session_state or st.session_state.l_c != choice:
+    # Czyścimy zbędne dane tymczasowe z poprzedniego modułu
     for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
-        if k in st.session_state: del st.session_state[k]
-    st.session_state.l_c, st.session_state.n_m, st.session_state.u_a = choice, "ask", ""
+        if k in st.session_state: 
+            del st.session_state[k]
+    
+    st.session_state.l_c = choice
+    st.session_state.n_m = "ask"
+    st.session_state.u_a = ""
 
 # --- 7. POWTÓRKI & TRENING (Wersja ULTRA FAST z st.fragment) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
-    update_activity("Powtórki" if is_r else "Trening")
     st.header(choice)
     
     # 1. Filtrowanie tagów (poza fragmentem, bo rzadko zmieniane)
@@ -279,7 +294,6 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
 # --- 8. QUIZ (Wersja z rozszerzonym Audio) ---
 elif choice == "🕹️ Quiz":
-    update_activity("Quiz")
     st.header("🕹️ Quiz")
     
     all_c = st.session_state.flashcards
@@ -345,7 +359,6 @@ elif choice == "🕹️ Quiz":
 
 # --- 9. FISZKI (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "🎴 Fiszki":
-    update_activity("Fiszki")
     st.header("🎴 Fiszki")
     
     # Inicjalizacja stanu (poza fragmentem, aby zachować ciągłość przy zmianie modułu)
@@ -418,8 +431,7 @@ elif choice == "🎴 Fiszki":
 
 # --- 10. TESTY (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "📝 Testy":
-    update_activity("Testy")
-    st.header("📝 Test")
+     st.header("📝 Test")
     
     if len(st.session_state.flashcards) < 5:
         st.warning("Dodaj min. 5 słówek, aby wygenerować test.")
@@ -525,7 +537,7 @@ elif choice == "📝 Testy":
 
 # --- 11. GENERATOR ---
 elif choice == "📦 Generator słów":
-    update_activity("Generator"); st.header("📦 Generator")
+    st.header("📦 Generator")
     cols = st.columns(5)
     for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
         if cols[i].button(lvl, use_container_width=True):
@@ -552,7 +564,7 @@ elif choice == "📦 Generator słów":
 
 # --- 12. SKANER ---
 elif choice == "📸 Skaner AI":
-    update_activity("Skaner"); st.header("📸 Skaner AI")
+    st.header("📸 Skaner AI")
     src = st.camera_input("Zrób zdjęcie notatek")
     if src and st.button("Analizuj"):
         res = get_openai_response("Extract words to JSON 'flashcards' list.", Image.open(src))
@@ -572,7 +584,7 @@ elif choice == "➕ Dodaj":
 
 # --- 14. SŁOWNIK ---
 elif choice == "📖 Słownik":
-    update_activity("Słownik"); st.header("📖 Słownik")
+    st.header("📖 Słownik")
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
@@ -593,7 +605,7 @@ elif choice == "📖 Słownik":
 
 # --- 15. STATYSTYKI ---
 elif choice == "📊 Statystyki":
-    update_activity("Statystyki"); st.header("📊 Twoje Statystyki")
+    st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
     if not df.empty:
         c1, c2 = st.columns(2); c1.metric("Wielkość Bazy", len(df)); c2.metric("Passa Nauki", f"{st.session_state.user_data['streak']} dni")
@@ -697,7 +709,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
         
-        # Przetwarzanie statystyk czasu - mapowanie "pancerne"
+        # Przetwarzanie statystyk czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
@@ -712,7 +724,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             # Sprawdzanie bezpośrednie kodów
             if k in tracked_codes:
                 f_code = k
-            # Sprawdzanie rdzeni słów (niezależnie od polskich znaków i ikon)
+            # Sprawdzanie rdzeni słów (odporne na polskie znaki i ikony)
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
             elif "qiz" in k_low or "qui" in k_low: f_code = "Qiz"
