@@ -474,7 +474,7 @@ elif choice == "⚙️ Moje Konto":
     if st.button("🔥 ZRESETUJ CAŁĄ MOJĘ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
         get_db().table("flashcards").delete().eq("username", u).execute(); st.rerun()
 
-# --- 17. ADMIN PRO ---
+# --- 17. ADMIN PRO (Poprawiona logika mapowania czasu) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     st.link_button("💸 Sprawdź zużycie OpenAI (Billing)", "https://platform.openai.com/usage", use_container_width=True)
@@ -488,7 +488,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     adm_list = []
     global_time = {}
     
-    # Kody muszą się zgadzać z tymi poniżej
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
     display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
@@ -502,16 +501,23 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         total_sec = 0
         
         for raw_module_name, seconds in user_stats.items():
-            # Szukamy kodu modułu w CLEAN_TIME_LABELS
             found_code = "Inn"
-            for label, code in CLEAN_TIME_LABELS.items():
-                if label.lower() in raw_module_name.lower():
-                    # Zabezpieczenie: sprawdź czy kod jest na liście tracked_codes
-                    if code in tracked_codes:
-                        found_code = code
-                    break
+            raw_module_name_clean = raw_module_name.lower().strip()
             
-            # Bezpieczne dodawanie
+            # SPRAWDZANIE 1: Czy nazwa z bazy to bezpośrednio któryś ze skrótów (np. "Pow")?
+            if raw_module_name in tracked_codes:
+                found_code = raw_module_name
+            else:
+                # SPRAWDZANIE 2: Czy w nazwie z bazy (np. "📅 Powtórki") jest słowo ze słownika CLEAN_TIME_LABELS?
+                for label, code in CLEAN_TIME_LABELS.items():
+                    if label.lower() in raw_module_name_clean or code.lower() == raw_module_name_clean:
+                        found_code = code
+                        break
+            
+            # Dodatkowe zabezpieczenie przed błędnym kodem
+            if found_code not in tracked_codes:
+                found_code = "Inn"
+                
             current_user_merged[found_code] += seconds
             total_sec += seconds
             global_time[found_code] = global_time.get(found_code, 0) + seconds
@@ -528,7 +534,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         })
     
     if not adm_list:
-        st.warning("Brak danych użytkowników.")
+        st.warning("Brak danych.")
     else:
         df_admin = pd.DataFrame(adm_list)
         st.subheader("📋 Podsumowanie użytkowników")
