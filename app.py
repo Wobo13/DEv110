@@ -7,6 +7,7 @@ import hashlib
 import pandas as pd
 import secrets
 import base64
+import tempfile
 from datetime import datetime, date, timedelta
 from io import BytesIO
 from PIL import Image
@@ -17,7 +18,7 @@ import plotly.graph_objects as go
 from openai import OpenAI
 
 # --- KONFIGURACJA ---
-APP_VERSION = "V174 (SRS & Admin Fixed)"
+APP_VERSION = "V175 (Atomic Save & Auth Fix)"
 ADMIN_USER = "wobo"
 AUTH_FILE = "users_auth.json"
 SESSIONS_FILE = "sessions.json"
@@ -52,7 +53,16 @@ def load_j(p, d):
     return d
 
 def save_j(p, d):
-    with open(p, "w", encoding="utf-8") as f: json.dump(d, f, indent=4)
+    # POPRAWKA 2: Bezpieczny atomowy zapis zapobiegający uszkodzeniom pliku (concurrency fix)
+    dir_name = os.path.dirname(p) or '.'
+    try:
+        fd, temp_path = tempfile.mkstemp(dir=dir_name, text=True)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f: 
+            json.dump(d, f, indent=4)
+        os.replace(temp_path, p)
+    except Exception as e:
+        # Fallback na standardowy zapis, jeśli tempfile napotka na problem
+        with open(p, "w", encoding="utf-8") as f: json.dump(d, f, indent=4)
 
 # Globalna funkcja sprawdzająca opanowanie (7 dni+)
 def is_word_mastered(next_review_date):
@@ -128,11 +138,16 @@ if not st.session_state.auth:
         pn = st.text_input("Hasło", type="password", key="r_p")
         if st.button("Załóż konto", use_container_width=True):
             db = load_j(AUTH_FILE, {})
-            if un and len(pn) >= 4 and un not in db:
+            # POPRAWKA 4: Wyświetlanie jasnych komunikatów o błędach podczas rejestracji
+            if not un or len(pn) < 4:
+                st.error("Nazwa użytkownika jest wymagana, a hasło musi mieć min. 4 znaki.")
+            elif un in db:
+                st.error("Użytkownik o takiej nazwie już istnieje.")
+            else:
                 db[un] = hash_pw(pn); save_j(AUTH_FILE, db)
                 save_j(get_p(un, "flashcards"), [])
                 init_data = {"streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy"}
-                save_j(get_p(un, "user_data"), init_data); st.success("Utworzono konto!")
+                save_j(get_p(un, "user_data"), init_data); st.success("Utworzono konto! Możesz się teraz zalogować.")
     st.stop()
 
 # --- INIT DANYCH ---
@@ -153,7 +168,9 @@ def update_activity(m="Inne"):
         st.session_state.user_data["time_stats"] = stats
     st.session_state.user_data["last_ts"] = curr
     st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M:%S")
-    force_save()
+    # POPRAWKA 3: Wydajność - update_activity nie wywołuje force_save() na wielkiej bazie fiszek.
+    # Zapisuje tylko drobny plik user_data przy każdej interakcji.
+    save_j(get_p(st.session_state.user, "user_data"), st.session_state.user_data)
 
 today_dt = date.today()
 update_activity()
@@ -163,6 +180,13 @@ st.sidebar.title(f"👤 {u.capitalize()}")
 st.sidebar.caption(f"🚀 Wersja: {APP_VERSION}")
 st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
 if st.sidebar.button("Wyloguj", use_container_width=True):
+    # POPRAWKA 4: Prawidłowe usuwanie tokena sesji z bazy (zapobiega niechcianemu autologowaniu)
+    if "token" in st.query_params:
+        tk = st.query_params["token"]
+        ss = load_j(SESSIONS_FILE, {})
+        if tk in ss:
+            del ss[tk]
+            save_j(SESSIONS_FILE, ss)
     st.query_params.clear(); st.session_state.clear(); st.rerun()
 
 menu = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "📸 Skaner AI", "📦 Generator słów", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
@@ -368,10 +392,16 @@ elif choice == "📖 Słownik":
             with st.expander(f"📝 {c['de']} — {c['pl']}"):
                 with st.form(f"ed_{i}"):
                     n_de, n_pl, n_ka = st.text_input("DE", c['de']), st.text_input("PL", c['pl']), st.text_input("KAT", c.get('category','Inne'))
-                    if st.form_submit_button("Zapisz"):
-                        c.update({"de":n_de, "pl":n_pl, "category":n_ka}); force_save(); st.rerun()
-                    if st.form_submit_button("Usuń"):
-                        st.session_state.flashcards.pop(i); force_save(); st.rerun()
+                    # POPRAWKA 1: Bezpieczne edytowanie/usuwanie po indeksie i ulepszony UX (przyciski obok siebie)
+                    col_save, col_del = st.columns(2)
+                    if col_save.form_submit_button("Zapisz", use_container_width=True):
+                        st.session_state.flashcards[i].update({"de":n_de, "pl":n_pl, "category":n_ka})
+                        force_save()
+                        st.rerun()
+                    if col_del.form_submit_button("Usuń", use_container_width=True):
+                        del st.session_state.flashcards[i]
+                        force_save()
+                        st.rerun()
 
 # --- 📊 STATYSTYKI ---
 elif choice == "📊 Statystyki":
