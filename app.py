@@ -257,26 +257,69 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         # Wywołanie fragmentu
         flashcard_engine()
 
-# --- 8. QUIZ ---
+# --- 8. QUIZ (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "🕹️ Quiz":
-    update_activity("Quiz"); st.header("🕹️ Quiz")
+    update_activity("Quiz")
+    st.header("🕹️ Quiz")
+    
     all_c = st.session_state.flashcards
-    if len(all_c) < 4: st.warning("Dodaj min. 4 słówka.")
+    
+    if len(all_c) < 4: 
+        st.warning("Dodaj min. 4 słówka, aby uruchomić quiz.")
     else:
-        if "q_c" not in st.session_state:
-            idx = random.randrange(len(all_c)); t = all_c[idx]
-            opts = random.sample([x['pl'] for x in all_c if x['pl']!=t['pl']], 3) + [t['pl']]
-            random.shuffle(opts); st.session_state.update({"q_c":t, "q_a":t['pl'], "q_o":opts, "q_s":"ask"})
-        st.write(f"### Jak przetłumaczysz: **{st.session_state.q_c['de']}**")
-        if st.session_state.q_s == "ask":
-            for o in st.session_state.q_o:
-                if st.button(o, key=o, use_container_width=True):
-                    st.session_state.u_q, st.session_state.q_s = o, "res"; st.rerun()
-        else:
-            if st.session_state.u_q == st.session_state.q_a: st.success("✅ Świetnie!")
-            else: st.error(f"❌ Poprawnie: {st.session_state.q_a}")
-            play_audio(st.session_state.q_c['de'])
-            if st.button("Następne", use_container_width=True): del st.session_state.q_c; st.rerun()
+        # Silnik Quizu jako fragment
+        @st.fragment
+        def quiz_engine():
+            # Inicjalizacja pytania, jeśli nie istnieje
+            if "q_c" not in st.session_state:
+                idx = random.randrange(len(all_c))
+                t = all_c[idx]
+                # Losowanie dystraktorów
+                other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
+                distractors = random.sample(other_pls, min(3, len(other_pls)))
+                opts = distractors + [t['pl']]
+                random.shuffle(opts)
+                
+                st.session_state.update({
+                    "q_c": t, 
+                    "q_a": t['pl'], 
+                    "q_o": opts, 
+                    "q_s": "ask",
+                    "u_q": None
+                })
+
+            q_c = st.session_state.q_c
+            
+            st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
+            
+            if st.session_state.q_s == "ask":
+                # Wyświetlanie opcji jako przyciski
+                for o in st.session_state.q_o:
+                    if st.button(o, key=f"btn_{o}", use_container_width=True):
+                        st.session_state.u_q = o
+                        st.session_state.q_s = "res"
+                        st.rerun(scope="fragment")
+            else:
+                # Wynik odpowiedzi
+                if st.session_state.u_q == st.session_state.q_a:
+                    st.success("✅ Świetnie! To poprawna odpowiedź.")
+                else:
+                    st.error(f"❌ Niestety nie. Poprawnie: **{st.session_state.q_a}**")
+                
+                # Audio po udzieleniu odpowiedzi
+                play_audio(q_c['de'])
+                
+                # Przycisk do następnego pytania
+                if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
+                    # Usuwamy dane obecnego pytania, aby przy następnym obiegu wylosowało nowe
+                    del st.session_state.q_c
+                    del st.session_state.q_a
+                    del st.session_state.q_o
+                    del st.session_state.q_s
+                    st.rerun(scope="fragment")
+
+        # Uruchomienie fragmentu
+        quiz_engine()
 
 # --- 9. FISZKI (Naprawiony HTML) ---
 elif choice == "🎴 Fiszki":
