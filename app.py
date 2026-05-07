@@ -19,7 +19,7 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V215 (Forecast Chart Order Fix)"
+APP_VERSION = "V216 (Auth Duplicate ID Fix)"
 ADMIN_USER = "wobo"
 
 CLEAN_TIME_LABELS = {
@@ -98,8 +98,9 @@ if not st.session_state.auth:
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
     with t1:
-        un = st.text_input("Użytkownik").lower().strip()
-        pw = st.text_input("Hasło", type="password")
+        # Dodane unikalne klucze (key)
+        un = st.text_input("Użytkownik", key="login_user").lower().strip()
+        pw = st.text_input("Hasło", type="password", key="login_pass")
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
             res = db.table("users_auth").select("*").eq("username", un).execute()
             if res.data and res.data[0]["password_hash"] == hash_pw(pw):
@@ -107,11 +108,17 @@ if not st.session_state.auth:
                 st.query_params["token"] = un; st.rerun()
             else: st.error("Błędne dane")
     with t2:
-        rn, rp = st.text_input("Nowy użytkownik").lower().strip(), st.text_input("Hasło", type="password")
+        # Dodane unikalne klucze (key)
+        rn = st.text_input("Nowy użytkownik", key="reg_user").lower().strip()
+        rp = st.text_input("Hasło", type="password", key="reg_pass")
         if st.button("Załóż konto"):
             if len(rn) > 2 and len(rp) > 3:
-                get_db().table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
-                load_user_data(rn); st.success("Konto gotowe!"); st.rerun()
+                check = db.table("users_auth").select("*").eq("username", rn).execute()
+                if not check.data:
+                    get_db().table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
+                    load_user_data(rn); st.success("Konto gotowe! Zaloguj się."); st.rerun()
+                else: st.error("Użytkownik już istnieje!")
+            else: st.warning("Użytkownik min. 3 znaki, Hasło min. 4 znaki.")
     st.stop()
 
 # --- 5. START SESJI ---
@@ -266,7 +273,7 @@ elif choice == "📝 Testy":
                         prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
                         data = json.loads(get_openai_response(prompt))
                         st.session_state.test_q, st.session_state.test_idx, st.session_state.test_score = data["questions"], 0, 0; st.rerun()
-                    except Exception as e: st.error(f"Błąd AI: {e}")
+                    except Exception as e: st.error(f"Błąd AI podczas generowania: {e}. Spróbuj ponownie.")
         else:
             qs = st.session_state.test_q; t_idx = st.session_state.test_idx
             if t_idx < len(qs):
@@ -392,7 +399,6 @@ elif choice == "📊 Statystyki":
                 label = (date.today() + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         
-        # Osiągamy wymuszoną kolejność wykresu z pomocą biblioteki Plotly
         fig = go.Figure(data=[go.Bar(
             x=[s["Dzień"] for s in sched], 
             y=[s["Liczba słówek"] for s in sched], 
@@ -420,7 +426,7 @@ elif choice == "📊 Statystyki":
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Brak rozwiązanych testów. Przejdź do zakładki Testy, aby sprawdzić swoją wiedzę!")
+        st.info("Brak rozwiązanych testów.")
 
 # --- 16. KONTO ---
 elif choice == "⚙️ Moje Konto":
