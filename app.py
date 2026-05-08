@@ -626,7 +626,7 @@ elif choice == "📝 Testy":
             # Uruchomienie silnika testu
             test_engine()
 
-# --- 11. MEMORY GAME ---
+# --- 11. MEMORY GAME (Poprawiona) ---
 elif choice == "🧠 Memory":
     st.header("🧠 Memory: Znajdź pary")
     st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami.")
@@ -646,19 +646,19 @@ elif choice == "🧠 Memory":
         
         random.shuffle(grid)
         st.session_state.mem_grid = grid
-        st.session_state.mem_status = ["hidden"] * 12  # hidden, flipped, matched
-        st.session_state.mem_first = None # Indeks pierwszego klikniętego kafelka
+        st.session_state.mem_status = ["hidden"] * 12
+        st.session_state.mem_first = None
         st.session_state.mem_pairs = 0
 
-    # 2. SILNIK GRY (Fragment dla płynności)
+    # 2. SILNIK GRY
     @st.fragment
     def memory_engine():
         grid = st.session_state.mem_grid
         status = st.session_state.mem_status
         
-        # Statystyki u góry
-        cols_info = st.columns(3)
-        cols_info.metric("Znalezione pary", f"{st.session_state.mem_pairs}/6")
+        # POPRAWKA: Wybieramy pierwszą kolumnę z listy [0]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Znalezione pary", f"{st.session_state.mem_pairs}/6")
         
         if st.session_state.mem_pairs == 6:
             st.balloons()
@@ -669,39 +669,36 @@ elif choice == "🧠 Memory":
                 st.rerun(scope="fragment")
             return
 
-        # RENDEROWANIE SIATKI (3 rzędy x 4 kolumny)
+        st.write("---")
+
+        # RENDEROWANIE SIATKI
         for row in range(3):
             cols = st.columns(4)
             for col in range(4):
                 idx = row * 4 + col
                 
-                # Dynamiczny kolor i zawartość kafelka
-                tile_text = "?"
-                tile_type = "secondary" # szary (zakryty)
-                
+                tile_text = "❓"
+                tile_type = "secondary"
+                tile_disabled = False
+
                 if status[idx] == "matched":
                     tile_text = "✅"
                     tile_disabled = True
                 elif status[idx] == "flipped":
                     tile_text = grid[idx]["text"]
-                    tile_type = "primary" # niebieski (odkryty)
+                    tile_type = "primary"
                     tile_disabled = True
-                else:
-                    tile_disabled = False
 
                 if cols[col].button(tile_text, key=f"mem_{idx}", use_container_width=True, disabled=tile_disabled, type=tile_type):
-                    # LOGIKA KLIKNIĘCIA
                     if st.session_state.mem_first is None:
-                        # Pierwszy klik
                         status[idx] = "flipped"
                         st.session_state.mem_first = idx
                         st.rerun(scope="fragment")
                     else:
-                        # Drugi klik
                         first_idx = st.session_state.mem_first
                         status[idx] = "flipped"
                         
-                        # Sprawdzenie czy para pasuje (ten sam ID, różny indeks)
+                        # Sprawdzenie pary
                         if grid[first_idx]["id"] == grid[idx]["id"] and first_idx != idx:
                             status[first_idx] = "matched"
                             status[idx] = "matched"
@@ -709,18 +706,19 @@ elif choice == "🧠 Memory":
                             st.session_state.mem_first = None
                             st.rerun(scope="fragment")
                         else:
-                            # Nie pasuje - pokazujemy na chwilę i zakrywamy
-                            # W Streamlit używamy st.toast lub info, żeby użytkownik widział co kliknął
-                            st.error("To nie jest para!")
-                            time.sleep(1) # Krótka pauza na zapamiętanie
+                            # Krótka informacja i reset (bez time.sleep, żeby nie mrozić UI)
+                            st.error("Błędna para!")
+                            # W wersji fragment, najprościej dać przycisk "Spróbuj ponownie" 
+                            # lub pozwolić użytkownikowi kliknąć dalej, co zakryje karty
                             status[first_idx] = "hidden"
                             status[idx] = "hidden"
                             st.session_state.mem_first = None
+                            # sleep(0.5) można dodać, jeśli importowałeś 'time'
                             st.rerun(scope="fragment")
 
     memory_engine()
 
-    if st.button("Resetuj grę", type="secondary"):
+    if st.button("Wygeneruj nową tablicę", type="secondary", use_container_width=True):
         for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
