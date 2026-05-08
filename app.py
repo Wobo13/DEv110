@@ -1840,7 +1840,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko usunięte! 🗑️")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V225 - Z Rekordami Memory) ---
+# --- 25. STATYSTYKI (V230 - Rekordy Gier i Nauki) ---
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -1854,20 +1854,50 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
-        # --- NOWOŚĆ: REKORDY MEMORY ---
-        st.subheader("🏆 Moje Rekordy Memory")
-        mem_scores = ud.get("memory_scores", [])
+        # --- REKORDY GIER (Memory, Balon, Wąż) ---
+        st.subheader("🏆 Moje Rekordy w Grach")
         
-        if mem_scores:
-            # Wybieramy top 3 najlepsze (najkrótsze) czasy
-            top3 = sorted([float(s) for s in mem_scores])[:3]
-            m_cols = st.columns(3)
-            icons = ["🥇", "🥈", "🥉"]
-            for i, score in enumerate(top3):
-                m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
-        else:
-            st.info("Zagraj w Memory, aby ustanowić swój pierwszy rekord!")
+        # TAB 1: Memory
+        t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balonowy Wyścig", "🐍 Lingwistyczny Wąż"])
         
+        with t_mem:
+            mem_scores = ud.get("memory_scores", [])
+            if mem_scores:
+                top3_mem = sorted([float(s) for s in mem_scores])[:3]
+                m_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(top3_mem):
+                    m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+            else:
+                st.info("Zagraj w Memory, aby ustanowić rekord!")
+
+        with t_bal:
+            # Zakładamy, że wyniki balonu są w ud["baloon_scores"]
+            bal_scores = ud.get("baloon_scores", [])
+            if bal_scores:
+                top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
+                b_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(top3_bal):
+                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
+            else:
+                st.info("Zagraj w Balonowy Wyścig, aby zdobyć punkty!")
+
+        with t_snake:
+            # Statystyki węża
+            s_max = ud.get("snake_best_chain", 0)
+            s_wins = ud.get("snake_wins", 0)
+            s_loss = ud.get("snake_losses", 0)
+            
+            s_c1, s_c2, s_c3 = st.columns(3)
+            s_c1.metric("Najdłuższa seria", f"{s_max} słów")
+            s_c2.metric("Wygrane", f"{s_wins}")
+            s_c3.metric("Przegrane", f"{s_loss}")
+            
+            if s_wins + s_loss > 0:
+                win_rate = int((s_wins / (s_wins + s_loss)) * 100)
+                st.caption(f"Skuteczność w walce z systemem: {win_rate}%")
+
         st.write("---")
         
         # 2. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
@@ -1880,11 +1910,13 @@ elif choice == "📊 Statystyki":
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
                 "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory",
-                "War": "Warsztat", "Sta": "Statystyki"
+                "War": "Warsztat", "Sta": "Statystyki", "Kon": "Konstruktor",
+                "Wan": "Wąż", "Bal": "Balon"
             }
             
             nav_order = [
-                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Warsztat", "Statystyki", "Inne"
+                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", 
+                "Memory", "Warsztat", "Konstruktor", "Wąż", "Bal", "Statystyki", "Inne"
             ]
             
             aggregated_mins = {name: 0 for name in nav_order}
@@ -1892,11 +1924,14 @@ elif choice == "📊 Statystyki":
                 name = display_names.get(code, "Inne")
                 if name in aggregated_mins:
                     aggregated_mins[name] += sec
+                else:
+                    aggregated_mins["Inne"] += sec
             
             t_data = []
             for name in nav_order:
                 mins = int(aggregated_mins[name] // 60)
-                t_data.append({"Moduł": name, "Minuty": mins})
+                if mins > 0 or name in ["Powtórki", "Trening"]: # Pokaż główne lub te z czasem
+                    t_data.append({"Moduł": name, "Minuty": mins})
             
             st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
 
@@ -1992,6 +2027,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
         st.info("Brak rozwiązanych testów.")
+
 # --- 26. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
