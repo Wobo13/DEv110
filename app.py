@@ -180,84 +180,70 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (V6 - Warsztat Słówek) ---
-# Nick i Passa
-st.sidebar.markdown(f"## 👤 {u.capitalize()} <span style='float:right; font-size:0.7em; padding-top:10px;'>🔥 **{st.session_state.user_data.get('streak', 0)}d**</span>", unsafe_allow_html=True)
-
-# --- WIDGETY MOTYWACYJNE ---
-user_settings = st.session_state.user_data.get("settings", {})
-
-if st.session_state.flashcards:
-    today = date.today()
-    total_cards = len(st.session_state.flashcards)
-    strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
-    mastery_perc = int((strong_cards / total_cards) * 100) if total_cards > 0 else 0
+# --- 6. SIDEBAR (V285 - Cel oparty na nauce) ---
+with st.sidebar:
+    # 1. Nagłówek i Statystyki podstawowe
+    st.markdown(f"## 👤 {u} <span style='float:right; font-size:0.6em;'>🔥 {st.session_state.user_data.get('streak', 0)}d</span>", unsafe_allow_html=True)
     
-    daily_goal = user_settings.get("daily_goal", 20)
-    total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
-    progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
+    # Wiedza (🧠 %) - obliczana z flashcards
+    all_c = st.session_state.flashcards
+    if all_c:
+        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
+        wiedza_perc = int((strong / len(all_c)) * 100)
+    else:
+        wiedza_perc = 0
+        
+    st.write(f"🧠 Wiedza: **{wiedza_perc}%**")
+    st.progress(wiedza_perc / 100)
 
-    # Wskaźniki: Wiedza i Cel
-    st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🧠 Wiedza: <b>{mastery_perc}%</b></div>", unsafe_allow_html=True)
-    st.sidebar.progress(mastery_perc / 100)
+    # --- 2. LOGIKA CELU (Tylko realna nauka) ---
+    # Definiujemy kody modułów, które uznajemy za "naukę"
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War"]
     
-    st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🎯 Cel: <b>{int(total_mins_today)}/{daily_goal}m</b></div>", unsafe_allow_html=True)
-    st.sidebar.progress(progress_goal)
-
-# --- DYSKRETNA PORADA ---
-tips = [
-    "Ucz się rano – mózg lepiej przyswaja słówka.",
-    "Metoda 15 min dziennie jest najlepsza.",
-    "Czytaj na głos – angażujesz słuch.",
-    "Twórz śmieszne skojarzenia.",
-    "Powtarzaj słówka tuż przed snem."
-]
-st.sidebar.markdown(f"<p style='font-size: 0.8em; color: gray; margin-top: 10px; margin-bottom: -10px;'>💡 {random.choice(tips)}</p>", unsafe_allow_html=True)
-
-st.sidebar.divider()
-
-# --- MENU NAWIGACJI ---
-menu = [
-    "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-    "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań", # <--- WARSZTAT DODANY TUTAJ
-    "📦 Generator słów", "📸 Skaner AI", 
-    "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"
-]
-if u == ADMIN_USER:
-    menu.append("👑 Admin")
-
-if "l_c" not in st.session_state:
-    st.session_state.l_c = "Inne"
-
-choice = st.sidebar.radio("Menu", menu, label_visibility="collapsed")
-
-update_activity(st.session_state.l_c)
-
-# Logika czyszczenia sesji przy zmianie modułu
-if st.session_state.l_c != choice:
-    keys_to_clear = [
-        "cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", 
-        "test_score", "q_c", "q_s", 
-        "mem_grid", "mem_status", "mem_first", "mem_pairs",
-        "w_list", "w_idx", "w_show" # <--- KLUCZE DLA WARSZTATU
-    ]
-    for k in keys_to_clear:
-        if k in st.session_state: 
-            del st.session_state[k]
+    # Pobieramy statystyki czasu użytkownika z session_state (aktualizowane na bieżąco)
+    current_stats = st.session_state.user_data.get("time_stats", {})
     
-    st.session_state.l_c = choice
-    st.session_state.n_m = "ask"
-    st.session_state.u_a = ""
+    # Sumujemy tylko sekundy z modułów nauki
+    study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
+    study_minutes = int(study_seconds // 60)
+    
+    # Pobieramy cel z ustawień (domyślnie 20 min)
+    daily_goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
+    
+    # Procent wykonania celu
+    goal_progress = min(study_minutes / daily_goal, 1.0)
+    
+    # Wyświetlanie celu
+    st.write(f"🎯 Cel: **{study_minutes}/{daily_goal}m**")
+    # Kolor paska: czerwony jeśli < 100%, zielony jeśli cel osiągnięty
+    bar_color = "green" if study_minutes >= daily_goal else "red"
+    st.progress(goal_progress)
+    
+    if study_minutes >= daily_goal:
+        st.caption("✅ Cel na dziś osiągnięty! Świetna robota!")
+    else:
+        st.caption(f"💡 Pozostało: {daily_goal - study_minutes}m nauki.")
 
-# --- STOPKA ---
-st.sidebar.divider()
+    st.divider()
 
-if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
-    st.query_params.clear()
-    st.session_state.clear()
-    st.rerun()
+    # --- 3. NAWIGACJA (Menu) ---
+    choice = st.radio("Menu", [
+        "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
+        "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań", 
+        "---", # Separator
+        "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
+        "📊 Statystyki", "⚙️ Moje Konto"
+    ])
+    
+    # Dodanie Panelu Admina tylko dla uprawnionych
+    if u == ADMIN_USER:
+        choice = st.radio("Administracja", ["👑 Admin"], index=None) or choice
 
-st.sidebar.caption(f"v{APP_VERSION}")
+    st.divider()
+    if st.button("🚪 Wyloguj się", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+
 # --- 7. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
