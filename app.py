@@ -857,24 +857,24 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 13. ARENA WYZWAŃ (V226 - FIX: Bezpieczne pobieranie danych) ---
+# --- 13. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
 
     db = get_db()
+    
+    # 1. BEZPIECZNE POBIERANIE DANYCH
     try:
-        # Pobieramy wszystko gwiazdką, żeby nie wywaliło błędu przy braku kolumny memory_scores
-        res = db.table("user_data").select("*").execute()
-        all_users_res = res.data
+        # Pobieramy wszystko (*), aby nie wywaliło błędu przy braku kolumny memory_scores
+        all_users_res = db.table("user_data").select("*").execute().data
+        all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
     except Exception as e:
-        st.error("Błąd bazy danych. Upewnij się, że tabela user_data jest poprawna.")
+        st.error(f"Błąd bazy danych: {e}")
         st.stop()
 
-    all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
-    
     if not all_users_res:
-        st.info("Ranking jest obecnie pusty.")
+        st.info("Ranking jest obecnie pusty. Bądź pierwszym, który go zapełni!")
     else:
         df_users = pd.DataFrame(all_users_res)
         df_cards = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
@@ -882,21 +882,21 @@ elif choice == "🏆 Arena Wyzwań":
         today = date.today()
         ranking_data = []
 
+        # 2. OBLICZANIE STATYSTYK DLA KAŻDEGO UŻYTKOWNIKA
         for _, user in df_users.iterrows():
-            uname = user["username"]
+            uname = user.get("username", "Anonim")
             u_cards = df_cards[df_cards["username"] == uname]
             
+            # Obliczanie wiedzy %
             wiedza_val = 0
             if not u_cards.empty:
                 strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
                 wiedza_val = int((strong / len(u_cards)) * 100)
             
-            # Używamy .get(), aby uniknąć błędu jeśli kolumny nie ma
+            # Pobieranie najlepszego czasu Memory
             m_scores = user.get("memory_scores", [])
-            
-            # Dodatkowe sprawdzenie typu danych
             best_mem = None
-            if m_scores and isinstance(m_scores, list):
+            if m_scores and isinstance(m_scores, list) and len(m_scores) > 0:
                 try:
                     best_mem = min([float(s) for s in m_scores])
                 except:
@@ -909,8 +909,62 @@ elif choice == "🏆 Arena Wyzwań":
                 "Najlepsze Memory ⏱️": best_mem,
                 "Ostatnio aktywny": user.get("last_seen", "Brak")
             })
+
+        df_final = pd.DataFrame(ranking_data)
+
+        # 3. WYŚWIETLANIE TABEL
         
-        # ... reszta kodu Sekcji 13 (df_final i tabele) pozostaje bez zmian
+        # --- Rząd 1: Passa i Wiedza ---
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("🔥 Najdłuższa Passa")
+            top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5)
+            # Resetujemy indeks, aby ranking zaczynał się od 1
+            top_streak = top_streak.reset_index(drop=True)
+            top_streak.index += 1
+            st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
+
+        with col2:
+            st.subheader("🧠 Mistrzowie Wiedzy")
+            top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5)
+            top_knowledge = top_knowledge.reset_index(drop=True)
+            top_knowledge.index += 1
+            # Dodajemy znak % do wyświetlania
+            display_knowledge = top_knowledge[["Użytkownik", "Wiedza 🧠"]].copy()
+            display_knowledge["Wiedza 🧠"] = display_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
+            st.table(display_knowledge)
+
+        st.write("---")
+
+        # --- Rząd 2: Globalny Ranking Memory (Top 10) ---
+        st.subheader("🧩 Mistrzowie Pamięci (Memory Top 10)")
+        df_mem = df_final.dropna(subset=["Najlepsze Memory ⏱️"])
+        
+        if not df_mem.empty:
+            df_mem_sorted = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10)
+            df_mem_sorted = df_mem_sorted.reset_index(drop=True)
+            df_mem_sorted.index += 1
+            
+            # Formatowanie czasu na sekundy
+            display_mem = df_mem_sorted[["Użytkownik", "Najlepsze Memory ⏱️"]].copy()
+            display_mem["Najlepsze Memory ⏱️"] = display_mem["Najlepsze Memory ⏱️"].apply(lambda x: f"{x}s")
+            
+            st.table(display_mem)
+        else:
+            st.info("Nikt jeszcze nie ustanowił rekordu w Memory. Bądź pierwszy!")
+
+        st.divider()
+        
+        # 4. TWOJA POZYCJA W RANKINGU OGNIA
+        # Sortujemy wg ognia, żeby sprawdzić pozycję
+        df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
+        # Szukamy siebie (u to nazwa użytkownika z sesji)
+        try:
+            my_rank = df_pos[df_pos["Użytkownik"] == u.capitalize()].index[0] + 1
+            st.info(f"Twoja aktualna pozycja w rankingu ogólnym: **{my_rank}** na **{len(df_final)}** użytkowników. Powodzenia!")
+        except:
+            pass
 
 # --- 14. GENERATOR ---
 elif choice == "📦 Generator słów":
