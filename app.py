@@ -14,18 +14,31 @@ from PIL import Image
 import plotly.graph_objects as go
 from postgrest import SyncPostgrestClient
 
-# --- 1. KONFIGURACJA (Secrets) ---
+# --- 1. KONFIGURACJA (V219 - Poprawione Mapowanie Czasu) ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V218 (Admin PRO & Fiszki UI Fix)"
+APP_VERSION = "V219 (Time Stats Fix)"
 ADMIN_USER = "wobo"
 
+# Słownik mapujący nazwy z menu (choice) na krótkie kody w bazie danych
 CLEAN_TIME_LABELS = {
-    "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
-    "testy": "Tst", "skaner": "Skn", "generator": "Gen", "dodaj": "Dod",
-    "slownik": "Słn", "statystyki": "Sta", "konto": "Kon", "admin": "Adm"
+    "powtorki": "Pow", 
+    "trening": "Trn", 
+    "quiz": "Qiz", 
+    "fiszki": "Fis",
+    "testy": "Tst", 
+    "memory": "Mem",          # <--- DODANO
+    "warsztat": "War",        # <--- DODANO
+    "arena wyzwan": "Arn",    # <--- DODANO
+    "skaner": "Skn", 
+    "generator": "Gen", 
+    "dodaj": "Dod",
+    "slownik": "Słn", 
+    "statystyki": "Sta", 
+    "konto": "Kon", 
+    "admin": "Adm"
 }
 
 # --- 2. SILNIK BAZY I POMOCNIKI ---
