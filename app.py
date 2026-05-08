@@ -366,7 +366,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
 
-# --- 8. QUIZ (V235 - Pełna integracja SRS i bezpieczny zapis) ---
+# --- 8. QUIZ (V236 - Bezpiecznik dla kolumny level) ---
 elif choice == "🕹️ Quiz":
     st.header("🕹️ Quiz")
     
@@ -376,31 +376,23 @@ elif choice == "🕹️ Quiz":
     auto_audio = user_settings.get("auto_audio", True)
     
     if len(all_c) < 4: 
-        st.warning("Dodaj przynajmniej 4 słówka, aby móc uruchomić quiz.")
+        st.warning("Dodaj min. 4 słówka, aby uruchomić quiz.")
     else:
         @st.fragment
         def quiz_engine():
-            # 1. INICJALIZACJA PYTANIA
             if "q_c" not in st.session_state:
                 idx = random.randrange(len(all_c))
                 t = all_c[idx]
-                
-                # Przygotowanie błędnych odpowiedzi (dystraktorów)
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
                 distractors = random.sample(other_pls, min(3, len(other_pls)))
                 opts = distractors + [t['pl']]
                 random.shuffle(opts)
                 
                 st.session_state.update({
-                    "q_c": t, 
-                    "q_a": t['pl'], 
-                    "q_o": opts, 
-                    "q_s": "ask",
-                    "u_q": None
+                    "q_c": t, "q_a": t['pl'], "q_o": opts, "q_s": "ask", "u_q": None
                 })
 
             q_c = st.session_state.q_c
-            
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
             
             if st.session_state.q_s == "ask":
@@ -414,56 +406,47 @@ elif choice == "🕹️ Quiz":
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
             else:
-                # 2. WERYFIKACJA WYNIKU
                 is_correct = st.session_state.u_q == st.session_state.q_a
                 word_id = q_c.get('id')
                 
+                # --- LOGIKA SRS ---
                 if is_correct:
                     st.success("✅ Świetnie! (Słówko przesunięte o +2 dni)")
                     new_date = str(date.today() + timedelta(days=2))
-                    # Aktualizacja daty
                     update_word(word_id, {"next_review": new_date})
                 else:
                     st.error(f"❌ Poprawnie: **{st.session_state.q_a}** (Słówko wraca do powtórek)")
-                    # Kara: Reset daty i poziomu do 0
-                    update_word(word_id, {
-                        "next_review": str(date.today()), 
-                        "level": 0
-                    })
+                    
+                    # BEZPIECZNA AKTUALIZACJA: Próbujemy wysłać level, jeśli się nie uda - tylko datę
+                    payload = {"next_review": str(date.today())}
+                    # Sprawdzamy czy karta w ogóle posiada klucz 'level' w sesji (czy kolumna istnieje)
+                    if 'level' in q_c:
+                        payload["level"] = 0
+                    
+                    update_word(word_id, payload)
                 
-                # Ważne: Synchronizacja lokalnej bazy po zmianie w Supabase
                 st.session_state.flashcards = load_flashcards(u)
 
-                # 3. WYŚWIETLANIE PRZYKŁADÓW I AUDIO
+                # --- PRZYKŁADY I AUDIO ---
                 exs = q_c.get("examples", [])
-                # Sprawdzenie czy przykłady to lista i czy nie jest pusta
-                fex_de = None
-                fex_pl = None
-                if exs and isinstance(exs, list) and len(exs) > 0:
-                    fex_de = exs[0].get("de")
-                    fex_pl = exs[0].get("pl")
+                fex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                fex_pl = exs[0].get("pl") if fex_de else None
                 
                 if fex_de:
                     st.info(f"💡 Przykład: **{fex_de}**" + (f"\n\n🇵🇱 *{fex_pl}*" if show_hints and fex_pl else ""))
-                    if auto_audio: 
-                        play_audio(q_c['de'], fex_de)
+                    if auto_audio: play_audio(q_c['de'], fex_de)
                 else:
-                    if auto_audio: 
-                        play_audio(q_c['de'])
+                    if auto_audio: play_audio(q_c['de'])
                 
-                # Manualne audio (jeśli auto wyłączone)
                 if not auto_audio:
                     if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
                         play_audio(q_c['de'], fex_de) if fex_de else play_audio(q_c['de'])
 
-                # 4. PRZYCISK DALEJ
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
-                    # Czyścimy stan, by wylosować nową kartę
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun(scope="fragment")
 
-        # Uruchomienie silnika fragmentu
         quiz_engine()
 # --- 9. FISZKI (Wersja z obsługą Auto-Audio) ---
 elif choice == "🎴 Fiszki":
