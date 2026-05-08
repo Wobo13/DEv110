@@ -218,7 +218,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V299 - Pełny kod z Wężem i zliczaniem czasu) ---
+# --- 6. SIDEBAR (V300 - Pełny kod z kompletem 3 gier) ---
 with st.sidebar:
     # 1. Nagłówek: Nazwa Wielką Literą + Streak
     user_display = str(u).capitalize()
@@ -238,9 +238,8 @@ with st.sidebar:
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # Cel (Realna nauka - włączając wszystkie moduły gier i nauki)
-    # Dodano "Wan" dla Lingwistycznego Węża
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan"]
+    # Cel (Realna nauka - włączając wszystkie moduły gier: Kon, Wan, Bal)
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
@@ -259,7 +258,7 @@ with st.sidebar:
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja z przywróconym Warsztatem i nowym Wężem)
+    # 4. MENU (Nawigacja z kompletem wszystkich modułów)
     menu_options = [
         "🏠 Start", 
         "📅 Powtórki", 
@@ -270,7 +269,8 @@ with st.sidebar:
         "🧠 Memory", 
         "🛠️ Warsztat",
         "🏗️ Konstruktor", 
-        "🐍 Lingwistyczny Wąż", # <--- NOWOŚĆ!
+        "🐍 Lingwistyczny Wąż",
+        "🎈 Balonowy Wyścig", # <--- NOWOŚĆ!
         "🏆 Arena Wyzwań",
         "📦 Generator słów", 
         "📸 Skaner AI", 
@@ -1206,6 +1206,97 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 st.rerun()
 
     snake_engine()
+
+# --- 16. BALONOWY WYŚCIG (V1.0 - Time Attack) ---
+elif choice == "🎈 Balonowy Wyścig":
+    st.header("🎈 Balonowy Wyścig")
+    st.write("Masz 30 sekund! Wybierz poprawne tłumaczenie, aby zdobyć punkt. Jak wysoki wynik osiągniesz?")
+
+    # 1. INICJALIZACJA STANU GRY
+    if "bal_active" not in st.session_state:
+        st.session_state.bal_active = False
+        st.session_state.bal_score = 0
+        st.session_state.bal_time_left = 30
+        st.session_state.bal_word = None
+        st.session_state.bal_opts = []
+
+    # Funkcja do losowania nowej rundy
+    def next_bal_round():
+        all_c = st.session_state.flashcards
+        if len(all_c) < 4:
+            return False
+        target = random.choice(all_c)
+        others = random.sample([c['pl'] for c in all_c if c['id'] != target['id']], 2)
+        opts = others + [target['pl']]
+        random.shuffle(opts)
+        st.session_state.bal_word = target
+        st.session_state.bal_opts = opts
+        return True
+
+    # --- WIDOK STARTOWY ---
+    if not st.session_state.bal_active:
+        if st.session_state.bal_time_left <= 0:
+            st.balloons()
+            st.success(f"### Koniec czasu! Twój wynik: {st.session_state.bal_score} pkt 🏆")
+            if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
+                st.session_state.bal_score = 0
+                st.session_state.bal_time_left = 30
+                st.session_state.bal_active = True
+                next_bal_round()
+                st.rerun()
+        else:
+            st.info("Przygotuj się! Gra zacznie się po kliknięciu przycisku.")
+            if st.button("🚀 START", use_container_width=True, type="primary"):
+                if next_bal_round():
+                    st.session_state.bal_active = True
+                    st.session_state.bal_start_ts = time.time()
+                    st.rerun()
+                else:
+                    st.warning("Dodaj min. 4 słówka do bazy, aby zagrać.")
+
+    # --- SILNIK GRY (FRAGMENT) ---
+    else:
+        @st.fragment(run_every=1.0)
+        def balloon_engine():
+            # Liczenie czasu
+            elapsed = time.time() - st.session_state.bal_start_ts
+            remaining = int(30 - elapsed)
+            st.session_state.bal_time_left = remaining
+
+            if remaining <= 0:
+                st.session_state.bal_active = False
+                st.rerun()
+
+            # UI Gry
+            c1, c2 = st.columns(2)
+            c1.metric("⏱️ Czas", f"{remaining}s")
+            c2.metric("⭐ Punkty", st.session_state.bal_score)
+
+            word = st.session_state.bal_word
+            st.markdown(f"""
+                <div style="text-align:center; padding:30px; background:#111; 
+                border:3px solid #FF4B4B; border-radius:20px; margin-bottom:20px;">
+                    <h1 style="color:white; margin:0;">{word['de']}</h1>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Przyciski (Balony)
+            for opt in st.session_state.bal_opts:
+                if st.button(opt, key=f"bal_{opt}", use_container_width=True):
+                    if opt == word['pl']:
+                        st.session_state.bal_score += 1
+                        st.toast("Dobrze! 🎈", icon="✅")
+                    else:
+                        st.toast("Błąd! 💨", icon="❌")
+                    
+                    next_bal_round()
+                    st.rerun(scope="fragment")
+
+        balloon_engine()
+
+        if st.button("Przerwij grę", type="secondary"):
+            st.session_state.bal_active = False
+            st.rerun()
 
 # --- 20. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
 elif choice == "🏆 Arena Wyzwań":
