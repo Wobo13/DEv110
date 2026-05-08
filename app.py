@@ -180,8 +180,9 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V287 - Powrót paska wiedzy) ---
+# --- 6. SIDEBAR (V287 - Kompaktowy & Naprawiony) ---
 with st.sidebar:
+    # 1. Nagłówek: Nazwa Wielką Literą + Streak w jednej linii
     user_display = str(u).capitalize()
     streak = st.session_state.user_data.get('streak', 0)
     
@@ -192,20 +193,22 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # Statystyki realnej nauki
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War"]
-    current_stats = st.session_state.user_data.get("time_stats", {})
-    study_minutes = int(sum(current_stats.get(code, 0) for code in study_modules) // 60)
-    daily_goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
-    
-    # Wiedza
+    # 2. Obliczanie statystyk (Wiedza i Cel)
+    # Wiedza (🧠 %)
     all_c = st.session_state.flashcards
     wiedza_perc = 0
     if all_c:
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
-
-    # Wyświetlanie dwóch pasków
+    
+    # Cel (Realna nauka - minuty)
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War"]
+    current_stats = st.session_state.user_data.get("time_stats", {})
+    study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
+    study_minutes = int(study_seconds // 60)
+    daily_goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
+    
+    # 3. Wyświetlanie pasków postępu
     st.caption(f"🧠 Wiedza: {wiedza_perc}%")
     st.progress(wiedza_perc / 100)
     
@@ -214,24 +217,36 @@ with st.sidebar:
     st.progress(goal_progress)
     
     if study_minutes >= daily_goal:
-        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
+    # 4. MENU (Nawigacja)
     menu_options = [
         "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
         "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań",
         "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
         "📊 Statystyki", "⚙️ Moje Konto"
     ]
-    if u == ADMIN_USER: menu_options.append("👑 Admin")
+    
+    # Panel Admina tylko dla uprawnionych
+    if u == ADMIN_USER:
+        menu_options.append("👑 Admin")
 
+    # Radio button bez widocznego napisu "Menu", by zaoszczędzić miejsce
     choice = st.radio("Menu", menu_options, label_visibility="collapsed")
+    
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
+    # Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.rerun()
+
+    # Stopka z wersją
+    st.caption(f"{APP_VERSION}")
+
+# --- KONIEC SEKCJI 6 (Wszystkie bloki 'with' zamknięte) ---
 
 # --- 7. START (V1.1 - Poprawiona składnia) ---
 elif choice == "🏠 Start":
