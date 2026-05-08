@@ -151,10 +151,9 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (Wersja Skompresowana V2) ---
-c_top1, c_top2 = st.sidebar.columns([2, 1])
-c_top1.title(f"👤 {u.capitalize()}")
-c_top2.write(f"🔥 **{st.session_state.user_data.get('streak', 0)}d**")
+# --- 6. SIDEBAR I NAWIGACJA (Korekta wyrównania nicku i passy) ---
+# Łączymy Nick i Passę w jednej linii, aby uniknąć problemów z wyrównaniem kolumn
+st.sidebar.markdown(f"## 👤 {u.capitalize()} <span style='float:right; font-size:0.7em; padding-top:10px;'>🔥 **{st.session_state.user_data.get('streak', 0)}d**</span>", unsafe_allow_html=True)
 
 # --- KOMPAKTOWE WIDGETY ---
 user_settings = st.session_state.user_data.get("settings", {})
@@ -162,12 +161,10 @@ user_settings = st.session_state.user_data.get("settings", {})
 if st.session_state.flashcards:
     today = date.today()
     total_cards = len(st.session_state.flashcards)
-    # Liczymy słówka w fazie silnej (następna powtórka > 6 dni od dziś)
     strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
     mastery_perc = int((strong_cards / total_cards) * 100)
     
     daily_goal = user_settings.get("daily_goal", 20)
-    # Obliczamy minuty na podstawie time_stats (suma sekund / 60)
     total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
     progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
 
@@ -176,7 +173,7 @@ if st.session_state.flashcards:
     col_stat1.caption(f"🧠 Wiedza: {mastery_perc}%")
     col_stat2.caption(f"🎯 Cel: {int(total_mins_today)}/{daily_goal}m")
     
-    # Cienki pasek postępu (Mastery)
+    # Wyświetlamy pasek postępu (Mastery)
     st.sidebar.progress(mastery_perc / 100)
 
 # --- DYSKRETNA PORADA POD PASKIEM ---
