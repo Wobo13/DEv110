@@ -153,50 +153,79 @@ def update_activity(m):
 
 # --- 6. SIDEBAR I NAWIGACJA ---
 st.sidebar.title(f"👤 {u.capitalize()}")
-st.sidebar.caption(f"Wersja: {APP_VERSION}")
-st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
 
-st.sidebar.divider() # Estetyczne oddzielenie profilu od menu
+# --- WIDGETY MOTYWACYJNE ---
+user_settings = st.session_state.user_data.get("settings", {})
 
+# A. Lejek Pamięci (Pasek opanowania bazy)
+if st.session_state.flashcards:
+    total_cards = len(st.session_state.flashcards)
+    today = date.today()
+    # Liczymy słówka "Silne" (następna powtórka za ponad 6 dni)
+    strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
+    mastery_perc = int((strong_cards / total_cards) * 100)
+    
+    st.sidebar.write(f"🧠 **Opanowanie bazy: {mastery_perc}%**")
+    st.sidebar.progress(mastery_perc / 100)
+    st.sidebar.caption(f"{strong_cards} z {total_cards} słówek jest w silnej pamięci")
+
+# B. Cel Dzienny
+# Zakładamy, że sprawdzamy dzisiejszą aktywność w time_stats (sekundy na minuty)
+daily_goal = user_settings.get("daily_goal", 20)
+# Pobieramy czas z dzisiaj (uproszczone: suma minut z tabeli czasu jako przybliżenie aktywności)
+total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
+# Uwaga: dla pełnej precyzji celu "powtórek" musielibyśmy liczyć kliknięcia, 
+# ale czas nauki jest lepszym wskaźnikiem zaangażowania.
+progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
+
+if progress_goal >= 1.0:
+    st.sidebar.success(f"🏆 Cel osiągnięty! ({int(total_mins_today)} min)")
+else:
+    st.sidebar.write(f"🎯 Cel: {int(total_mins_today)} / {daily_goal} min")
+    st.sidebar.progress(progress_goal)
+
+# C. Inteligentna Porada
+tips = [
+    "Ucz się rano – mózg lepiej przyswaja nowe słówka po wypoczynku.",
+    "Metoda 15 minut dziennie jest lepsza niż 3 godziny raz w tygodniu.",
+    "Czytaj na głos – angażujesz wtedy pamięć słuchową i mięśniową.",
+    "Twórz w głowie śmieszne skojarzenia (mnemotechniki) dla trudnych słów.",
+    "Powtarzaj słówka tuż przed snem – mózg utrwali je podczas regeneracji."
+]
+st.sidebar.info(f"💡 **Porada:** {random.choice(tips)}")
+
+st.sidebar.divider()
+
+# --- MENU NAWIGACJI ---
 menu = [
     "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
     "📝 Testy", "📦 Generator słów", "📸 Skaner AI", 
     "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"
 ]
+if u == ADMIN_USER: menu.append("👑 Admin")
 
-if u == ADMIN_USER:
-    menu.append("👑 Admin")
-
-# Zabezpieczenie przed pierwszym uruchomieniem
-if "l_c" not in st.session_state:
-    st.session_state.l_c = "Inne" # Domyślnie traktujemy wejście jako 'Inne'
-
-# 1. Pobranie wyboru użytkownika
+if "l_c" not in st.session_state: st.session_state.l_c = "Inne"
 choice = st.sidebar.radio("Nawigacja", menu)
 
-st.sidebar.divider() # Estetyczne oddzielenie menu od strefy wylogowania
+update_activity(st.session_state.l_c)
 
-# Przycisk wylogowania przeniesiony na dół dla lepszej ergonomii
+if st.session_state.l_c != choice:
+    for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
+        if k in st.session_state: del st.session_state[k]
+    st.session_state.l_c = choice
+    st.session_state.n_m = "ask"
+    st.session_state.u_a = ""
+
+# --- STOPKA SIDEBARA ---
+st.sidebar.divider()
+st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
+
 if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
     st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 
-# 2. Zapis aktywności ZANIM zmienimy wewnętrzny stan aplikacji.
-# Zapisujemy czas przypisany do modułu, w którym użytkownik BYŁ DO TEJ PORY.
-update_activity(st.session_state.l_c)
-
-# 3. Logika czyszczenia sesji przy zmianie modułu na nowy
-if st.session_state.l_c != choice:
-    # Czyścimy zbędne dane tymczasowe z poprzedniego modułu
-    for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
-        if k in st.session_state: 
-            del st.session_state[k]
-    
-    # Dopiero teraz aktualizujemy informację o tym, w jakim module jesteśmy
-    st.session_state.l_c = choice
-    st.session_state.n_m = "ask"
-    st.session_state.u_a = ""
+st.sidebar.caption(f"🛡️ System: {APP_VERSION}")
 # --- 7. POWTÓRKI & TRENING (Wersja z obsługą Auto-Audio) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
@@ -1168,7 +1197,8 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.user_data["settings"] = {
                 "auto_audio": True,
                 "show_hints": True,
-                "default_test_size": 10
+                "default_test_size": 10,
+                "daily_goal": 20  # Wartość domyślna celu
             }
         
         s = st.session_state.user_data["settings"]
@@ -1176,6 +1206,9 @@ elif choice == "⚙️ Moje Konto":
         s["auto_audio"] = st.toggle("Automatyczne odtwarzanie lektora (Audio)", s.get("auto_audio", True))
         s["show_hints"] = st.toggle("Pokazuj podpowiedzi PL w Quizie", s.get("show_hints", True))
         s["default_test_size"] = st.slider("Domyślna liczba pytań w teście", 5, 50, s.get("default_test_size", 10))
+        
+        # --- NOWOŚĆ: Ustawienie celu dziennego ---
+        s["daily_goal"] = st.slider("Twój dzienny cel nauki (minuty)", 5, 120, s.get("daily_goal", 20))
         
         if st.button("Zapisz ustawienia", use_container_width=True):
             save_user_data(u, st.session_state.user_data)
@@ -1244,7 +1277,7 @@ elif choice == "⚙️ Moje Konto":
         st.warning("Uwaga: Te operacje są nieodwracalne!")
         conf = st.checkbox("Potwierdzam chęć usunięcia danych")
         
-        # --- RESET STATYSTYK (Punkt 3) ---
+        # --- RESET STATYSTYK ---
         st.write("---")
         st.subheader("🧹 Reset samych statystyk")
         st.caption("Zachowuje wszystkie Twoje słówka, ale zeruje czas nauki, historię testów i daty powtórek.")
