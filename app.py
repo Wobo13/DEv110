@@ -115,41 +115,64 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA ---
+# --- 4. LOGOWANIE I REJESTRACJA (V290 - Zapamiętywanie logowania) ---
 if "auth" not in st.session_state:
     st.session_state.auth = False
+    # Sprawdzenie, czy w URL jest zapamiętany token
     if "token" in st.query_params:
         u_tk = st.query_params["token"]
         st.session_state.auth, st.session_state.user = True, u_tk
 
 if not st.session_state.auth:
-    st.title(f"🚀 Niemiecki Master {APP_VERSION}")
+    # 1. Czysty tytuł bez wersji
+    st.title("🚀 Niemiecki Master")
+    
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
+    
     with t1:
         un = st.text_input("Użytkownik", key="l_u").lower().strip()
         pw = st.text_input("Hasło", type="password", key="l_p")
+        
+        # 2. Checkbox zapamiętywania
+        remember_me = st.checkbox("Zapamiętaj mnie na tym urządzeniu", value=True)
+        
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
             res = db.table("users_auth").select("*").eq("username", un).execute()
+            
             if res.data and res.data[0]["password_hash"] == hash_pw(pw):
                 st.session_state.auth, st.session_state.user = True, un
-                st.query_params["token"] = un; st.rerun()
-            else: st.error("Błędne dane logowania")
+                
+                # 3. Logika zapamiętywania w URL
+                if remember_me:
+                    st.query_params["token"] = un
+                else:
+                    # Jeśli nie zaznaczono, czyścimy parametry, by nie logował automatycznie
+                    st.query_params.clear()
+                
+                st.rerun()
+            else:
+                st.error("Błędne dane logowania")
+                
     with t2:
         rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
         rp = st.text_input("Hasło", type="password", key="r_p")
-        if st.button("Załóż konto"):
+        if st.button("Załóż konto", use_container_width=True):
             if len(rn) > 2 and len(rp) > 3:
                 check = db.table("users_auth").select("*").eq("username", rn).execute()
                 if not check.data:
-                    get_db().table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
-                    load_user_data(rn)
-                    st.success("Konto gotowe! Logowanie...")
-                    time.sleep(1.5)
-                    st.rerun()
-                else: st.error("Ten użytkownik jest już zajęty!")
-            else: st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
-    st.stop()
+                    get_db().table("users_auth").insert({
+                        "username": rn, 
+                        "password_hash": hash_pw(rp)
+                    }).execute()
+                    load_user_data(rn) # Inicjalizacja rekordów w user_data
+                    st.success("Konto gotowe! Możesz się zalogować.")
+                else:
+                    st.error("Ten użytkownik jest już zajęty!")
+            else:
+                st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+    
+    st.stop() # Zatrzymuje kod reszty aplikacji dla niezalogowanych
 
 # --- 5. START SESJI ---
 u = st.session_state.user
