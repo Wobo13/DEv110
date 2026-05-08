@@ -324,148 +324,127 @@ if choice == "🏠 Start":
 
 # --- KONIEC SEKCJI 7 ---
 
-# --- 8. POWTÓRKI & TRENING (V256 - Losowy kierunek & Sprytne rodzajniki) ---
+# --- 8. POWTÓRKI & TRENING (V258 - Separacja stanów) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
     
-    # 1. POBIERANIE USTAWIEŃ
+    # Unikalny prefiks kluczy dla każdego trybu, by uniknąć resetowania nawzajem
+    pfx = "rep" if is_r else "trn"
+    
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # Przygotowanie tagów do filtra
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox("Zakres nauki:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
+    sel_tag = st.selectbox("Zakres nauki:", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
-    # 2. INICJALIZACJA PULI SŁÓWEK (Tylko przy zmianie filtra lub wejściu)
-    if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
+    # Inicjalizacja puli słówek specyficznej dla trybu
+    if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         
         if is_r:
-            # Dla powtórek filtrujemy po dacie SRS
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
         
         random.shuffle(pool)
-        st.session_state.cur_list = pool
-        st.session_state.n_idx = 0
-        st.session_state.last_tag = sel_tag
-        st.session_state.n_m = "ask" # Tryb: ask (pytanie) lub res (wynik)
+        st.session_state[f"{pfx}_list"] = pool
+        st.session_state[f"{pfx}_idx"] = 0
+        st.session_state[f"{pfx}_last_tag"] = sel_tag
+        st.session_state[f"{pfx}_mode"] = "ask"
 
-    cards = st.session_state.cur_list
+    cards = st.session_state.get(f"{pfx}_list", [])
     
     if not cards:
-        st.success("Brak słówek w tej sekcji! Wszystko opanowane. ✨")
-    elif st.session_state.n_idx >= len(cards):
+        st.success("Brak słówek w tej sekcji! ✨")
+    elif st.session_state[f"{pfx}_idx"] >= len(cards):
         st.balloons()
-        st.success("Sesja zakończona! Dobra robota. 🏆")
-        if st.button("Zacznij od nowa"):
-            for k in ["cur_list", "n_idx", "n_m", "u_a", "q_dir"]:
+        st.success("Sesja zakończona! 🏆")
+        if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn"):
+            # Czyścimy tylko klucze powiązane z obecnym trybem (pfx)
+            for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # --- SILNIK POWTÓREK (FRAGMENT) ---
         @st.fragment
         def flashcard_engine():
-            idx = st.session_state.n_idx
+            idx = st.session_state[f"{pfx}_idx"]
+            if idx >= len(cards):
+                st.rerun()
+                return
+
             c = cards[idx]
             
-            # Losowanie kierunku (tylko raz na dane słówko)
-            if "q_dir" not in st.session_state:
-                # 0: DE -> PL, 1: PL -> DE
-                st.session_state.q_dir = random.choice([0, 1])
+            if f"{pfx}_dir" not in st.session_state:
+                st.session_state[f"{pfx}_dir"] = random.choice([0, 1])
 
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            # Kierunek pytania
-            is_target_de = (st.session_state.q_dir == 1)
+            is_target_de = (st.session_state[f"{pfx}_dir"] == 1)
             display_word = c["de"] if not is_target_de else c["pl"]
             target_lang = "Polski" if not is_target_de else "Niemiecki"
             correct_val = c["pl"] if not is_target_de else c["de"]
 
-            # Graficzna karta pytania
             st.markdown(f'''
                 <div style="font-size:2.6em; text-align:center; padding:40px; 
                 background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
                 border-radius:20px; margin-bottom:10px; color: white; line-height: 1.2;">
-                    <div style="font-size:0.35em; color:gray; margin-bottom:5px; text-transform: uppercase; letter-spacing: 2px;">
+                    <div style="font-size:0.35em; color:gray; margin-bottom:5px; text-transform: uppercase;">
                         Tłumaczysz na: {target_lang}
                     </div>
                     {display_word}
                 </div>
             ''', unsafe_allow_html=True)
 
-            # --- TRYB: PYTANIE ---
-            if st.session_state.n_m == "ask":
-                with st.form(key=f"f_{idx}", clear_on_submit=True):
-                    u_in = st.text_input(f"Wpisz odpowiedź ({target_lang}):", key=f"in_{idx}")
+            if st.session_state[f"{pfx}_mode"] == "ask":
+                with st.form(key=f"{pfx}_f_{idx}", clear_on_submit=True):
+                    u_in = st.text_input(f"Odpowiedź ({target_lang}):", key=f"{pfx}_in_{idx}")
                     if st.form_submit_button("Sprawdź", use_container_width=True, type="primary"):
-                        st.session_state.u_a = u_in
-                        st.session_state.n_m = "res"
+                        st.session_state[f"{pfx}_user_ans"] = u_in
+                        st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
-            
-            # --- TRYB: WYNIK ---
             else:
-                # Logika porównywania (ignoruje rodzajniki przy odpowiedziach niemieckich)
                 def clean_for_compare(text, is_german):
                     t = normalize_text(text)
                     if is_german:
-                        # Usuwamy rodzajniki der/die/das na początku stringa
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
 
-                user_ans = clean_for_compare(st.session_state.u_a, is_target_de)
-                actual_correct = clean_for_compare(correct_val, is_target_de)
-                
-                is_correct = user_ans == actual_correct
-                
-                if is_correct:
+                u_a = st.session_state.get(f"{pfx}_user_ans", "")
+                if clean_for_compare(u_a, is_target_de) == clean_for_compare(correct_val, is_target_de):
                     st.success(f"✅ Dobrze: {correct_val}")
                 else:
                     st.error(f"❌ Poprawnie: {correct_val}")
                 
-                # Audio i Przykłady (Audio zawsze z niemieckiego słowa w bazie)
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                
-                if auto_audio:
-                    play_audio(c['de'], fex)
-
-                if fex:
-                    st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
-                
-                if not auto_audio:
-                    if st.button("🔊 Odsłuchaj", use_container_width=True):
-                        play_audio(c['de'], fex) if fex else play_audio(c['de'])
+                if auto_audio: play_audio(c['de'], fex)
+                if fex: st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
 
                 st.divider()
 
-                # Obsługa ocen SRS (tylko w trybie Powtórki)
                 if is_r:
-                    st.write("Oceń trudność (wybór planuje datę kolejnej powtórki):")
+                    st.write("Oceń trudność:")
                     col1, col2, col3 = st.columns(3)
                     d = None
                     if col1.button("🔴 Trudne"): d = 1
                     if col2.button("🟡 Średnie"): d = 4
                     if col3.button("🟢 Łatwe"): d = 10
-                    
                     if d:
-                        new_date = str(date.today() + timedelta(days=d))
-                        update_word(c['id'], {"next_review": new_date})
-                        st.session_state.n_idx += 1
-                        st.session_state.n_m = "ask"
-                        if "q_dir" in st.session_state: del st.session_state.q_dir
-                        st.rerun(scope="fragment")
+                        update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
+                        st.session_state[f"{pfx}_idx"] += 1
+                        st.session_state[f"{pfx}_mode"] = "ask"
+                        if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
+                        st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
                 else:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
-                        st.session_state.n_idx += 1
-                        st.session_state.n_m = "ask"
-                        if "q_dir" in st.session_state: del st.session_state.q_dir
-                        st.rerun(scope="fragment")
+                        st.session_state[f"{pfx}_idx"] += 1
+                        st.session_state[f"{pfx}_mode"] = "ask"
+                        if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
+                        st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
 
         flashcard_engine()
 
