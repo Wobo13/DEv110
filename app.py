@@ -1312,7 +1312,6 @@ elif choice == "⚙️ Moje Konto":
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
-    # Przycisk wymuszający przeładowanie, by zobaczyć najświeższy czas z bazy
     if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
         st.cache_data.clear()
         st.rerun()
@@ -1320,20 +1319,30 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    # Pobieramy dane bezpośrednio (bez cache)
     ud_data = db.table("user_data").select("*").execute().data
-    all_cards_res = db.table("flashcards").select("username", "origin").execute().data
-    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin"])
+    all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
+    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
     
     adm_list = []
     global_time = {}
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
     display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
     
+    today = date.today()
+
     for user in ud_data:
         username = user["username"]
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
+        
+        # Obliczanie poziomu opanowania (słówka silne: powtórka > 6 dni)
+        strong_cards = 0
+        if not user_cards.empty:
+            strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
+            mastery = f"{int((strong_cards / len(user_cards)) * 100)}%"
+        else:
+            mastery = "0%"
+
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
@@ -1343,7 +1352,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             k_low = k.lower()
             f_code = "Inn"
             
-            # Pancerne mapowanie - radzi sobie ze starymi wpisami w bazie
             if k in tracked_codes: f_code = k
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
@@ -1356,13 +1364,15 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             global_time[f_code] = global_time.get(f_code, 0) + seconds
             
         adm_list.append({
-            "Użytkownik": username, 
+            "Użytkownik": username,
+            "Ostatnia aktywność": user.get("last_seen", "Brak"),
+            "🔥": user.get("streak", 0),
+            "🧠 Opanowanie": mastery,
             "Słów": len(user_cards), 
             "Ręcznie": int(oc.get("Dodaj", 0)), 
             "Generator": int(oc.get("Generator", 0)), 
             "Skaner": int(oc.get("Skaner", 0)), 
-            "Testy": len(user.get("test_history", [])),
-            "Czas Total (min)": int(total_sec // 60),
+            "Czas (min)": int(total_sec // 60),
             "Koszt (PLN)": round(user.get("historical_cost", 0.0), 2),
             "__raw_stats": current_user_merged
         })
@@ -1372,9 +1382,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     else:
         df_admin = pd.DataFrame(adm_list)
         st.subheader("📋 Podsumowanie użytkowników")
+        # Wyświetlamy tabelę z nowymi kolumnami
         st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
         
-        with st.expander("🔍 Podział czasu (minuty)"):
+        with st.expander("🔍 Podział czasu na moduły (minuty)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
@@ -1383,10 +1394,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 detail_rows.append(d_row)
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-        # WYŚWIETLANIE: Wykres sumaryczny (na samym końcu pliku)
+        # WYKRES
         if global_time:
             st.write("---")
-            # Filtrujemy kategorie, które mają więcej niż 0 minut
             chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
             
             if chart_data:
@@ -1397,11 +1407,5 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     text=list(chart_data.values()),
                     textposition='auto'
                 )])
-                fig.update_layout(
-                    template="plotly_dark", 
-                    height=400, 
-                    title="Globalny czas na modułach (minuty)"
-                )
+                fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (minuty)")
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Brak wystarczającej ilości czasu (pełnych minut) do wygenerowania wykresu.")
