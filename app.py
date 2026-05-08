@@ -151,7 +151,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (V5 - Arena Wyzwań) ---
+# --- 6. SIDEBAR I NAWIGACJA (V6 - Warsztat Słówek) ---
 # Nick i Passa
 st.sidebar.markdown(f"## 👤 {u.capitalize()} <span style='float:right; font-size:0.7em; padding-top:10px;'>🔥 **{st.session_state.user_data.get('streak', 0)}d**</span>", unsafe_allow_html=True)
 
@@ -190,7 +190,7 @@ st.sidebar.divider()
 # --- MENU NAWIGACJI ---
 menu = [
     "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-    "📝 Testy", "🧠 Memory", "🏆 Arena Wyzwań", # <--- NOWOŚĆ!
+    "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań", # <--- WARSZTAT DODANY TUTAJ
     "📦 Generator słów", "📸 Skaner AI", 
     "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"
 ]
@@ -204,11 +204,13 @@ choice = st.sidebar.radio("Menu", menu, label_visibility="collapsed")
 
 update_activity(st.session_state.l_c)
 
-# Logika czyszczenia sesji
+# Logika czyszczenia sesji przy zmianie modułu
 if st.session_state.l_c != choice:
     keys_to_clear = [
         "cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", 
-        "test_score", "q_c", "q_s", "mem_grid", "mem_status", "mem_first", "mem_pairs"
+        "test_score", "q_c", "q_s", 
+        "mem_grid", "mem_status", "mem_first", "mem_pairs",
+        "w_list", "w_idx", "w_show" # <--- KLUCZE DLA WARSZTATU
     ]
     for k in keys_to_clear:
         if k in st.session_state: 
