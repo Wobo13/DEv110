@@ -218,7 +218,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V287 - Kompaktowy & Naprawiony) ---
+# --- 6. SIDEBAR (V296 - Pełny układ z grami) ---
 with st.sidebar:
     # 1. Nagłówek: Nazwa Wielką Literą + Streak w jednej linii
     user_display = str(u).capitalize()
@@ -240,7 +240,7 @@ with st.sidebar:
         wiedza_perc = int((strong / len(all_c)) * 100)
     
     # Cel (Realna nauka - minuty)
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War"]
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Bal", "Wan"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
@@ -259,32 +259,33 @@ with st.sidebar:
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja)
+    # 4. MENU (Nawigacja z nowymi grami)
+    # Lista opcji dokładnie tak jak w Twoim UI
     menu_options = [
         "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-        "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań",
+        "📝 Testy", "🧠 Memory", "🏗️ Konstruktor", "🏆 Arena Wyzwań",
+        "---", # Wizualny separator
         "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
         "📊 Statystyki", "⚙️ Moje Konto"
     ]
     
-    # Panel Admina tylko dla uprawnionych
+    # Dodajemy zaplanowane gry do listy, jeśli chcesz je widzieć od razu
+    # Możesz je też dodać dopiero przy wdrożeniu:
+    # menu_options.insert(8, "🎈 Balonowy Wyścig")
+    # menu_options.insert(9, "🐍 Lingwistyczny Wąż")
+    
     if u == ADMIN_USER:
         menu_options.append("👑 Admin")
 
-    # Radio button bez widocznego napisu "Menu", by zaoszczędzić miejsce
     choice = st.radio("Menu", menu_options, label_visibility="collapsed")
     
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-    # Stopka z wersją
     st.caption(f"{APP_VERSION}")
-
-# --- KONIEC SEKCJI 6 (Wszystkie bloki 'with' zamknięte) ---
 
 # --- 7. START (V1.2 - Centrum Dowodzenia) ---
 update_activity(choice)
@@ -988,6 +989,100 @@ elif choice == "🛠️ Warsztat":
     # Statystyki warsztatu w sidebarze
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
+
+# --- 14. KONSTRUKTOR (V1.0 - Układanie słów z liter) ---
+elif choice == "🏗️ Konstruktor":
+    st.header("🏗️ Konstruktor Słów")
+    st.write("Ułóż niemieckie słowo z rozsypanych liter. Pamiętaj o poprawnej pisowni!")
+
+    # 1. INICJALIZACJA GRY
+    if "kon_word" not in st.session_state:
+        if len(st.session_state.flashcards) < 3:
+            st.warning("Dodaj min. 3 słówka, aby móc zagrać.")
+            st.stop()
+        
+        # Losujemy słowo (lepiej rzeczownik lub czasownik, unikamy bardzo krótkich < 3 litery)
+        pool = [c for c in st.session_state.flashcards if len(c['de']) > 2]
+        target = random.choice(pool if pool else st.session_state.flashcards)
+        
+        de_word = target['de'].strip()
+        # Przygotowanie liter (rozbijamy na listę, mieszamy)
+        letters = [l for l in de_word if l != " "]
+        random.shuffle(letters)
+        
+        st.session_state.update({
+            "kon_word": de_word,
+            "kon_pl": target['pl'],
+            "kon_shuffled": letters,
+            "kon_user": [],
+            "kon_done": False
+        })
+
+    # 2. SILNIK GRY (FRAGMENT)
+    @st.fragment
+    def constructor_engine():
+        kon_w = st.session_state.kon_word
+        kon_pl = st.session_state.kon_pl
+        shuffled = st.session_state.kon_shuffled
+        user_build = st.session_state.kon_user
+        
+        st.info(f"### 🇵🇱 {kon_pl}")
+        
+        # Widok ułożonego słowa
+        current_str = "".join(user_build)
+        display_str = current_str + "_" * (len(kon_w.replace(" ", "")) - len(user_build))
+        
+        st.markdown(f"""
+            <div style="font-size: 3em; text-align: center; letter-spacing: 10px; 
+            padding: 20px; background: #0e1117; border: 2px dashed #444; border-radius: 10px; color: #00ff00;">
+                {display_str}
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("")
+
+        # Przycisk cofania (Backspase)
+        if user_build and not st.session_state.kon_done:
+            if st.button("⬅️ Cofnij ostatnią literę", use_container_width=True):
+                last_l = st.session_state.kon_user.pop()
+                st.session_state.kon_shuffled.append(last_l)
+                st.rerun(scope="fragment")
+
+        # Kafelki z dostępnymi literami
+        cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
+        for i, letter in enumerate(shuffled):
+            if cols[i % 8].button(letter, key=f"let_{i}_{letter}"):
+                st.session_state.kon_user.append(letter)
+                st.session_state.kon_shuffled.pop(i)
+                
+                # Sprawdzanie czy to już koniec
+                if len(st.session_state.kon_user) == len(kon_w.replace(" ", "")):
+                    st.session_state.kon_done = True
+                st.rerun(scope="fragment")
+
+        # Logika sprawdzania wyniku
+        if st.session_state.kon_done:
+            final_guess = "".join(st.session_state.kon_user)
+            actual_clean = kon_w.replace(" ", "")
+            
+            if final_guess.lower() == actual_clean.lower():
+                st.balloons()
+                st.success(f"🎊 Idealnie! Słowo to: **{kon_w}**")
+                # Nagroda: +2 punkty (jeśli masz system punktów)
+            else:
+                st.error(f"❌ Prawie! Poprawny zapis to: **{kon_w}**")
+            
+            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary"):
+                for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
+                    if k in st.session_state: del st.session_state[k]
+                st.rerun()
+
+    constructor_engine()
+
+    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True):
+        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
+            if k in st.session_state: del st.session_state[k]
+        st.rerun()
 
 # --- 20. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
 elif choice == "🏆 Arena Wyzwań":
