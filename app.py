@@ -218,9 +218,9 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V296 - Pełny układ z grami) ---
+# --- 6. SIDEBAR (V297 - Pełny, poprawiony kod) ---
 with st.sidebar:
-    # 1. Nagłówek: Nazwa Wielką Literą + Streak w jednej linii
+    # 1. Nagłówek: Nazwa Wielką Literą + Streak
     user_display = str(u).capitalize()
     streak = st.session_state.user_data.get('streak', 0)
     
@@ -231,16 +231,15 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Obliczanie statystyk (Wiedza i Cel)
-    # Wiedza (🧠 %)
+    # 2. Obliczanie statystyk
     all_c = st.session_state.flashcards
     wiedza_perc = 0
     if all_c:
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # Cel (Realna nauka - minuty)
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Bal", "Wan"]
+    # Cel (Realna nauka - kody modułów do zliczania czasu)
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
@@ -255,24 +254,17 @@ with st.sidebar:
     st.progress(goal_progress)
     
     if study_minutes >= daily_goal:
-        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel osiągnięty!</p>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja z nowymi grami)
-    # Lista opcji dokładnie tak jak w Twoim UI
+    # 4. MENU (Nawigacja bez pustych pól i separatorów)
     menu_options = [
         "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
         "📝 Testy", "🧠 Memory", "🏗️ Konstruktor", "🏆 Arena Wyzwań",
-        "---", # Wizualny separator
         "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
         "📊 Statystyki", "⚙️ Moje Konto"
     ]
-    
-    # Dodajemy zaplanowane gry do listy, jeśli chcesz je widzieć od razu
-    # Możesz je też dodać dopiero przy wdrożeniu:
-    # menu_options.insert(8, "🎈 Balonowy Wyścig")
-    # menu_options.insert(9, "🐍 Lingwistyczny Wąż")
     
     if u == ADMIN_USER:
         menu_options.append("👑 Admin")
@@ -281,6 +273,7 @@ with st.sidebar:
     
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
+    # 5. Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.rerun()
