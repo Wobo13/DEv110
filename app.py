@@ -1724,24 +1724,22 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN (V272 - Przywrócenie danych i statystyk) ---
+# --- 20. ADMIN (V275 - Statystyki globalne + Pełna lista użytkowników) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
     db = get_db()
-    # Pobieramy surowe dane, aby mieć pewność, że nic nie ucieknie
     try:
         response = db.table("user_data").select("*").execute()
         ud_data = response.data
     except Exception as e:
-        st.error(f"Błąd połączenia z bazą: {e}")
+        st.error(f"Błąd bazy: {e}")
         ud_data = []
     
     if not ud_data:
-        st.info("Baza danych jest pusta lub brak połączenia.")
+        st.info("Brak danych użytkowników.")
     else:
-        # MAPOWANIE: Klucz z bazy -> [Nazwa wyświetlana, Kolejność w tabeli]
-        # Uwzględniam wszystkie Twoje skróty z Sekcji 1
+        # --- 1. STATYSTYKI GLOBALNE (Tabelka procentowa) ---
         stats_config = {
             "Pow": {"name": "📅 Powtórki", "order": 1},
             "Trn": {"name": "🚀 Trening", "order": 2},
@@ -1752,58 +1750,64 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         }
         
         global_stats = {}
-        total_relevant_time = 0
+        total_study_time = 0
 
-        # Przeliczamy dane od nowa dla wszystkich użytkowników
         for user in ud_data:
-            time_stats = user.get("time_stats", {})
-            if isinstance(time_stats, dict):
-                for code, sec in time_stats.items():
+            t_stats = user.get("time_stats", {})
+            if isinstance(t_stats, dict):
+                for code, sec in t_stats.items():
                     if code in stats_config:
                         global_stats[code] = global_stats.get(code, 0) + sec
-                        total_relevant_time += sec
+                        total_study_time += sec
 
-        st.subheader("📈 Globalne wykorzystanie modułów")
-        
-        if total_relevant_time > 0:
+        st.subheader("📈 Wykorzystanie modułów (Globalnie)")
+        if total_study_time > 0:
             final_rows = []
-            # Sortujemy według zdefiniowanej kolejności (order)
             sorted_codes = sorted(stats_config.keys(), key=lambda x: stats_config[x]["order"])
-            
             for code in sorted_codes:
                 val_sec = global_stats.get(code, 0)
-                conf = stats_config[code]
-                
-                perc = (val_sec / total_relevant_time) * 100
-                
-                # Formatowanie czasu
+                perc = (val_sec / total_study_time) * 100
                 m, s = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
                 time_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
                 
                 final_rows.append({
-                    "Moduł": conf["name"],
-                    "Udział (%)": f"{round(perc, 1)}%",
-                    "Suma Czasu": time_str
+                    "Moduł": stats_config[code]["name"],
+                    "Popularność (%)": f"{round(perc, 1)}%",
+                    "Łączny czas": time_str
                 })
-
-            # Wyświetlenie głównej tabeli
             st.table(final_rows)
-            
-            # Podsumowanie pod tabelą
-            th, tm = divmod(total_relevant_time // 60, 60)
-            st.success(f"Razem poświęcono na naukę: **{int(th)}h {int(tm)}m**")
         else:
-            st.warning("Znaleziono użytkowników, ale nie zarejestrowano jeszcze czasu w modułach nauki.")
+            st.warning("Brak zarejestrowanego czasu w modułach nauki.")
 
-        # --- LISTA UŻYTKOWNIKÓW (Dla pewności, że widzimy wszystkich) ---
+        # --- 2. PEŁNA LISTA UŻYTKOWNIKÓW (Przywrócenie szczegółowych danych) ---
         st.divider()
-        st.subheader("👤 Aktywność użytkowników")
-        user_table = []
+        st.subheader("👤 Szczegółowa aktywność użytkowników")
+        
+        full_user_list = []
         for user in ud_data:
-            user_table.append({
-                "Użytkownik": str(user.get("username", "")).capitalize(),
+            # Tutaj wyciągamy wszystkie dane, które były wcześniej
+            full_user_list.append({
+                "Użytkownik": user.get("username", ""),
+                "Email": user.get("email", "Brak"),
                 "🔥 Passa": user.get("streak", 0),
-                "Ostatnio": user.get("last_seen", "Brak")
+                "Ostatnio": user.get("last_seen", "Nigdy"),
+                "Punkty": user.get("points", 0),
+                "ID": user.get("id", ""),
+                "Data Dołączenia": user.get("created_at", "")[:10] if user.get("created_at") else "Brak"
             })
-        st.dataframe(user_table, use_container_width=True, hide_index=True)
+        
+        # Wyświetlamy jako interaktywny DataFrame z sortowaniem
+        st.dataframe(
+            full_user_list, 
+            use_container_width=True, 
+            column_config={
+                "Użytkownik": st.column_config.TextColumn("Użytkownik"),
+                "Email": st.column_config.TextColumn("Email"),
+                "ID": st.column_config.TextColumn("ID (Systemowe)"),
+            }
+        )
+
+        # Opcjonalnie: Surowe dane JSON dla admina (do głębokiej analizy)
+        with st.expander("🔍 Zobacz surowe dane (JSON)"):
+            st.json(ud_data)
