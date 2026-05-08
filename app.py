@@ -1256,89 +1256,103 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
 
-# --- 16. DODAJ SŁÓWKO ---
-elif choice == "➕ Dodaj":
-    st.header("➕ Dodaj Słówko")
+# --- 16. DODAJ SŁÓWKO (V260 - Z edycją przed zapisem) ---
+elif choice == "➕ Dodaj słówko":
+    st.header("➕ Dodaj nowe słówko")
     
-    t1, t2 = st.tabs(["✍️ Wpisz ręcznie", "🤖 Asystent AI"])
+    tab1, tab2 = st.tabs(["Manualnie", "Asystent AI ✨"])
+    
+    with tab1:
+        with st.form("manual_add", clear_on_submit=True):
+            f_de = st.text_input("Słowo (DE):", placeholder="np. der Hund")
+            f_pl = st.text_input("Tłumaczenie (PL):")
+            f_cat = st.text_input("Kategorie (po przecinku):", placeholder="rzeczownik, zwierzęta")
+            
+            if st.form_submit_button("Dodaj do bazy", use_container_width=True):
+                if f_de and f_pl:
+                    new_word = {
+                        "de": f_de, "pl": f_pl, "category": f_cat,
+                        "next_review": str(date.today()), "level": 0, "origin": "Manual",
+                        "examples": []
+                    }
+                    save_word(u, new_word)
+                    st.success(f"Dodano: {f_de}")
+                    st.session_state.flashcards = load_flashcards(u)
+                else:
+                    st.error("Wypełnij przynajmniej DE i PL!")
 
-    with t1:
-        # Fragment dla formularza ręcznego
-        @st.fragment
-        def manual_add_ui():
-            with st.form("manual_entry_form", clear_on_submit=True):
-                col1, col2 = st.columns(2)
-                de = col1.text_input("Słowo Niemieckie (DE):", placeholder="np. die Katze")
-                pl = col2.text_input("Tłumaczenie Polskie (PL):", placeholder="np. kot")
-                ca = st.text_input("Tagi / Kategorie (opcjonalnie):", placeholder="np. Rzeczownik, Zwierzęta, A1")
+    with tab2:
+        st.write("Wpisz słowo, a AI przygotuje tłumaczenie, przykłady i tagi.")
+        ai_word = st.text_input("Słowo po niemiecku:", placeholder="np. die Herausforderung", key="ai_in_single")
+        
+        if st.button("Przygotuj dane przez AI ✨", use_container_width=True):
+            if ai_word:
+                with st.spinner("AI analizuje słowo..."):
+                    prompt = f"""Przygotuj dane dla niemieckiego słowa: '{ai_word}'.
+                    Zwróć WYŁĄCZNIE JSON:
+                    {{
+                      "de": "{ai_word}",
+                      "pl": "tłumaczenie",
+                      "tags": "kategoria1, kategoria2",
+                      "ex_de": "przykład użycia po niemiecku",
+                      "ex_pl": "tłumaczenie przykładu"
+                    }}"""
+                    try:
+                        res = get_openai_response(prompt)
+                        data = json.loads(res)
+                        # Zapisujemy do tymczasowego bufora (podobnie jak w generatorze)
+                        st.session_state.single_temp = [data] 
+                    except Exception as e:
+                        st.error(f"Błąd AI: {e}")
+            else:
+                st.warning("Wpisz słowo!")
 
-                submitted = st.form_submit_button("💾 Zapisz do bazy", use_container_width=True, type="primary")
+        # --- SEKCJA EDYCJI PRZED ZAPISEM ---
+        if "single_temp" in st.session_state and st.session_state.single_temp:
+            st.divider()
+            st.subheader("📝 Sprawdź i popraw")
+            
+            # Przygotowanie danych do edytora (identycznie jak w generatorze)
+            item = st.session_state.single_temp[0]
+            df_init = [{
+                "Dodaj": True,
+                "Niemiecki": item.get("de", ""),
+                "Polski": item.get("pl", ""),
+                "Kategorie (Tagi)": item.get("tags", ""),
+                "Przykład DE": item.get("ex_de", ""),
+                "Przykład PL": item.get("ex_pl", "")
+            }]
 
-                if submitted:
-                    if de.strip() and pl.strip():
-                        save_word(u, {
-                            "de": de.strip(),
-                            "pl": pl.strip(),
-                            "category": ca.strip(),
-                            "next_review": str(date.today()),
-                            "origin": "Dodaj"
-                        })
-                        st.session_state.flashcards = load_flashcards(u)
-                        st.toast(f"✅ Dodano: {de}", icon="📥")
-                        st.success(f"Pomyślnie zapisano: **{de}** — *{pl}*")
-                    else:
-                        st.error("Musisz podać przynajmniej słowo niemieckie i jego tłumaczenie!")
-        manual_add_ui()
+            edited_df = st.data_editor(
+                df_init,
+                use_container_width=True,
+                num_rows="fixed",
+                key="single_word_editor"
+            )
 
-    with t2:
-        # Fragment dla Asystenta AI
-        @st.fragment
-        def ai_add_ui():
-            with st.form("ai_entry_form", clear_on_submit=True):
-                st.info("Wpisz polskie słowo, a AI znajdzie odpowiednik z rodzajnikiem, określi poziom, doda tagi i wygeneruje zdanie przykładowe!")
-                pl_word = st.text_input("Co chcesz przetłumaczyć i dodać?", placeholder="np. latarnia morska, zachód słońca...")
-                
-                submitted_ai = st.form_submit_button("✨ Magicznie wygeneruj i dodaj", use_container_width=True, type="primary")
-                
-                if submitted_ai:
-                    if pl_word.strip():
-                        with st.spinner("AI analizuje i tworzy fiszkę..."):
-                            try:
-                                prompt = f"Przetłumacz polskie słowo lub wyrażenie '{pl_word.strip()}' na język niemiecki. Zawsze podawaj niemieckie rzeczowniki z odpowiednim rodzajnikiem (der, die, das). Określ docelowy poziom CEFR (A1-C1). Utwórz 2-3 tagi (w tym część mowy i kategorię tematyczną). Utwórz 1 naturalne i poprawne zdanie przykładowe z tym słowem. Zwróć wynik TYLKO jako czysty JSON: {{\"de\":\"...\", \"pl\":\"...\", \"category\":\"Rzeczownik, Natura, B2\", \"examples\":[{{\"de\":\"...\", \"pl\":\"...\"}}]}}"
-                                
-                                raw_res = get_openai_response(prompt)
-                                raw_res = raw_res.replace("```json", "").replace("```", "").strip()
-                                data = json.loads(raw_res)
-                                
-                                card = {
-                                    "de": data.get("de", ""),
-                                    "pl": data.get("pl", pl_word.strip()),
-                                    "category": data.get("category", ""),
-                                    "examples": data.get("examples", []),
-                                    "next_review": str(date.today()),
-                                    "origin": "Dodaj (AI)"
-                                }
-                                
-                                # Zapis do bazy i aktualizacja kosztów
-                                save_word(u, card)
-                                st.session_state.user_data["historical_cost"] += 0.003
-                                save_user_data(u, st.session_state.user_data)
-                                
-                                # Aktualizacja lokalnej listy
-                                st.session_state.flashcards = load_flashcards(u)
-                                
-                                st.toast("Magicznie dodano! ✨", icon="🤖")
-                                st.success(f"Dodano: **{card['de']}** ➔ *{card['pl']}*")
-                                st.caption(f"🏷️ Tagi: {card['category']}")
-                                if card.get("examples") and len(card["examples"]) > 0:
-                                    ex = card["examples"][0]
-                                    st.info(f"💡 Przykład: **{ex.get('de', '')}**\n\n🇵🇱 {ex.get('pl', '')}")
-                                
-                            except Exception as e:
-                                st.error(f"Wystąpił błąd podczas pracy AI: {e}. Spróbuj ponownie.")
-                    else:
-                        st.error("Wpisz najpierw polskie słowo!")
-        ai_add_ui()
+            c_save, c_cancel = st.columns(2)
+            
+            if c_save.button("✅ Potwierdzam i dodaję", use_container_width=True, type="primary"):
+                row = edited_df[0]
+                if row["Dodaj"]:
+                    new_word = {
+                        "de": row["Niemiecki"],
+                        "pl": row["Polski"],
+                        "category": row["Kategorie (Tagi)"],
+                        "next_review": str(date.today()),
+                        "level": 0,
+                        "origin": "Asystent",
+                        "examples": [{"de": row["Przykład DE"], "pl": row["Przykład PL"]}]
+                    }
+                    save_word(u, new_word)
+                    st.success("Słówko dodane do bazy!")
+                    st.session_state.flashcards = load_flashcards(u)
+                    del st.session_state.single_temp
+                    st.rerun()
+
+            if c_cancel.button("🗑️ Odrzuć", use_container_width=True):
+                del st.session_state.single_temp
+                st.rerun()
 # --- 17. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
