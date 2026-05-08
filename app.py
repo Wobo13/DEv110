@@ -233,6 +233,58 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
+# --- 7. START (V1.0 - Podsumowanie i Cele) ---
+elif choice == "🏠 Start":
+    st.header(f"Guten Morgen, {str(u).capitalize()}! ☀️")
+    
+    # 1. ANALIZA WCZORAJSZYCH DANYCH (Symulacja/Analiza z logów)
+    # W prawdziwej bazie musielibyśmy mieć historię dni, 
+    # tutaj zrobimy motywacyjne podsumowanie ogólne i dzisiejsze.
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📊 Twoje Postępy")
+        total_words = len(st.session_state.flashcards)
+        to_review = len([c for c in st.session_state.flashcards if str(c.get("next_review", date.today())) <= str(date.today())])
+        
+        st.write(f"📚 Masz już **{total_words}** słówek w bazie.")
+        if to_review > 0:
+            st.warning(f"🔔 Na dziś zaplanowano **{to_review}** powtórek.")
+        else:
+            st.success("✅ Wszystkie powtórki na dziś zrobione!")
+
+    with col2:
+        st.markdown("### 🏆 Dzisiejsze Cele")
+        goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
+        st.write(f"1. Spędź min. **{goal} minut** na nauce.")
+        st.write(f"2. Przesuń min. **10 słówek** do sekcji 'Wiedza'.")
+        st.write(f"3. Rozwiąż chociaż jeden **Test**.")
+
+    st.divider()
+
+    # 3. MOTYWACYJNY CITAT (AI lub lista)
+    quotes = [
+        "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
+        "„Każdy nowy język jest jak otwarte okno, które ukazuje nowy widok na świat.”",
+        "„Uczenie się innego języka jest nie tylko uczeniem się innych słów na te same rzeczy, ale także uczeniem się innego sposobu myślenia o rzeczach.”"
+    ]
+    st.info(random.choice(quotes))
+
+    # 4. SZYBKIE SKRÓTY
+    st.write("#### Dokąd idziemy?")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("📅 Powtórki", use_container_width=True): 
+        # Tu musiałbyś dodać logikę zmiany choice w session_state, 
+        # ale najprościej po prostu kliknąć w menu. 
+        st.info("Wybierz sekcję z menu po lewej ⬅️")
+    
+    # Wyświetlanie ostatnio dodanych słówek
+    with st.expander("🆕 Ostatnio dodane słówka"):
+        recent = sorted(st.session_state.flashcards, key=lambda x: x.get('id', 0), reverse=True)[:5]
+        for r in recent:
+            st.write(f"**{r['de']}** – {r['pl']}")
+
 # --- 7. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
