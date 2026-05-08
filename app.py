@@ -626,18 +626,16 @@ elif choice == "📝 Testy":
             # Uruchomienie silnika testu
             test_engine()
 
-# --- 11. MEMORY GAME (Poprawiona) ---
+# --- 11. MEMORY GAME (Mechanizm widoczności kart) ---
 elif choice == "🧠 Memory":
     st.header("🧠 Memory: Znajdź pary")
-    st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami.")
-
-    # 1. INICJALIZACJA GRY
+    
+    # 1. INICJALIZACJA GRY (Bez zmian)
     if "mem_grid" not in st.session_state:
         if len(st.session_state.flashcards) < 6:
             st.warning("Dodaj przynajmniej 6 słówek, aby móc zagrać.")
             st.stop()
         
-        # Wybieramy 6 losowych słówek
         cards_pool = random.sample(st.session_state.flashcards, 6)
         grid = []
         for c in cards_pool:
@@ -656,7 +654,6 @@ elif choice == "🧠 Memory":
         grid = st.session_state.mem_grid
         status = st.session_state.mem_status
         
-        # POPRAWKA: Wybieramy pierwszą kolumnę z listy [0]
         c1, c2, c3 = st.columns(3)
         c1.metric("Znalezione pary", f"{st.session_state.mem_pairs}/6")
         
@@ -677,6 +674,7 @@ elif choice == "🧠 Memory":
             for col in range(4):
                 idx = row * 4 + col
                 
+                # Stan wizualny kafelka
                 tile_text = "❓"
                 tile_type = "secondary"
                 tile_disabled = False
@@ -691,30 +689,41 @@ elif choice == "🧠 Memory":
 
                 if cols[col].button(tile_text, key=f"mem_{idx}", use_container_width=True, disabled=tile_disabled, type=tile_type):
                     if st.session_state.mem_first is None:
+                        # PIERWSZA KARTA
                         status[idx] = "flipped"
                         st.session_state.mem_first = idx
                         st.rerun(scope="fragment")
                     else:
+                        # DRUGA KARTA
                         first_idx = st.session_state.mem_first
                         status[idx] = "flipped"
                         
-                        # Sprawdzenie pary
-                        if grid[first_idx]["id"] == grid[idx]["id"] and first_idx != idx:
-                            status[first_idx] = "matched"
-                            status[idx] = "matched"
-                            st.session_state.mem_pairs += 1
-                            st.session_state.mem_first = None
-                            st.rerun(scope="fragment")
-                        else:
-                            # Krótka informacja i reset (bez time.sleep, żeby nie mrozić UI)
-                            st.error("Błędna para!")
-                            # W wersji fragment, najprościej dać przycisk "Spróbuj ponownie" 
-                            # lub pozwolić użytkownikowi kliknąć dalej, co zakryje karty
-                            status[first_idx] = "hidden"
-                            status[idx] = "hidden"
-                            st.session_state.mem_first = None
-                            # sleep(0.5) można dodać, jeśli importowałeś 'time'
-                            st.rerun(scope="fragment")
+                        # Tutaj wymuszamy przerysowanie, żeby druga karta się pojawiła
+                        st.rerun(scope="fragment") 
+
+        # LOGIKA SPRAWDZANIA (Uruchamia się PO przerysowaniu drugiej karty)
+        # Sprawdzamy, czy są odkryte dokładnie dwie karty, które nie są jeszcze "matched"
+        flipped_indices = [i for i, s in enumerate(status) if s == "flipped"]
+        
+        if len(flipped_indices) == 2:
+            idx1, idx2 = flipped_indices
+            
+            # Pauza, żeby gracz mógł zobaczyć drugą kartę (np. 0.8 sekundy)
+            import time
+            time.sleep(0.8)
+            
+            if grid[idx1]["id"] == grid[idx2]["id"]:
+                # PARA!
+                status[idx1] = "matched"
+                status[idx2] = "matched"
+                st.session_state.mem_pairs += 1
+            else:
+                # PUDŁO
+                status[idx1] = "hidden"
+                status[idx2] = "hidden"
+            
+            st.session_state.mem_first = None
+            st.rerun(scope="fragment")
 
     memory_engine()
 
