@@ -258,7 +258,7 @@ if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
     st.rerun()
 
 st.sidebar.caption(f"v{APP_VERSION}")
-# --- 7. POWTÓRKI & TRENING (V250 - Elastyczne sprawdzanie rodzajników) ---
+# --- 7. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
@@ -292,7 +292,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         st.balloons()
         st.success("Sesja zakończona! 🏆")
         if st.button("Zacznij od nowa"):
-            for k in ["cur_list", "n_idx", "n_m", "u_a"]:
+            for k in ["cur_list", "n_idx", "n_m", "u_a", "q_dir"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
@@ -301,44 +301,56 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             idx = st.session_state.n_idx
             c = cards[idx]
             
+            # --- LOSOWANIE KIERUNKU (tylko raz dla danego słówka) ---
+            if "q_dir" not in st.session_state:
+                # 0: DE -> PL, 1: PL -> DE
+                st.session_state.q_dir = random.choice([0, 1])
+
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            # Karta (Niemiecki)
+            # Wyświetlamy słowo w zależności od wylosowanego kierunku
+            display_word = c["de"] if st.session_state.q_dir == 0 else c["pl"]
+            target_lang = "Polski" if st.session_state.q_dir == 0 else "Niemiecki"
+            correct_val = c["pl"] if st.session_state.q_dir == 0 else c["de"]
+
             st.markdown(f'''
                 <div style="font-size:2.8em; text-align:center; padding:40px; 
                 background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
                 border-radius:20px; margin-bottom:10px; color: white;">
-                    {c["de"]}
+                    <div style="font-size:0.3em; color:gray; margin-bottom:-10px;">Tłumaczysz na {target_lang}</div>
+                    {display_word}
                 </div>
             ''', unsafe_allow_html=True)
 
             if st.session_state.n_m == "ask":
                 with st.form(key=f"f_{idx}", clear_on_submit=True):
-                    u_in = st.text_input("Tłumaczenie (PL):")
+                    u_in = st.text_input(f"Twoja odpowiedź ({target_lang}):")
                     if st.form_submit_button("Sprawdź", use_container_width=True):
                         st.session_state.u_a = u_in
                         st.session_state.n_m = "res"
                         st.rerun(scope="fragment")
             else:
-                # --- LOGIKA SPRYTEGO SPRAWDZANIA ---
-                def clean_for_compare(text):
+                # Logika czyszczenia (rodzajniki ignorujemy tylko przy wpisywaniu po NIEMIECKU)
+                def clean_for_compare(text, is_german):
                     t = normalize_text(text)
-                    # Usuwamy rodzajniki na początku, aby zaakceptować odpowiedź bez nich
-                    t = re.sub(r'^(der|die|das)\s+', '', t)
+                    if is_german:
+                        t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
 
-                user_ans = clean_for_compare(st.session_state.u_a)
-                correct_ans = clean_for_compare(c['pl'])
+                # Sprawdzamy czy teraz docelowym językiem był niemiecki
+                is_target_de = (st.session_state.q_dir == 1)
+                user_ans = clean_for_compare(st.session_state.u_a, is_target_de)
+                actual_correct = clean_for_compare(correct_val, is_target_de)
                 
-                is_correct = user_ans == correct_ans
+                is_correct = user_ans == actual_correct
                 
                 if is_correct:
-                    st.success(f"✅ Dobrze: {c['pl']}")
+                    st.success(f"✅ Dobrze: {correct_val}")
                 else:
-                    st.error(f"❌ Poprawnie: {c['pl']}")
+                    st.error(f"❌ Poprawnie: {correct_val}")
                 
-                # Audio i przykłady (Audio zawsze z rodzajnikiem, bo bierze c['de'])
+                # Audio i przykłady
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
@@ -346,7 +358,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     play_audio(c['de'], fex)
 
                 if fex:
-                    st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
+                    st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
                 
                 if not auto_audio:
                     if st.button("🔊 Odsłuchaj", use_container_width=True):
@@ -367,11 +379,13 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                         update_word(c['id'], {"next_review": new_date})
                         st.session_state.n_idx += 1
                         st.session_state.n_m = "ask"
+                        if "q_dir" in st.session_state: del st.session_state.q_dir
                         st.rerun(scope="fragment")
                 else:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state.n_idx += 1
                         st.session_state.n_m = "ask"
+                        if "q_dir" in st.session_state: del st.session_state.q_dir
                         st.rerun(scope="fragment")
 
         flashcard_engine()
