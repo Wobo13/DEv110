@@ -233,20 +233,21 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- 7. START (V1.0 - Podsumowanie i Cele) ---
+# --- 7. START (V1.1 - Poprawiona składnia) ---
 elif choice == "🏠 Start":
     st.header(f"Guten Morgen, {str(u).capitalize()}! ☀️")
     
-    # 1. ANALIZA WCZORAJSZYCH DANYCH (Symulacja/Analiza z logów)
-    # W prawdziwej bazie musielibyśmy mieć historię dni, 
-    # tutaj zrobimy motywacyjne podsumowanie ogólne i dzisiejsze.
+    # 1. ANALIZA DANYCH
+    all_c = st.session_state.flashcards
+    today_str = str(date.today())
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("### 📊 Twoje Postępy")
-        total_words = len(st.session_state.flashcards)
-        to_review = len([c for c in st.session_state.flashcards if str(c.get("next_review", date.today())) <= str(date.today())])
+        total_words = len(all_c)
+        # Liczymy powtórki na dziś
+        to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
         
         st.write(f"📚 Masz już **{total_words}** słówek w bazie.")
         if to_review > 0:
@@ -256,36 +257,34 @@ elif choice == "🏠 Start":
 
     with col2:
         st.markdown("### 🏆 Dzisiejsze Cele")
-        goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
-        st.write(f"1. Spędź min. **{goal} minut** na nauce.")
+        goal_min = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
+        st.write(f"1. Spędź min. **{goal_min} minut** na nauce.")
         st.write(f"2. Przesuń min. **10 słówek** do sekcji 'Wiedza'.")
         st.write(f"3. Rozwiąż chociaż jeden **Test**.")
 
     st.divider()
 
-    # 3. MOTYWACYJNY CITAT (AI lub lista)
+    # 2. MOTYWACJA
     quotes = [
         "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
         "„Każdy nowy język jest jak otwarte okno, które ukazuje nowy widok na świat.”",
-        "„Uczenie się innego języka jest nie tylko uczeniem się innych słów na te same rzeczy, ale także uczeniem się innego sposobu myślenia o rzeczach.”"
+        "„Nauka języka to posiadanie drugiego duszy.” – Karol Wielki"
     ]
     st.info(random.choice(quotes))
 
-    # 4. SZYBKIE SKRÓTY
-    st.write("#### Dokąd idziemy?")
-    c1, c2, c3 = st.columns(3)
-    if c1.button("📅 Powtórki", use_container_width=True): 
-        # Tu musiałbyś dodać logikę zmiany choice w session_state, 
-        # ale najprościej po prostu kliknąć w menu. 
-        st.info("Wybierz sekcję z menu po lewej ⬅️")
-    
-    # Wyświetlanie ostatnio dodanych słówek
-    with st.expander("🆕 Ostatnio dodane słówka"):
-        recent = sorted(st.session_state.flashcards, key=lambda x: x.get('id', 0), reverse=True)[:5]
-        for r in recent:
-            st.write(f"**{r['de']}** – {r['pl']}")
+    # 3. OSTATNIO DODANE
+    with st.expander("🆕 Ostatnio dodane słówka", expanded=True):
+        if all_c:
+            # Sortujemy po ID lub dacie dodania (jeśli masz)
+            recent = all_c[-5:] # Bierze 5 ostatnich z listy
+            for r in reversed(recent):
+                st.write(f"**{r['de']}** – {r['pl']}")
+        else:
+            st.write("Baza jest jeszcze pusta. Dodaj pierwsze słówka!")
 
-# --- 7. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
+# --- KONIEC SEKCJI 7 ---
+
+# --- 8. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
@@ -417,7 +416,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
 
-# --- 8. QUIZ (V236 - Bezpiecznik dla kolumny level) ---
+# --- 9. QUIZ (V236 - Bezpiecznik dla kolumny level) ---
 elif choice == "🕹️ Quiz":
     st.header("🕹️ Quiz")
     
@@ -499,7 +498,7 @@ elif choice == "🕹️ Quiz":
                     st.rerun(scope="fragment")
 
         quiz_engine()
-# --- 9. FISZKI (Wersja z obsługą Auto-Audio) ---
+# --- 10. FISZKI (Wersja z obsługą Auto-Audio) ---
 elif choice == "🎴 Fiszki":
     st.header("🎴 Fiszki")
     
@@ -589,7 +588,7 @@ elif choice == "🎴 Fiszki":
         # Uruchomienie interfejsu
         flashcards_ui()
 
-# --- 10. TESTY (Wersja ULTRA FAST z st.fragment) ---
+# --- 11. TESTY (Wersja ULTRA FAST z st.fragment) ---
 elif choice == "📝 Testy":
     st.header("📝 Test")
     
@@ -695,7 +694,7 @@ elif choice == "📝 Testy":
             # Uruchomienie silnika testu
             test_engine()
 
-# --- 11. MEMORY GAME (V228 - Zabezpieczony zapis wyników) ---
+# --- 12. MEMORY GAME (V228 - Zabezpieczony zapis wyników) ---
 elif choice == "🧠 Memory":
     st.header("🧠 Memory: Znajdź pary")
     st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami. Liczy się czas!")
@@ -826,7 +825,7 @@ elif choice == "🧠 Memory":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 12. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
+# --- 13. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
 elif choice == "🛠️ Warsztat":
     st.header("🛠️ Warsztat Słówek")
     st.write("Tu trafiają słówka, które sprawiają Ci najwięcej trudności. Opanuj je raz a dobrze!")
@@ -916,7 +915,7 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 13. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
+# --- 20. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
@@ -1025,7 +1024,7 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 14. GENERATOR SŁÓW (V247 - Gwarantowane Rodzajniki) ---
+# --- 21. GENERATOR SŁÓW (V247 - Gwarantowane Rodzajniki) ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator słów")
     st.write("Generuj słówka na podstawie poziomu lub konkretnego tematu.")
@@ -1125,7 +1124,7 @@ elif choice == "📦 Generator słów":
                 del st.session_state.temp_generated
             st.rerun()
 
-# --- 15. SKANER AI ---
+# --- 22. SKANER AI ---
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
 
@@ -1283,7 +1282,7 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
 
-# --- 16. DODAJ (V262 - Wymuszone rodzajniki) ---
+# --- 23. DODAJ (V262 - Wymuszone rodzajniki) ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj nowe słówko")
     
@@ -1391,7 +1390,7 @@ elif choice == "➕ Dodaj":
                     del st.session_state.single_temp
                 st.rerun()
 
-# --- 17. SŁOWNIK ---
+# --- 24. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
     
@@ -1458,7 +1457,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko usunięte! 🗑️")
                 st.rerun()
 
-# --- 18. STATYSTYKI (V225 - Z Rekordami Memory) ---
+# --- 25. STATYSTYKI (V225 - Z Rekordami Memory) ---
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -1610,7 +1609,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
         st.info("Brak rozwiązanych testów.")
-# --- 19. KONTO ---
+# --- 26. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     
@@ -1751,7 +1750,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN PRO (V280 - Klasyczny widok + Procentowy Rozkład Czasu) ---
+# --- 27. ADMIN PRO (V280 - Klasyczny widok + Procentowy Rozkład Czasu) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
