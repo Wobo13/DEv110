@@ -983,79 +983,89 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 14. GENERATOR SŁÓW (V242 - Z podglądem i edycją) ---
+# --- 14. GENERATOR SŁÓW (V245 - Poziomy + Tematy + Edycja Tagów) ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator słów")
-    st.write("Generuj tematyczne listy słówek wraz z podglądem przed zapisem.")
+    st.write("Generuj słówka na podstawie poziomu lub konkretnego tematu.")
 
-    # 1. FORMULARZ WEJŚCIOWY
+    # 1. PANEL STEROWANIA
     with st.container(border=True):
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            topic = st.text_input("Temat (np. 'Zakupy spożywcze'):", placeholder="O czym chcesz się uczyć?", key="gen_topic_input")
-        with col2:
-            count = st.number_input("Liczba słówek:", 3, 15, 5, key="gen_count_input")
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            gen_lvl = st.selectbox("Poziom (opcjonalnie):", ["Brak", "A1", "A2", "B1", "B2", "C1"], key="gen_lvl_sel")
+        with c2:
+            gen_topic = st.text_input("Temat (opcjonalnie):", placeholder="np. Kuchnia, Praca...", key="gen_top_in")
+        with c3:
+            gen_count = st.number_input("Ilość:", 3, 20, 5, key="gen_cnt_in")
         
-        generate_btn = st.button("Generuj propozycje ✨", use_container_width=True, type="primary")
+        if st.button("✨ Generuj listę do sprawdzenia", use_container_width=True, type="primary"):
+            if gen_lvl == "Brak" and not gen_topic:
+                st.warning("Wybierz poziom lub wpisz temat!")
+            else:
+                with st.spinner("AI dobiera słownictwo..."):
+                    # Budowanie promptu hybrydowego
+                    context = f"na poziomie {gen_lvl}" if gen_lvl != "Brak" else ""
+                    if gen_topic: context += f" o tematyce: {gen_topic}"
+                    
+                    prompt = f"""Wygeneruj {gen_count} unikalnych słówek/fraz po niemiecku {context}.
+                    Dla każdego elementu podaj:
+                    1. de: słowo (rzeczowniki z rodzajnikiem)
+                    2. pl: tłumaczenie
+                    3. tags: minimum 3 tagi (np. 'Poziom, Część mowy, Temat')
+                    4. ex_de: przykład użycia
+                    5. ex_pl: tłumaczenie przykładu
+                    Zwróć WYŁĄCZNIE JSON: {{"flashcards": [{{"de":"", "pl":"", "tags":"", "ex_de":"", "ex_pl":""}}]}}"""
+                    
+                    try:
+                        raw_res = get_openai_response(prompt)
+                        data = json.loads(raw_res)
+                        st.session_state.temp_generated = data.get("flashcards", [])
+                        # Zapamiętujemy wybrany poziom, by dodać go do tagów jeśli go brakuje
+                        st.session_state.last_gen_lvl = gen_lvl
+                    except Exception as e:
+                        st.error(f"Błąd AI: {e}")
 
-    if generate_btn and topic:
-        with st.spinner("AI przygotowuje listę..."):
-            # Prompt dopasowany do Twoich potrzeb
-            prompt = f"""Wygeneruj {count} słówek/fraz po niemiecku na temat: {topic}.
-            Dla każdego słowa podaj polskie tłumaczenie oraz jeden przykład użycia po niemiecku i polsku.
-            Zwróć wynik WYŁĄCZNIE jako surowy JSON w formacie:
-            {{"flashcards": [
-              {{"de": "słowo", "pl": "tłumaczenie", "ex_de": "przykład de", "ex_pl": "przykład pl"}}
-            ]}}"""
-            
-            try:
-                # Używamy Twojej funkcji get_openai_response
-                raw_res = get_openai_response(prompt)
-                # Parsowanie JSON (Twoja funkcja zwraca już stringa JSON)
-                data = json.loads(raw_res)
-                st.session_state.temp_generated = data.get("flashcards", [])
-                st.session_state.gen_topic_name = topic
-            except Exception as e:
-                st.error(f"Błąd generowania: {e}")
-    elif generate_btn and not topic:
-        st.warning("Wpisz temat, aby wygenerować słówka!")
-
-    # --- 2. SEKCJA EDYCJI (Wyświetla się, gdy mamy dane w sesji) ---
+    # --- 2. SEKCJA EDYCJI I ZATWIERDZANIA ---
     if "temp_generated" in st.session_state and st.session_state.temp_generated:
         st.divider()
-        st.subheader("📝 Edytuj i zatwierdź listę")
-        st.info("Zmień treść w tabeli, jeśli AI się pomyliło. Odznacz 'Dodaj', aby pominąć słowo.")
+        st.subheader("📝 Podgląd i personalizacja")
+        st.caption("AI wygenerowało poniższe propozycje. Możesz je teraz dowolnie edytować.")
 
         # Przygotowanie danych do edytora
         df_init = []
         for item in st.session_state.temp_generated:
+            # Łączenie tagów AI z wybranym poziomem (jeśli wybrano)
+            base_tags = item.get("tags", "")
+            if st.session_state.last_gen_lvl != "Brak" and st.session_state.last_gen_lvl not in base_tags:
+                base_tags = f"{st.session_state.last_gen_lvl}, {base_tags}"
+
             df_init.append({
                 "Dodaj": True,
                 "Niemiecki": item.get("de", ""),
                 "Polski": item.get("pl", ""),
+                "Kategorie (Tagi)": base_tags,
                 "Przykład DE": item.get("ex_de", ""),
                 "Przykład PL": item.get("ex_pl", "")
             })
 
-        # Wyświetlenie edytowalnej tabeli (Twoje ulubione narzędzie)
+        # Wyświetlenie edytowalnej tabeli
         edited_df = st.data_editor(
             df_init, 
             use_container_width=True, 
             num_rows="dynamic",
-            key="ai_data_editor_v1"
+            key="ai_editor_v245"
         )
 
-        c_save, c_cancel = st.columns(2)
+        col_save, col_cancel = st.columns(2)
         
-        if c_save.button("✅ Dodaj zaznaczone do bazy", use_container_width=True, type="primary"):
+        if col_save.button("🚀 Zapisz wybrane słówka", use_container_width=True, type="primary"):
             success_count = 0
             for row in edited_df:
-                # Sprawdzamy czy użytkownik zostawił "ptaszka" przy "Dodaj"
                 if row.get("Dodaj", False):
                     new_word = {
                         "de": row["Niemiecki"],
                         "pl": row["Polski"],
-                        "category": st.session_state.gen_topic_name,
+                        "category": row["Kategorie (Tagi)"],
                         "next_review": str(date.today()),
                         "level": 0,
                         "origin": "Generator",
@@ -1064,14 +1074,13 @@ elif choice == "📦 Generator słów":
                     save_word(u, new_word)
                     success_count += 1
             
-            st.success(f"Dodano {success_count} słówek!")
-            st.session_state.flashcards = load_flashcards(u) # Synchronizacja lokalna
-            del st.session_state.temp_generated # Czyścimy bufor
+            st.success(f"Pomyślnie dodano {success_count} słówek!")
+            st.session_state.flashcards = load_flashcards(u) # Synchronizacja
+            del st.session_state.temp_generated
             st.rerun()
 
-        if c_cancel.button("🗑️ Odrzuć listę", use_container_width=True):
-            if "temp_generated" in st.session_state:
-                del st.session_state.temp_generated
+        if col_cancel.button("🗑️ Anuluj listę", use_container_width=True):
+            del st.session_state.temp_generated
             st.rerun()
 
 # --- 15. SKANER AI ---
