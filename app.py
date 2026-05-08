@@ -983,18 +983,22 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 14. GENERATOR AI (V240 - Z podglądem i edycją przed zapisem) ---
+# --- 14. GENERATOR AI (V241 - Naprawiony i Stabilny) ---
 elif choice == "🤖 Generator AI":
     st.header("🤖 Inteligentny Generator Słówek")
-    st.write("Generuj tematyczne listy słówek wraz z przykładami użycia.")
+    st.write("Generuj tematyczne listy słówek wraz z podglądem przed zapisem.")
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        topic = st.text_input("Temat (np. 'Podróż pociągiem', 'Wizyta u lekarza'):")
-    with col2:
-        count = st.number_input("Liczba słówek:", 3, 15, 5)
+    # Formularz wejściowy
+    with st.container(border=True):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            topic = st.text_input("Temat (np. 'Zakupy spożywcze'):", placeholder="O czym chcesz się uczyć?")
+        with col2:
+            count = st.number_input("Liczba słówek:", 3, 15, 5)
+        
+        generate_btn = st.button("Generuj propozycje ✨", use_container_width=True, type="primary")
 
-    if st.button("Generuj propozycje ✨", use_container_width=True):
+    if generate_btn and topic:
         with st.spinner("AI przygotowuje listę..."):
             prompt = f"""Wygeneruj {count} słówek/fraz po niemiecku na temat: {topic}.
             Dla każdego słowa podaj polskie tłumaczenie oraz jeden przykład użycia po niemiecku i polsku.
@@ -1005,23 +1009,25 @@ elif choice == "🤖 Generator AI":
             
             try:
                 raw_res = ask_ai(prompt)
-                # Oczyszczanie tekstu z markdownowych znaczników ```json ... ```
+                # Oczyszczanie i parsowanie JSON
                 clean_json = raw_res.replace("```json", "").replace("```", "").strip()
                 st.session_state.temp_generated = json.loads(clean_json)
                 st.session_state.gen_topic = topic
             except Exception as e:
                 st.error(f"Błąd generowania: {e}")
+    elif generate_btn and not topic:
+        st.warning("Wpisz temat, aby wygenerować słówka!")
 
-    # --- SEKCJA PODGLĄDU I EDYCJI ---
+    # --- SEKCJA EDYCJI (Pojawia się tylko gdy mamy dane w buforze) ---
     if "temp_generated" in st.session_state and st.session_state.temp_generated:
         st.divider()
         st.subheader("📝 Edytuj i zatwierdź listę")
-        st.info("Możesz zmienić tekst bezpośrednio w tabeli. Usuń zaznaczenie, aby pominąć słowo.")
+        st.info("Zmień treść w tabeli, jeśli AI się pomyliło. Odznacz 'Dodaj', aby pominąć słowo.")
 
-        # Przygotowanie danych do edytowalnej tabeli
-        df_data = []
-        for i, item in enumerate(st.session_state.temp_generated):
-            df_data.append({
+        # Przygotowanie danych do edytora
+        df_init = []
+        for item in st.session_state.temp_generated:
+            df_init.append({
                 "Dodaj": True,
                 "Niemiecki": item["de"],
                 "Polski": item["pl"],
@@ -1029,20 +1035,20 @@ elif choice == "🤖 Generator AI":
                 "Przykład PL": item["ex_pl"]
             })
 
-        # Wyświetlenie edytowalnej tabeli
+        # Wyświetlenie edytowalnej tabeli (Data Editor)
         edited_df = st.data_editor(
-            df_data, 
+            df_init, 
             use_container_width=True, 
             num_rows="dynamic",
-            key="ai_editor"
+            key="ai_data_editor"
         )
 
-        col_save, col_cancel = st.columns(2)
+        c_save, c_cancel = st.columns(2)
         
-        if col_save.button("✅ Dodaj wybrane do bazy", use_container_width=True, type="primary"):
+        if c_save.button("✅ Dodaj zaznaczone do bazy", use_container_width=True, type="primary"):
             success_count = 0
             for row in edited_df:
-                if row["Dodaj"]:
+                if row.get("Dodaj", False):
                     new_word = {
                         "de": row["Niemiecki"],
                         "pl": row["Polski"],
@@ -1054,13 +1060,14 @@ elif choice == "🤖 Generator AI":
                     save_word(u, new_word)
                     success_count += 1
             
-            st.success(f"Dodano {success_count} słówek do bazy!")
-            st.session_state.flashcards = load_flashcards(u) # Odświeżenie bazy
+            st.success(f"Dodano {success_count} słówek!")
+            st.session_state.flashcards = load_flashcards(u) # Odświeżenie lokalne
             del st.session_state.temp_generated # Czyszczenie bufora
             st.rerun()
 
-        if col_cancel.button("🗑️ Odrzuć wszystko", use_container_width=True):
-            del st.session_state.temp_generated
+        if c_cancel.button("🗑️ Odrzuć listę", use_container_width=True):
+            if "temp_generated" in st.session_state:
+                del st.session_state.temp_generated
             st.rerun()
 
 # --- 15. SKANER AI ---
