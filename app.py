@@ -180,69 +180,58 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V286 - Kompaktowy & Naprawiony) ---
+# --- 6. SIDEBAR (V287 - Powrót paska wiedzy) ---
 with st.sidebar:
-    # 1. Nagłówek: Nazwa Wielką Literą + Kompaktowy układ
     user_display = str(u).capitalize()
     streak = st.session_state.user_data.get('streak', 0)
     
     st.markdown(f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: -10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
             <h2 style="margin:0;">👤 {user_display}</h2>
             <span style="font-size: 1.2em;">🔥 {streak}d</span>
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Wiedza i Cel (W jednej sekcji, mniejszy margines)
-    all_c = st.session_state.flashcards
-    wiedza_perc = 0
-    if all_c:
-        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
-        wiedza_perc = int((strong / len(all_c)) * 100)
-    
-    # Kompaktowe statystyki
-    col_a, col_b = st.columns(2)
-    
-    # Logika Celu (Realna nauka)
+    # Statystyki realnej nauki
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_minutes = int(sum(current_stats.get(code, 0) for code in study_modules) // 60)
     daily_goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
     
-    col_a.caption(f"🧠 Wiedza: {wiedza_perc}%")
-    col_b.caption(f"🎯 Cel: {study_minutes}/{daily_goal}m")
+    # Wiedza
+    all_c = st.session_state.flashcards
+    wiedza_perc = 0
+    if all_c:
+        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
+        wiedza_perc = int((strong / len(all_c)) * 100)
+
+    # Wyświetlanie dwóch pasków
+    st.caption(f"🧠 Wiedza: {wiedza_perc}%")
+    st.progress(wiedza_perc / 100)
     
-    # Jeden wspólny pasek postępu dla celu (żeby nie zajmować miejsca dwoma)
+    st.caption(f"🎯 Cel: {study_minutes}/{daily_goal}m")
     goal_progress = min(study_minutes / daily_goal, 1.0)
     st.progress(goal_progress)
     
     if study_minutes >= daily_goal:
-        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px;'>✅ Cel osiągnięty!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 3. MENU (Zintegrowane w jedną listę, by nie mnożyć widgetów)
     menu_options = [
         "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
         "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏆 Arena Wyzwań",
         "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
         "📊 Statystyki", "⚙️ Moje Konto"
     ]
-    
-    if u == ADMIN_USER:
-        menu_options.append("👑 Admin")
+    if u == ADMIN_USER: menu_options.append("👑 Admin")
 
-    # Używamy jednego radio, żeby zachować kompaktowość
     choice = st.radio("Menu", menu_options, label_visibility="collapsed")
-    
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.rerun()
-
-    # Wersja na samym dole (mały druczek)
-    st.caption(f"vV220 (Time Stats Fix)")
 
 # --- 7. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
