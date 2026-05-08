@@ -156,10 +156,7 @@ st.sidebar.title(f"👤 {u.capitalize()}")
 st.sidebar.caption(f"Wersja: {APP_VERSION}")
 st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
 
-if st.sidebar.button("Wyloguj", use_container_width=True):
-    st.query_params.clear()
-    st.session_state.clear()
-    st.rerun()
+st.sidebar.divider() # Estetyczne oddzielenie profilu od menu
 
 menu = [
     "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
@@ -177,6 +174,14 @@ if "l_c" not in st.session_state:
 # 1. Pobranie wyboru użytkownika
 choice = st.sidebar.radio("Nawigacja", menu)
 
+st.sidebar.divider() # Estetyczne oddzielenie menu od strefy wylogowania
+
+# Przycisk wylogowania przeniesiony na dół dla lepszej ergonomii
+if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
+    st.query_params.clear()
+    st.session_state.clear()
+    st.rerun()
+
 # 2. Zapis aktywności ZANIM zmienimy wewnętrzny stan aplikacji.
 # Zapisujemy czas przypisany do modułu, w którym użytkownik BYŁ DO TEJ PORY.
 update_activity(st.session_state.l_c)
@@ -192,7 +197,6 @@ if st.session_state.l_c != choice:
     st.session_state.l_c = choice
     st.session_state.n_m = "ask"
     st.session_state.u_a = ""
-
 # --- 7. POWTÓRKI & TRENING (Wersja z obsługą Auto-Audio) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
