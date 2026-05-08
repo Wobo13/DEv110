@@ -151,7 +151,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (Wersja Ultra-Clean) ---
+# --- 6. SIDEBAR I NAWIGACJA (V4 - Dodano Memory Game) ---
 # Nick i Passa
 st.sidebar.markdown(f"## 👤 {u.capitalize()} <span style='float:right; font-size:0.7em; padding-top:10px;'>🔥 **{st.session_state.user_data.get('streak', 0)}d**</span>", unsafe_allow_html=True)
 
@@ -168,11 +168,11 @@ if st.session_state.flashcards:
     total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
     progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
 
-    # Wskaźnik 1: Wiedza (Ikona + Tekst)
+    # Wskaźnik 1: Wiedza
     st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🧠 Wiedza: <b>{mastery_perc}%</b></div>", unsafe_allow_html=True)
     st.sidebar.progress(mastery_perc / 100)
     
-    # Wskaźnik 2: Cel (Ikona + Tekst)
+    # Wskaźnik 2: Cel
     st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🎯 Cel: <b>{int(total_mins_today)}/{daily_goal}m</b></div>", unsafe_allow_html=True)
     st.sidebar.progress(progress_goal)
 
@@ -191,7 +191,8 @@ st.sidebar.divider()
 # --- MENU NAWIGACJI ---
 menu = [
     "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-    "📝 Testy", "📦 Generator słów", "📸 Skaner AI", 
+    "📝 Testy", "🧠 Memory",  # <--- NOWOŚĆ!
+    "📦 Generator słów", "📸 Skaner AI", 
     "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"
 ]
 if u == ADMIN_USER:
@@ -204,8 +205,15 @@ choice = st.sidebar.radio("Menu", menu, label_visibility="collapsed")
 
 update_activity(st.session_state.l_c)
 
+# Logika czyszczenia sesji przy zmianie modułu
 if st.session_state.l_c != choice:
-    for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
+    # Lista kluczy do usunięcia (dodaliśmy klucze dla Memory Game)
+    keys_to_clear = [
+        "cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", 
+        "test_score", "q_c", "q_s",
+        "mem_grid", "mem_status", "mem_first", "mem_pairs" # <--- KLUCZE MEMORY
+    ]
+    for k in keys_to_clear:
         if k in st.session_state: 
             del st.session_state[k]
     
