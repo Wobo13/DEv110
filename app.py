@@ -1207,7 +1207,7 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V1.3 - Blokada po czasie) ---
+# --- 16. BALONOWY WYŚCIG (V1.5 - Fix Zapisu i Podsumowania) ---
 elif choice == "🎈 Balonowy Wyścig":
     st.header("🎈 Balonowy Wyścig")
     
@@ -1218,7 +1218,8 @@ elif choice == "🎈 Balonowy Wyścig":
             "bal_time_left": 30,
             "bal_word": None,
             "bal_opts": [],
-            "bal_start_ts": 0
+            "bal_start_ts": 0,
+            "bal_game_over": False # Nowa flaga dla stabilnego podsumowania
         })
 
     def next_bal_round():
@@ -1232,53 +1233,73 @@ elif choice == "🎈 Balonowy Wyścig":
         st.session_state.bal_opts = opts
         return True
 
-    # --- LOGIKA KOŃCA GRY (Globalna) ---
+    # --- LOGIKA KOŃCA GRY ---
     if st.session_state.bal_active:
         elapsed = time.time() - st.session_state.bal_start_ts
         if elapsed >= 30:
+            final_score = st.session_state.bal_score
             st.session_state.bal_active = False
-            st.session_state.bal_time_left = 0
-            # Zapis rekordu
-            if st.session_state.bal_score > 0:
-                current_scores = list(st.session_state.user_data.get("baloon_scores", []))
-                current_scores.append(st.session_state.bal_score)
-                st.session_state.user_data["baloon_scores"] = sorted(list(set(current_scores)), reverse=True)[:10]
-                save_user_data(u, st.session_state.user_data)
+            st.session_state.bal_game_over = True
+            
+            if final_score > 0:
+                # 1. Pobieramy aktualne rekordy (zabezpieczenie przed None)
+                old_scores = st.session_state.user_data.get("baloon_scores", [])
+                if not isinstance(old_scores, list): old_scores = []
+                
+                # 2. Dodajemy nowy wynik i sortujemy
+                new_scores = list(set(old_scores + [final_score]))
+                new_scores = sorted(new_scores, reverse=True)[:10]
+                
+                # 3. Aktualizujemy session_state użytkownika
+                st.session_state.user_data["baloon_scores"] = new_scores
+                
+                # 4. TRWAŁY ZAPIS DO BAZY
+                try:
+                    save_user_data(u, st.session_state.user_data)
+                    st.toast("Rekord zapisany w chmurze! ☁️", icon="✅")
+                except Exception as e:
+                    st.error(f"Błąd zapisu rekordów: {e}")
+            
             st.rerun()
 
     # --- WIDOKI ---
     if not st.session_state.bal_active:
-        if st.session_state.bal_time_left <= 0:
+        if st.session_state.bal_game_over:
             st.balloons()
-            st.success(f"### Koniec! Wynik: {st.session_state.bal_score} pkt 🏆")
+            st.success(f"### Twój wynik końcowy: {st.session_state.bal_score} pkt 🏆")
+            
+            # Pokazujemy Twoje top wyniki z bazy, żebyś widział, że się zapisało
+            my_tops = st.session_state.user_data.get("baloon_scores", [])
+            if my_tops:
+                st.write(f"Twoje najlepsze wyniki: {', '.join(map(str, my_tops))}")
+
             if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
-                st.session_state.bal_score = 0
-                st.session_state.bal_time_left = 30
-                st.session_state.bal_active = True
-                st.session_state.bal_start_ts = time.time()
+                st.session_state.update({
+                    "bal_score": 0, "bal_active": True, "bal_game_over": False,
+                    "bal_start_ts": time.time()
+                })
                 next_bal_round()
                 st.rerun()
         else:
             st.info("Gotowy? 30 sekund na liczniku!")
             if st.button("🚀 START", use_container_width=True, type="primary"):
                 if next_bal_round():
-                    st.session_state.bal_active = True
-                    st.session_state.bal_score = 0
-                    st.session_state.bal_start_ts = time.time()
+                    st.session_state.update({
+                        "bal_active": True, "bal_score": 0, "bal_game_over": False,
+                        "bal_start_ts": time.time()
+                    })
                     st.rerun()
 
     else:
-        # SILNIK GRY (FRAGMENT)
         @st.fragment(run_every=1.0)
         def balloon_engine():
             elapsed = time.time() - st.session_state.bal_start_ts
             rem = max(0, int(30 - elapsed))
             
-            # CRITICAL CHECK: Jeśli wewnątrz fragmentu czas minął, blokujemy UI
             if rem <= 0:
-                st.warning("Czas minął! Zaraz nastąpi podsumowanie...")
                 st.session_state.bal_active = False
-                st.rerun() # To wymusi wyjście z fragmentu do logiki głównej
+                st.session_state.bal_game_over = True
+                st.rerun()
                 return
 
             c1, c2 = st.columns(2)
@@ -1286,12 +1307,11 @@ elif choice == "🎈 Balonowy Wyścig":
             c2.metric("⭐ Punkty", st.session_state.bal_score)
 
             word = st.session_state.bal_word
-            st.markdown(f"""<div style="text-align:center; padding:20px; background:#111; border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;"><h2 style="color:white; margin:0;">{word['de']}</h2></div>""", unsafe_allow_html=True)
+            st.markdown(f'<div style="text-align:center; padding:20px; background:#111; border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;"><h2 style="color:white; margin:0;">{word["de"]}</h2></div>', unsafe_allow_html=True)
 
             cols = st.columns(3)
             for i, opt in enumerate(st.session_state.bal_opts):
-                # Dodatkowy warunek disabled=True, jeśli czas bliski zeru
-                if cols[i].button(opt, key=f"btn_{i}", use_container_width=True, disabled=(rem <= 0)):
+                if cols[i].button(opt, key=f"btn_{i}", use_container_width=True):
                     if opt == st.session_state.bal_word['pl']:
                         st.session_state.bal_score += 1
                         next_bal_round()
@@ -1300,12 +1320,7 @@ elif choice == "🎈 Balonowy Wyścig":
                         st.toast("Pudło! 💨")
                         next_bal_round()
                         st.rerun(scope="fragment")
-
         balloon_engine()
-        
-        if st.button("❌ Przerwij", type="secondary", use_container_width=True):
-            st.session_state.bal_active = False
-            st.rerun()
             
 # --- 20. ARENA WYZWAŃ (V300 - Pełny Ranking z nowymi grami) ---
 elif choice == "🏆 Arena Wyzwań":
