@@ -350,13 +350,11 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
 
-# --- 8. QUIZ (Z obsługą Preferencji Nauki) ---
+# --- 8. QUIZ (V230 - Zintegrowany z systemem powtórek SRS) ---
 elif choice == "🕹️ Quiz":
     st.header("🕹️ Quiz")
     
     all_c = st.session_state.flashcards
-    
-    # 1. Pobieramy ustawienia z bazy (lub ustawiamy True jako domyślne)
     user_settings = st.session_state.user_data.get("settings", {})
     show_hints = user_settings.get("show_hints", True)
     auto_audio = user_settings.get("auto_audio", True)
@@ -366,9 +364,12 @@ elif choice == "🕹️ Quiz":
     else:
         @st.fragment
         def quiz_engine():
+            # 1. INICJALIZACJA PYTANIA
             if "q_c" not in st.session_state:
                 idx = random.randrange(len(all_c))
                 t = all_c[idx]
+                
+                # Tworzenie dystraktorów (błędnych odpowiedzi)
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
                 distractors = random.sample(other_pls, min(3, len(other_pls)))
                 opts = distractors + [t['pl']]
@@ -387,12 +388,9 @@ elif choice == "🕹️ Quiz":
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
             
             if st.session_state.q_s == "ask":
-                
-                # --- REAKCJA NA PRZEŁĄCZNIK: PODPOWIEDZI ---
                 if show_hints:
                     first_letter = st.session_state.q_a[0].upper()
                     st.caption(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**...")
-                # ------------------------------------------
 
                 for o in st.session_state.q_o:
                     if st.button(o, key=f"btn_{o}", use_container_width=True):
@@ -400,48 +398,47 @@ elif choice == "🕹️ Quiz":
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
             else:
-                if st.session_state.u_q == st.session_state.q_a:
-                    st.success("✅ Świetnie!")
-                else:
-                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}**")
+                # 2. WERYFIKACJA I WPŁYW NA SRS
+                is_correct = st.session_state.u_q == st.session_state.q_a
                 
-                # --- LOGIKA AUDIO I PRZYKŁADÓW ---
+                if is_correct:
+                    st.success("✅ Świetnie! (Słówko przesunięte o +2 dni)")
+                    # AKTUALIZACJA SRS: +2 dni
+                    new_date = str(date.today() + timedelta(days=2))
+                    update_word(q_c['id'], {"next_review": new_date})
+                else:
+                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}** (Słówko wraca do powtórek)")
+                    # AKTUALIZACJA SRS: Na dzisiaj (kara)
+                    update_word(q_c['id'], {"next_review": str(date.today()), "level": 0})
+                
+                # Synchronizacja lokalna po zmianie w bazie
+                st.session_state.flashcards = load_flashcards(u)
+
+                # Wyświetlanie przykładów i audio
                 exs = q_c.get("examples", [])
                 fex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 fex_pl = exs[0].get("pl") if fex_de else None
                 
                 if fex_de:
-                    # Rozbudowany przykład, jeśli podpowiedzi PL są włączone
                     if show_hints and fex_pl:
                         st.info(f"💡 Przykład: **{fex_de}**\n\n🇵🇱 *{fex_pl}*")
                     else:
                         st.info(f"💡 Przykład: **{fex_de}**")
-                        
-                    # Reakcja na przełącznik Auto-Audio
-                    if auto_audio:
-                        play_audio(q_c['de'], fex_de)
+                    if auto_audio: play_audio(q_c['de'], fex_de)
                 else:
-                    if auto_audio:
-                        play_audio(q_c['de'])
+                    if auto_audio: play_audio(q_c['de'])
                 
-                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
                 if not auto_audio:
                     if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
-                        if fex_de:
-                            play_audio(q_c['de'], fex_de)
-                        else:
-                            play_audio(q_c['de'])
-                # ------------------------------
+                        play_audio(q_c['de'], fex_de) if fex_de else play_audio(q_c['de'])
 
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
-                    del st.session_state.q_c
-                    del st.session_state.q_a
-                    del st.session_state.q_o
-                    del st.session_state.q_s
+                    # Czyścimy stan pytania
+                    for key in ["q_c", "q_a", "q_o", "q_s", "u_q"]:
+                        if key in st.session_state: del st.session_state[key]
                     st.rerun(scope="fragment")
 
         quiz_engine()
-
 # --- 9. FISZKI (Wersja z obsługą Auto-Audio) ---
 elif choice == "🎴 Fiszki":
     st.header("🎴 Fiszki")
@@ -638,18 +635,17 @@ elif choice == "📝 Testy":
             # Uruchomienie silnika testu
             test_engine()
 
-# --- 11. MEMORY GAME (V225 - Z Licznikiem i Zapisem Rekordów) ---
+# --- 11. MEMORY GAME (V228 - Zabezpieczony zapis wyników) ---
 elif choice == "🧠 Memory":
     st.header("🧠 Memory: Znajdź pary")
     st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami. Liczy się czas!")
 
-    # 1. INICJALIZACJA GRY
+    # 1. INICJALIZACJA STANU GRY
     if "mem_grid" not in st.session_state:
         if len(st.session_state.flashcards) < 6:
             st.warning("Dodaj przynajmniej 6 słówek, aby móc zagrać.")
             st.stop()
         
-        # Wybieramy 6 losowych słówek (12 kafli)
         cards_pool = random.sample(st.session_state.flashcards, 6)
         grid = []
         for c in cards_pool:
@@ -664,15 +660,14 @@ elif choice == "🧠 Memory":
         st.session_state.mem_start_time = None
         st.session_state.mem_final_time = None
 
-    # 2. SILNIK GRY
+    # 2. SILNIK GRY (FRAGMENT)
     @st.fragment
     def memory_engine():
         grid = st.session_state.mem_grid
         status = st.session_state.mem_status
         
-        c1, c2, c3 = st.columns(3)
+        c1, c2, _ = st.columns([1, 1, 2])
         
-        # Wyświetlanie czasu na żywo
         if st.session_state.mem_start_time and st.session_state.mem_final_time is None:
             elapsed = round(time.time() - st.session_state.mem_start_time, 1)
             c1.metric("⏱️ Czas", f"{elapsed}s")
@@ -683,26 +678,33 @@ elif choice == "🧠 Memory":
             
         c2.metric("🧩 Pary", f"{st.session_state.mem_pairs}/6")
         
-        # KONIEC GRY
+        # LOGIKA KOŃCA GRY
         if st.session_state.mem_pairs == 6:
             if st.session_state.mem_final_time is None:
                 st.session_state.mem_final_time = round(time.time() - st.session_state.mem_start_time, 2)
                 
-                # ZAPIS DO BAZY
-                db = get_db()
-                new_score = st.session_state.mem_final_time
-                current_scores = st.session_state.user_data.get("memory_scores", [])
-                
-                # Dodajemy wynik, sortujemy i bierzemy top 10 najlepszych (najkrótszych) czasów
-                current_scores.append(new_score)
-                current_scores = sorted([float(s) for s in current_scores])[:10]
-                
-                # Aktualizacja bazy i sesji
-                db.table("user_data").update({"memory_scores": current_scores}).eq("username", u).execute()
-                st.session_state.user_data["memory_scores"] = current_scores
+                # BEZPIECZNY ZAPIS DO BAZY
+                try:
+                    db = get_db()
+                    new_score = st.session_state.mem_final_time
+                    # Pobieramy obecne wyniki (jeśli kolumna nie istnieje, get zwróci [])
+                    current_scores = st.session_state.user_data.get("memory_scores", [])
+                    if not isinstance(current_scores, list): current_scores = []
+                    
+                    current_scores.append(new_score)
+                    current_scores = sorted([float(s) for s in current_scores])[:10]
+                    
+                    # Próba aktualizacji bazy
+                    db.table("user_data").update({"memory_scores": current_scores}).eq("username", u).execute()
+                    st.session_state.user_data["memory_scores"] = current_scores
+                except Exception as e:
+                    # Jeśli baza wyrzuci błąd (np. brak kolumny), nie crashujemy apki
+                    st.warning("⚠️ Nie udało się zapisać rekordu w bazie (prawdopodobnie brak kolumny memory_scores).")
+                    # Zapisujemy chociaż lokalnie w sesji na ten czas
+                    st.session_state.user_data["memory_scores"] = current_scores
 
             st.balloons()
-            st.success(f"Brawo! Ukończono w czasie: {st.session_state.mem_final_time}s")
+            st.success(f"Brawo! Twój czas: {st.session_state.mem_final_time}s")
             if st.button("Zagraj jeszcze raz", use_container_width=True):
                 for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
                     if k in st.session_state: del st.session_state[k]
@@ -711,12 +713,11 @@ elif choice == "🧠 Memory":
 
         st.write("---")
 
-        # RENDEROWANIE SIATKI
+        # RENDEROWANIE PRZYCISKÓW
         for row in range(3):
             cols = st.columns(4)
             for col in range(4):
                 idx = row * 4 + col
-                
                 tile_text = "❓"
                 tile_type = "secondary"
                 tile_disabled = False
@@ -730,7 +731,6 @@ elif choice == "🧠 Memory":
                     tile_disabled = True
 
                 if cols[col].button(tile_text, key=f"mem_{idx}", use_container_width=True, disabled=tile_disabled, type=tile_type):
-                    # Start czasu przy pierwszym kliknięciu
                     if st.session_state.mem_start_time is None:
                         st.session_state.mem_start_time = time.time()
 
@@ -739,15 +739,14 @@ elif choice == "🧠 Memory":
                         st.session_state.mem_first = idx
                         st.rerun(scope="fragment")
                     else:
-                        first_idx = st.session_state.mem_first
                         status[idx] = "flipped"
                         st.rerun(scope="fragment") 
 
-        # LOGIKA SPRAWDZANIA
-        flipped_indices = [i for i, s in enumerate(status) if s == "flipped"]
-        if len(flipped_indices) == 2:
-            idx1, idx2 = flipped_indices
-            time.sleep(0.8)
+        # SPRAWDZANIE PAR (opóźnienie ukrycia)
+        flipped = [i for i, s in enumerate(status) if s == "flipped"]
+        if len(flipped) == 2:
+            idx1, idx2 = flipped
+            time.sleep(0.8) # Czekamy chwilę, żeby użytkownik zobaczył drugą kartę
             
             if grid[idx1]["id"] == grid[idx2]["id"]:
                 status[idx1] = "matched"
