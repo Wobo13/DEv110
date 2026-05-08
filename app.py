@@ -151,7 +151,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (Wersja Skompresowana) ---
+# --- 6. SIDEBAR I NAWIGACJA (Wersja Skompresowana V2) ---
 c_top1, c_top2 = st.sidebar.columns([2, 1])
 c_top1.title(f"👤 {u.capitalize()}")
 c_top2.write(f"🔥 **{st.session_state.user_data.get('streak', 0)}d**")
@@ -162,20 +162,32 @@ user_settings = st.session_state.user_data.get("settings", {})
 if st.session_state.flashcards:
     today = date.today()
     total_cards = len(st.session_state.flashcards)
+    # Liczymy słówka w fazie silnej (następna powtórka > 6 dni od dziś)
     strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
     mastery_perc = int((strong_cards / total_cards) * 100)
     
     daily_goal = user_settings.get("daily_goal", 20)
+    # Obliczamy minuty na podstawie time_stats (suma sekund / 60)
     total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
     progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
 
-    # Dwie kolumny dla statystyk, żeby nie "ciągnęły" sidebaru w dół
+    # Statystyki w kolumnach
     col_stat1, col_stat2 = st.sidebar.columns(2)
-    col_stat1.caption(f"🧠 Baza: {mastery_perc}%")
-    col_stat2.caption(f"🎯 Cel: {int(progress_goal*100)}%")
+    col_stat1.caption(f"🧠 Wiedza: {mastery_perc}%")
+    col_stat2.caption(f"🎯 Cel: {int(total_mins_today)}/{daily_goal}m")
     
-    # Jeden wspólny, cienki pasek postępu (Mastery)
+    # Cienki pasek postępu (Mastery)
     st.sidebar.progress(mastery_perc / 100)
+
+# --- DYSKRETNA PORADA POD PASKIEM ---
+tips = [
+    "Ucz się rano – mózg lepiej przyswaja słówka.",
+    "Metoda 15 min dziennie jest najlepsza.",
+    "Czytaj na głos – angażujesz słuch.",
+    "Twórz śmieszne skojarzenia.",
+    "Powtarzaj słówka tuż przed snem."
+]
+st.sidebar.markdown(f"<p style='font-size: 0.8em; color: gray; margin-bottom: -10px;'>💡 {random.choice(tips)}</p>", unsafe_allow_html=True)
 
 st.sidebar.divider()
 
@@ -201,16 +213,6 @@ if st.session_state.l_c != choice:
 
 # --- DÓŁ SIDEBARA ---
 st.sidebar.divider()
-
-# Porada jako mały tekst na dole
-tips = [
-    "Ucz się rano – mózg lepiej przyswaja słówka.",
-    "Metoda 15 min dziennie jest najlepsza.",
-    "Czytaj na głos – angażujesz słuch.",
-    "Twórz śmieszne skojarzenia.",
-    "Powtarzaj słówka tuż przed snem."
-]
-st.sidebar.caption(f"💡 {random.choice(tips)}")
 
 if st.sidebar.button("🚪 Wyloguj", use_container_width=True):
     st.query_params.clear()
