@@ -218,7 +218,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V297 - Pełny, poprawiony kod) ---
+# --- 6. SIDEBAR (V298 - Pełny kod z przywróconym Warsztatem) ---
 with st.sidebar:
     # 1. Nagłówek: Nazwa Wielką Literą + Streak
     user_display = str(u).capitalize()
@@ -238,7 +238,7 @@ with st.sidebar:
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # Cel (Realna nauka - kody modułów do zliczania czasu)
+    # Cel (Realna nauka - włączając Warsztat i Konstruktora)
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
@@ -258,12 +258,24 @@ with st.sidebar:
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja bez pustych pól i separatorów)
+    # 4. MENU (Nawigacja z przywróconym Warsztatem)
     menu_options = [
-        "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-        "📝 Testy", "🧠 Memory", "🏗️ Konstruktor", "🏆 Arena Wyzwań",
-        "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
-        "📊 Statystyki", "⚙️ Moje Konto"
+        "🏠 Start", 
+        "📅 Powtórki", 
+        "🚀 Trening", 
+        "🕹️ Quiz", 
+        "🎴 Fiszki", 
+        "📝 Testy", 
+        "🧠 Memory", 
+        "🛠️ Warsztat",    # <--- PRZYWRÓCONO!
+        "🏗️ Konstruktor", 
+        "🏆 Arena Wyzwań",
+        "📦 Generator słów", 
+        "📸 Skaner AI", 
+        "➕ Dodaj", 
+        "📖 Słownik", 
+        "📊 Statystyki", 
+        "⚙️ Moje Konto"
     ]
     
     if u == ADMIN_USER:
