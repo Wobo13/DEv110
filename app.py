@@ -291,11 +291,16 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         # Wywołanie fragmentu
         flashcard_engine()
 
-# --- 8. QUIZ (Wersja z rozszerzonym Audio) ---
+# --- 8. QUIZ (Z obsługą Preferencji Nauki) ---
 elif choice == "🕹️ Quiz":
     st.header("🕹️ Quiz")
     
     all_c = st.session_state.flashcards
+    
+    # 1. Pobieramy ustawienia z bazy (lub ustawiamy True jako domyślne)
+    user_settings = st.session_state.user_data.get("settings", {})
+    show_hints = user_settings.get("show_hints", True)
+    auto_audio = user_settings.get("auto_audio", True)
     
     if len(all_c) < 4: 
         st.warning("Dodaj min. 4 słówka, aby uruchomić quiz.")
@@ -323,6 +328,13 @@ elif choice == "🕹️ Quiz":
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
             
             if st.session_state.q_s == "ask":
+                
+                # --- REAKCJA NA PRZEŁĄCZNIK: PODPOWIEDZI ---
+                if show_hints:
+                    first_letter = st.session_state.q_a[0].upper()
+                    st.caption(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**...")
+                # ------------------------------------------
+
                 for o in st.session_state.q_o:
                     if st.button(o, key=f"btn_{o}", use_container_width=True):
                         st.session_state.u_q = o
@@ -334,17 +346,32 @@ elif choice == "🕹️ Quiz":
                 else:
                     st.error(f"❌ Poprawnie: **{st.session_state.q_a}**")
                 
-                # --- LOGIKA AUDIO ZE ZDANIEM ---
+                # --- LOGIKA AUDIO I PRZYKŁADÓW ---
                 exs = q_c.get("examples", [])
-                # Sprawdzamy czy przykład istnieje i czy jest poprawnym formatem
-                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                fex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                fex_pl = exs[0].get("pl") if fex_de else None
                 
-                if fex:
-                    st.info(f"💡 Przykład: {fex}")
-                    # play_audio automatycznie doda pauzę między słowem a zdaniem dzięki Twojej definicji funkcji
-                    play_audio(q_c['de'], fex)
+                if fex_de:
+                    # Rozbudowany przykład, jeśli podpowiedzi PL są włączone
+                    if show_hints and fex_pl:
+                        st.info(f"💡 Przykład: **{fex_de}**\n\n🇵🇱 *{fex_pl}*")
+                    else:
+                        st.info(f"💡 Przykład: **{fex_de}**")
+                        
+                    # Reakcja na przełącznik Auto-Audio
+                    if auto_audio:
+                        play_audio(q_c['de'], fex_de)
                 else:
-                    play_audio(q_c['de'])
+                    if auto_audio:
+                        play_audio(q_c['de'])
+                
+                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
+                if not auto_audio:
+                    if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
+                        if fex_de:
+                            play_audio(q_c['de'], fex_de)
+                        else:
+                            play_audio(q_c['de'])
                 # ------------------------------
 
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
