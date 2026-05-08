@@ -2169,7 +2169,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 27. ADMIN PRO (V298 - Pełny rozkład z Konstruktorem) ---
+# --- 27. ADMIN PRO (V300 - Pełny rozkład z Wężem i Balonem) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
@@ -2188,8 +2188,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     adm_list = []
     global_time = {}
     
-    # Zaktualizowane kody (zgodnie z nową kolejnością i nową grą)
-    tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Inn"]
+    # Rozszerzona lista kodów (zgodnie z nową kolejnością)
+    tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
     display_names = {
         "Pow": "📅 Powtórki", 
         "Trn": "🚀 Trening", 
@@ -2199,6 +2199,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         "Mem": "🧠 Memory", 
         "War": "🛠️ Warsztat",
         "Kon": "🏗️ Konstruktor",
+        "Wan": "🐍 Lingwistyczny Wąż",
+        "Bal": "🎈 Balonowy Wyścig",
         "Inn": "Inne"
     }
     
@@ -2224,12 +2226,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
-            # Przypisanie do kategorii lub do 'Inn' (Inne)
             f_code = k if k in tracked_codes else "Inn"
             
             current_user_merged[f_code] += seconds
             total_sec += seconds
-            # Do globalnych statystyk bierzemy tylko te z nawigacji (bez 'Inn')
             if f_code != "Inn":
                 global_time[f_code] = global_time.get(f_code, 0) + seconds
 
@@ -2264,8 +2264,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         if total_global_study > 0:
             analysis_rows = []
-            # Wyświetlamy w Twojej wymarzonej kolejności (bez 'Inn')
-            for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon"]:
+            # Wyświetlamy w zadanej kolejności (z Wężem i Balonem na końcu)
+            for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]:
                 val_sec = global_time.get(code, 0)
                 perc = (val_sec / total_global_study) * 100
                 m, _ = divmod(int(val_sec), 60)
@@ -2302,8 +2302,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         # --- TABELA 3: SZCZEGÓŁY CZASU ---
         with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
-            # Tutaj też uwzględniamy pełną listę
-            valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Inn"]
+            # Pełna lista dla tabeli szczegółowej
+            valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
             
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
