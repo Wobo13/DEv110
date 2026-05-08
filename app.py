@@ -729,7 +729,76 @@ elif choice == "🧠 Memory":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 11. GENERATOR ---
+# --- 12. ARENA WYZWAŃ (RANKING TOP 5) ---
+elif choice == "🏆 Arena Wyzwań":
+    st.header("🏆 Arena Wyzwań")
+    st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
+
+    # 1. POBIERANIE DANYCH Z BAZY
+    db = get_db()
+    # Pobieramy wszystkich użytkowników (statystyki) i wszystkie fiszki (do obliczenia wiedzy)
+    all_users = db.table("user_data").select("username", "streak", "last_seen").execute().data
+    all_cards = db.table("flashcards").select("username", "next_review").execute().data
+    
+    if not all_users:
+        st.info("Ranking jest obecnie pusty. Bądź pierwszym, który go zapełni!")
+    else:
+        df_users = pd.DataFrame(all_users)
+        df_cards = pd.DataFrame(all_cards) if all_cards else pd.DataFrame(columns=["username", "next_review"])
+        
+        today = date.today()
+        ranking_data = []
+
+        # 2. OBLICZANIE WIEDZY DLA KAŻDEGO UŻYTKOWNIKA
+        for _, user in df_users.iterrows():
+            uname = user["username"]
+            u_cards = df_cards[df_cards["username"] == uname]
+            
+            wiedza_val = 0
+            if not u_cards.empty:
+                # Liczymy słówka silne (> 6 dni do powtórki)
+                strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
+                wiedza_val = int((strong / len(u_cards)) * 100)
+            
+            ranking_data.append({
+                "Użytkownik": uname.capitalize(),
+                "Ogień 🔥": user["streak"],
+                "Wiedza 🧠": wiedza_val,
+                "Ostatnio aktywny": user["last_seen"]
+            })
+
+        df_final = pd.DataFrame(ranking_data)
+
+        # 3. WYŚWIETLANIE DWÓCH KATEGORII
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("🔥 Najdłuższa Passa")
+            # Sortujemy po ogniu i bierzemy Top 5
+            top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5)
+            # Resetujemy indeksy, by pokazać miejsca 1-5
+            top_streak.index = range(1, len(top_streak) + 1)
+            st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
+
+        with col2:
+            st.subheader("🧠 Mistrzowie Wiedzy")
+            # Sortujemy po wiedzy i bierzemy Top 5
+            top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5)
+            top_knowledge.index = range(1, len(top_knowledge) + 1)
+            # Formatujemy wyświetlanie procentów
+            top_knowledge["Wiedza 🧠"] = top_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
+            st.table(top_knowledge[["Użytkownik", "Wiedza 🧠"]])
+
+        st.divider()
+        
+        # 4. TWOJA POZYCJA (Dla motywacji)
+        my_pos_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index()
+        my_rank = my_pos_streak[my_pos_streak["Użytkownik"] == u.capitalize()].index
+        
+        if not my_rank.empty:
+            st.info(f"Twoja aktualna pozycja w rankingu passy: **{my_rank[0] + 1}** na **{len(df_final)}** użytkowników. Do dzieła!")
+
+# --- 13. GENERATOR ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator")
     
@@ -826,7 +895,7 @@ elif choice == "📦 Generator słów":
                 except Exception as e: 
                     st.error(f"Wystąpił błąd podczas pracy AI: {e}")
 
-# --- 12. SKANER AI ---
+# --- 14. SKANER AI ---
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
 
@@ -984,7 +1053,7 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
 
-# --- 13. DODAJ SŁÓWKO ---
+# --- 15. DODAJ SŁÓWKO ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj Słówko")
     
@@ -1067,7 +1136,7 @@ elif choice == "➕ Dodaj":
                     else:
                         st.error("Wpisz najpierw polskie słowo!")
         ai_add_ui()
-# --- 14. SŁOWNIK ---
+# --- 16. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
     
@@ -1134,7 +1203,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko usunięte! 🗑️")
                 st.rerun()
 
-# --- 15. STATYSTYKI ---
+# --- 17. STATYSTYKI ---
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -1278,7 +1347,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
         st.info("Brak rozwiązanych testów.")
-# --- 16. KONTO ---
+# --- 18. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     
@@ -1419,7 +1488,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 17. ADMIN PRO (Wersja z Centrowaniem i Przywróconymi Detalami) ---
+# --- 19. ADMIN PRO (Wersja z Centrowaniem i Przywróconymi Detalami) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
