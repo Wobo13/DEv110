@@ -151,43 +151,32 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA (Finalna Wersja Skompresowana) ---
-# Nick i Passa w jednej linii (HTML float)
+# --- 6. SIDEBAR I NAWIGACJA (Wersja Ultra-Clean) ---
+# Nick i Passa
 st.sidebar.markdown(f"## 👤 {u.capitalize()} <span style='float:right; font-size:0.7em; padding-top:10px;'>🔥 **{st.session_state.user_data.get('streak', 0)}d**</span>", unsafe_allow_html=True)
 
-# --- KOMPAKTOWE WIDGETY MOTYWACYJNE ---
+# --- WIDGETY MOTYWACYJNE ---
 user_settings = st.session_state.user_data.get("settings", {})
 
 if st.session_state.flashcards:
     today = date.today()
     total_cards = len(st.session_state.flashcards)
-    
-    # Obliczanie Opanowania Wiedzy (słówka silne: powtórka za > 6 dni)
-    strong_cards = len([
-        c for c in st.session_state.flashcards 
-        if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6
-    ])
+    strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
     mastery_perc = int((strong_cards / total_cards) * 100) if total_cards > 0 else 0
     
-    # Obliczanie Realizacji Celu Dziennego (minuty)
     daily_goal = user_settings.get("daily_goal", 20)
     total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
     progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
 
-    # Statystyki tekstowe (Nagłówki)
-    col_stat1, col_stat2 = st.sidebar.columns(2)
-    col_stat1.caption(f"🧠 Wiedza: {mastery_perc}%")
-    col_stat2.caption(f"🎯 Cel: {int(total_mins_today)}/{daily_goal}m")
-    
-    # Pasek 1: Wiedza
-    st.sidebar.write(f"<div style='margin-bottom: -15px; font-size: 0.8em;'>🧠</div>", unsafe_allow_html=True)
+    # Wskaźnik 1: Wiedza (Ikona + Tekst)
+    st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🧠 Wiedza: <b>{mastery_perc}%</b></div>", unsafe_allow_html=True)
     st.sidebar.progress(mastery_perc / 100)
     
-    # Pasek 2: Cel dzienny
-    st.sidebar.write(f"<div style='margin-bottom: -15px; font-size: 0.8em;'>🎯</div>", unsafe_allow_html=True)
+    # Wskaźnik 2: Cel (Ikona + Tekst)
+    st.sidebar.markdown(f"<div style='margin-bottom: -15px; font-size: 0.85em;'>🎯 Cel: <b>{int(total_mins_today)}/{daily_goal}m</b></div>", unsafe_allow_html=True)
     st.sidebar.progress(progress_goal)
 
-# --- DYSKRETNA PORADA (Dopasowana pod paski) ---
+# --- DYSKRETNA PORADA ---
 tips = [
     "Ucz się rano – mózg lepiej przyswaja słówka.",
     "Metoda 15 min dziennie jest najlepsza.",
@@ -208,17 +197,13 @@ menu = [
 if u == ADMIN_USER:
     menu.append("👑 Admin")
 
-# Zabezpieczenie inicjalizacji
 if "l_c" not in st.session_state:
     st.session_state.l_c = "Inne"
 
-# 1. POBRANIE WYBORU (Kluczowe dla zmiennej 'choice')
 choice = st.sidebar.radio("Menu", menu, label_visibility="collapsed")
 
-# 2. Zapis aktywności
 update_activity(st.session_state.l_c)
 
-# 3. Logika czyszczenia sesji przy zmianie modułu
 if st.session_state.l_c != choice:
     for k in ["cur_list", "n_idx", "f_idx", "f_flipped", "test_q", "test_idx", "test_score", "q_c", "q_s"]:
         if k in st.session_state: 
@@ -228,7 +213,7 @@ if st.session_state.l_c != choice:
     st.session_state.n_m = "ask"
     st.session_state.u_a = ""
 
-# --- STOPKA SIDEBARA ---
+# --- STOPKA ---
 st.sidebar.divider()
 
 if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
