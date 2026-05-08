@@ -658,14 +658,13 @@ elif choice == "🎴 Fiszki":
         # Uruchomienie interfejsu
         flashcards_ui()
 
-# --- 11. TESTY (Wersja ULTRA FAST z st.fragment) ---
+# --- 11. TESTY (V295 - Pełne podsumowanie odpowiedzi) ---
 elif choice == "📝 Testy":
     st.header("📝 Test")
     
     if len(st.session_state.flashcards) < 5:
         st.warning("Dodaj min. 5 słówek, aby wygenerować test.")
     else:
-        # Etap 1: Konfiguracja testu (poza fragmentem, aby przycisk "Generuj" działał globalnie)
         if "test_q" not in st.session_state:
             n_q = st.slider("Liczba pytań", 5, 20, 5)
             if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
@@ -682,7 +681,6 @@ elif choice == "📝 Testy":
                         st.error(f"Błąd AI: {e}. Spróbuj ponownie.")
         
         else:
-            # Etap 2: Silnik testu jako FRAGMENT
             @st.fragment
             def test_engine():
                 qs = st.session_state.test_q
@@ -690,8 +688,6 @@ elif choice == "📝 Testy":
                 
                 if t_idx < len(qs):
                     q = qs[t_idx]
-                    
-                    # Pasek postępu testu
                     st.progress(t_idx / len(qs))
                     st.caption(f"Pytanie {t_idx + 1} z {len(qs)}")
                     
@@ -703,7 +699,6 @@ elif choice == "📝 Testy":
                     if q.get('type') == "QUIZ":
                         opts = list(set(q.get('distractors', []) + [correct]))
                         random.shuffle(opts)
-                        
                         cols = st.columns(2)
                         for i, o in enumerate(opts):
                             if cols[i%2].button(o, key=f"t_btn_{t_idx}_{o}", use_container_width=True):
@@ -716,7 +711,6 @@ elif choice == "📝 Testy":
                                 st.session_state.test_idx += 1
                                 st.rerun(scope="fragment")
                     else:
-                        # Obsługa pytań otwartych wewnątrz fragmentu
                         with st.form(key=f"test_form_{t_idx}", clear_on_submit=True):
                             ans = st.text_input("Twoja odpowiedź:")
                             if st.form_submit_button("Zatwierdź"):
@@ -730,27 +724,36 @@ elif choice == "📝 Testy":
                                 st.rerun(scope="fragment")
                 
                 else:
-                    # Podsumowanie wyników (koniec fragmentu)
+                    # --- PANEL PODSUMOWANIA ---
                     score, total = st.session_state.test_score, len(qs)
                     perc = round((score/total)*100) if total > 0 else 0
                     
                     st.markdown(f'''
                         <div style="text-align:center; padding:30px; border-radius:20px; 
                         background:#111; border:3px solid #1E88E5; margin-bottom:20px;">
-                            <h1 style="margin:0;">Wynik: {score}/{total}</h1>
+                            <h1 style="margin:0; color:white;">Wynik: {score}/{total}</h1>
                             <h2 style="color:#1E88E5; margin:0;">{perc}%</h2>
                         </div>
                     ''', unsafe_allow_html=True)
                     
-                    # Tabela z odpowiedziami (podgląd błędów)
-                    with st.expander("📝 Zobacz szczegóły odpowiedzi"):
+                    # --- KLUCZOWA ZMIANA: Zawsze pokazuj odpowiedzi ---
+                    with st.expander("📝 Zobacz szczegóły odpowiedzi", expanded=True):
                         for i, q_res in enumerate(qs):
                             u_a = q_res.get('user_ans', 'Brak')
                             c_a = q_res.get('correct', '')
                             is_ok = normalize_text(u_a) == normalize_text(c_a)
-                            st.write(f"**{i+1}.** {q_res.get('sentence')} -> {'✅' if is_ok else '❌'}")
-                            if not is_ok:
-                                st.caption(f"Twoja: {u_a} | Poprawna: {c_a}")
+                            
+                            icon = "✅" if is_ok else "❌"
+                            color = "#4CAF50" if is_ok else "#FF5252"
+                            
+                            st.markdown(f"**{i+1}.** {q_res.get('sentence')}")
+                            # Wyświetlanie obu odpowiedzi w jednej linii z kolorowaniem
+                            st.markdown(f"""
+                                <div style="margin-left: 25px; margin-bottom: 15px; font-size: 0.9em;">
+                                    {icon} Twoja: <span style="color:{color}; font-weight:bold;">{u_a}</span><br>
+                                    🎯 Poprawna: <span style="color:#1E88E5; font-weight:bold;">{c_a}</span>
+                                </div>
+                            """, unsafe_allow_html=True)
 
                     if st.button("Zakończ i zapisz do statystyk", use_container_width=True, type="primary"):
                         st.session_state.user_data["test_history"].append({
@@ -758,10 +761,9 @@ elif choice == "📝 Testy":
                             "score": score, "total": total, "perc": perc
                         })
                         save_user_data(u, st.session_state.user_data)
-                        del st.session_state.test_q # Resetuje test i wychodzi z fragmentu
+                        del st.session_state.test_q 
                         st.rerun()
 
-            # Uruchomienie silnika testu
             test_engine()
 
 # --- 12. MEMORY GAME (V228 - Zabezpieczony zapis wyników) ---
