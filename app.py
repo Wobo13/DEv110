@@ -1091,77 +1091,98 @@ elif choice == "🏗️ Konstruktor":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V1.0 - Łańcuch Słów) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
     st.header("🐍 Lingwistyczny Wąż")
-    st.write("Buduj łańcuch słów! Każde kolejne musi zaczynać się na ostatnią literę poprzedniego.")
+    st.write("Rywalizuj z systemem! Wygrywa ten, kto doda ostatnie możliwe słowo z Twojej bazy.")
 
-    # 1. INICJALIZACJA STANU GRY
+    # 1. INICJALIZACJA GRY
     if "snake_chain" not in st.session_state:
         if len(st.session_state.flashcards) < 5:
-            st.warning("Dodaj min. 5 słówek, aby móc zagrać w Węża.")
+            st.warning("Dodaj min. 5 słówek, aby móc zagrać.")
             st.stop()
         
-        # Start gry: System losuje pierwsze słowo z bazy
+        # Pierwsze słowo losuje system
         first_word = random.choice(st.session_state.flashcards)
         st.session_state.snake_chain = [first_word]
         st.session_state.snake_used_ids = {first_word['id']}
-        st.session_state.snake_msg = "Zaczynamy! Twoja kolej."
         st.session_state.snake_status = "player" # player / system / end
+        st.session_state.snake_winner = None
 
     # 2. SILNIK GRY (FRAGMENT)
     @st.fragment
     def snake_engine():
         chain = st.session_state.snake_chain
         last_word_obj = chain[-1]
-        last_word_de = last_word_obj['de'].strip().lower()
         
-        # Oczyszczanie ostatniej litery (ignorujemy znaki specjalne na końcu jeśli są)
-        last_letter = re.sub(r'[^a-zäöüß]', '', last_word_de)[-1]
-        
+        # Pobieranie ostatniej litery (obsługa znaków specjalnych)
+        def get_last_char(text):
+            clean = re.sub(r'[^a-zäöüß]', '', text.lower().strip())
+            return clean[-1] if clean else ""
+
+        last_letter = get_last_char(last_word_obj['de'])
+
         # --- UI: Wyświetlanie łańcucha ---
-        st.markdown("### Aktualny łańcuch:")
-        cols = st.columns(len(chain[-5:])) # Pokazujemy ostatnie 5 ogniw dla czytelności
-        for i, word in enumerate(chain[-5:]):
+        st.markdown("### Łańcuch:")
+        # Wyświetlamy max 6 ostatnich słów w rzędzie
+        display_chain = chain[-6:]
+        cols = st.columns(len(display_chain))
+        for i, word in enumerate(display_chain):
             with cols[i]:
-                color = "#4CAF50" if i % 2 == 0 else "#1E88E5"
+                # Kolor: Gracz (zielony), System (niebieski)
+                # Sprawdzamy parzystość od końca łańcucha
+                is_system_word = (len(chain) - len(display_chain) + i) % 2 == 0
+                color = "#1E88E5" if is_system_word else "#4CAF50"
                 st.markdown(f"""
-                    <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; color:white; font-weight:bold;">
-                        {word['de']}<br><span style="font-size:0.7em; font-weight:normal;">{word['pl']}</span>
+                    <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; color:white; font-size:0.9em; min-height:80px; display:flex; flex-direction:column; justify-content:center;">
+                        <div style="font-weight:bold;">{word['de']}</div>
+                        <div style="font-size:0.7em; opacity:0.9;">{word['pl']}</div>
                     </div>
                 """, unsafe_allow_html=True)
         
         st.divider()
-        st.info(f"Ostatnie słowo kończy się na: **{last_letter.upper()}**")
+
+        if st.session_state.snake_status != "end":
+            st.info(f"Ostatnie słowo: **{last_word_obj['de']}**. Czekamy na słowo na literę: **{last_letter.upper()}**")
 
         # --- TRYB GRACZA ---
         if st.session_state.snake_status == "player":
-            with st.form("snake_input", clear_on_submit=True):
-                u_input = st.text_input("Wpisz niemieckie słowo ze swojej bazy zaczynające się na tę literę:").strip().lower()
-                if st.form_submit_button("Dodaj ogniwo 🔗", use_container_width=True):
-                    # Szukamy słowa w bazie użytkownika
+            with st.form("snake_form", clear_on_submit=True):
+                u_input = st.text_input("Twoja kolej (DE):").strip().lower()
+                col_f1, col_f2 = st.columns([3, 1])
+                submit = col_f1.form_submit_button("Dodaj ogniwo 🔗", use_container_width=True)
+                give_up = col_f2.form_submit_button("🏳️ Poddaję się")
+
+                if submit:
+                    # Szukamy słowa w bazie (z uwzględnieniem rodzajników i normalizacji)
                     found = [c for c in st.session_state.flashcards 
-                             if normalize_text(c['de']).startswith(normalize_text(u_input)) 
-                             and normalize_text(c['de']) == normalize_text(u_input)
+                             if (normalize_text(c['de']) == normalize_text(u_input) or 
+                                 normalize_text(re.sub(r'^(der|die|das)\s+', '', c['de'].lower())) == normalize_text(u_input))
                              and c['id'] not in st.session_state.snake_used_ids]
                     
                     if not found:
-                        st.error("Nie znaleziono takiego słowa w Twojej bazie (lub zostało już użyte)!")
-                    elif not u_input.startswith(last_letter):
+                        st.error("Nie masz tego słowa w bazie lub już zostało użyte!")
+                    elif normalize_text(u_input)[0] != last_letter:
                         st.error(f"Słowo musi zaczynać się na literę '{last_letter.upper()}'!")
                     else:
-                        # Gracz dodał poprawne słowo
                         st.session_state.snake_chain.append(found[0])
                         st.session_state.snake_used_ids.add(found[0]['id'])
                         st.session_state.snake_status = "system"
                         st.rerun(scope="fragment")
+                
+                if give_up:
+                    st.session_state.snake_status = "end"
+                    st.session_state.snake_winner = "System 🤖"
+                    st.rerun(scope="fragment")
 
         # --- TRYB SYSTEMU ---
         elif st.session_state.snake_status == "system":
-            with st.spinner("System szuka słowa w Twojej bazie..."):
-                time.sleep(1) # Efekt myślenia
+            with st.spinner("System myśli..."):
+                time.sleep(1)
+                # System szuka w Twojej bazie
                 possible = [c for c in st.session_state.flashcards 
-                            if normalize_text(c['de']).startswith(last_letter)
+                            if get_last_char(c['de']).startswith(last_letter) # błąd logiczny w starym kodzie (startswith na literze) - poprawione:
+                            and normalize_text(re.sub(r'^(der|die|das)\s+', '', c['de'].lower())).startswith(last_letter)
                             and c['id'] not in st.session_state.snake_used_ids]
                 
                 if possible:
@@ -1172,23 +1193,19 @@ elif choice == "🐍 Lingwistyczny Wąż":
                     st.rerun(scope="fragment")
                 else:
                     st.session_state.snake_status = "end"
+                    st.session_state.snake_winner = f"{u.capitalize()} 🏆"
                     st.balloons()
-                    st.success("Wygrałeś! System nie znalazł już żadnego słowa w Twojej bazie na tę literę. 🏆")
                     st.rerun(scope="fragment")
 
         # --- KONIEC GRY ---
         if st.session_state.snake_status == "end":
+            st.success(f"### Koniec gry! Zwycięzca: {st.session_state.snake_winner}")
             if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
-                for k in ["snake_chain", "snake_used_ids", "snake_status"]:
+                for k in ["snake_chain", "snake_used_ids", "snake_status", "snake_winner"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
     snake_engine()
-
-    if st.button("Resetuj grę / Zmień słowo startowe", type="secondary", use_container_width=True):
-        for k in ["snake_chain", "snake_used_ids", "snake_status"]:
-            if k in st.session_state: del st.session_state[k]
-        st.rerun()
 
 # --- 20. ARENA WYZWAŃ (V227 - Pełny Ranking z Fixem) ---
 elif choice == "🏆 Arena Wyzwań":
