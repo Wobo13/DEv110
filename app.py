@@ -1575,122 +1575,29 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN PRO (Wersja z Centrowaniem i Przywróconymi Detalami) ---
-elif choice == "👑 Admin" and u == ADMIN_USER:
-    st.header("👑 Panel Administratora")
-    
-    if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
-        st.cache_data.clear()
-        st.rerun()
+# --- 1. KONFIGURACJA (V219 - Poprawione Mapowanie Czasu) ---
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
-    
-    db = get_db()
-    ud_data = db.table("user_data").select("*").execute().data
-    all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
-    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
-    
-    adm_list = []
-    global_time = {}
-    tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Inn"]
-    display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Inn": "Inne"}
-    
-    today = date.today()
+APP_VERSION = "V219 (Time Stats Fix)"
+ADMIN_USER = "wobo"
 
-    for user in ud_data:
-        username = user["username"]
-        user_cards = df_cards_all[df_cards_all["username"] == username]
-        oc = user_cards["origin"].value_counts()
-        
-        # Wiedza
-        strong_cards = 0
-        if not user_cards.empty:
-            strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
-            wiedza_val = int((strong_cards / len(user_cards)) * 100)
-        else:
-            wiedza_val = 0
-
-        # Czas użytkownika
-        user_stats = user.get("time_stats", {})
-        current_user_merged = {code: 0 for code in tracked_codes}
-        total_sec = 0
-        
-        for raw_key, seconds in user_stats.items():
-            k_low = str(raw_key).lower()
-            f_code = "Inn"
-            if "pow" in k_low: f_code = "Pow"
-            elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
-            elif "qiz" in k_low or "qui" in k_low: f_code = "Qiz"
-            elif "fis" in k_low: f_code = "Fis"
-            elif "tst" in k_low or "tes" in k_low: f_code = "Tst"
-            
-            current_user_merged[f_code] += seconds
-            total_sec += seconds
-            global_time[f_code] = global_time.get(f_code, 0) + seconds
-
-        # Formatowanie danych
-        raw_seen = user.get("last_seen", "Brak")
-        formatted_seen = raw_seen.replace(" ", "  |  ") if " " in raw_seen else raw_seen
-        r, g, s = int(oc.get("Dodaj", 0)), int(oc.get("Generator", 0)), int(oc.get("Skaner", 0))
-            
-        adm_list.append({
-            "Użytkownik": username,
-            "Aktywność (Data | Czas)": formatted_seen,
-            "🔥": user.get("streak", 0),
-            "🧠 %": wiedza_val, # Zmienione na liczbę, by łatwiej wyśrodkować
-            "Słówka (R|G|S)": f"{len(user_cards)} ({r}|{g}|{s})", 
-            "Tst": len(user.get("test_history", [])),
-            "Min": int(total_sec // 60),
-            "PLN": round(user.get("historical_cost", 0.0), 2),
-            "__raw_stats": current_user_merged
-        })
-    
-    if not adm_list:
-        st.warning("Brak danych.")
-    else:
-        df_admin = pd.DataFrame(adm_list)
-        st.subheader("📋 Podsumowanie")
-        
-        # TABELA 1: GŁÓWNA (Z centrowaniem przez typ danych i szerokość)
-        st.dataframe(
-            df_admin.drop(columns=["__raw_stats"]), 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Użytkownik": st.column_config.TextColumn("Użytkownik", width=100),
-                "Aktywność (Data | Czas)": st.column_config.TextColumn("Aktywność (Data | Czas)", width=170),
-                "🔥": st.column_config.NumberColumn("🔥", width=45, format="%d"),
-                "🧠 %": st.column_config.NumberColumn("🧠 %", width=55, format="%d%%"),
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width=130),
-                "Tst": st.column_config.NumberColumn("Tst", width=45),
-                "Min": st.column_config.NumberColumn("Min", width=55),
-                "PLN": st.column_config.NumberColumn("PLN", width=80, format="%.2f zł"),
-            }
-        )
-        
-        # TABELA 2: SZCZEGÓŁOWA (PRZYWRÓCONA)
-        with st.expander("🔍 Szczegółowy podział czasu (minuty)"):
-            detail_rows = []
-            for _, row in df_admin.iterrows():
-                d_row = {"Użytkownik": row["Użytkownik"]}
-                for code in tracked_codes:
-                    d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
-                detail_rows.append(d_row)
-            
-            st.dataframe(
-                pd.DataFrame(detail_rows), 
-                use_container_width=True, 
-                hide_index=True
-            )
-
-        # WYKRES
-        if global_time:
-            st.write("---")
-            chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
-            if chart_data:
-                fig = go.Figure(data=[go.Bar(
-                    x=list(chart_data.keys()), y=list(chart_data.values()), 
-                    marker_color='#FF5252', text=list(chart_data.values()), textposition='auto'
-                )])
-                fig.update_layout(template="plotly_dark", height=280, margin=dict(l=10, r=10, t=30, b=10), title="Globalne minuty")
-                st.plotly_chart(fig, use_container_width=True)
+# Słownik mapujący nazwy z menu (choice) na krótkie kody w bazie danych
+CLEAN_TIME_LABELS = {
+    "powtorki": "Pow", 
+    "trening": "Trn", 
+    "quiz": "Qiz", 
+    "fiszki": "Fis",
+    "testy": "Tst", 
+    "memory": "Mem",          # <--- DODANO
+    "warsztat": "War",        # <--- DODANO
+    "arena wyzwan": "Arn",    # <--- DODANO
+    "skaner": "Skn", 
+    "generator": "Gen", 
+    "dodaj": "Dod",
+    "slownik": "Słn", 
+    "statystyki": "Sta", 
+    "konto": "Kon", 
+    "admin": "Adm"
+}
