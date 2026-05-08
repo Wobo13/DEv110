@@ -194,7 +194,7 @@ if st.session_state.l_c != choice:
     st.session_state.u_a = ""
 
 # --- 7. POWTÓRKI & TRENING (Wersja z obsługą Auto-Audio) ---
-elif choice in ["📅 Powtórki", "🚀 Trening"]:
+if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
     
