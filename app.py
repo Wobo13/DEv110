@@ -248,74 +248,104 @@ with st.sidebar:
 
 # --- KONIEC SEKCJI 6 (Wszystkie bloki 'with' zamknięte) ---
 
-# --- 7. START (V1.1 - Poprawiona składnia) ---
-elif choice == "🏠 Start":
+# --- 7. START (V1.2 - Centrum Dowodzenia) ---
+update_activity(choice)
+
+if choice == "🏠 Start":
     st.header(f"Guten Morgen, {str(u).capitalize()}! ☀️")
     
-    # 1. ANALIZA DANYCH
+    # 1. ANALIZA DANYCH BIEŻĄCYCH
     all_c = st.session_state.flashcards
     today_str = str(date.today())
     
-    col1, col2 = st.columns(2)
+    # Statystyki do podsumowania
+    total_words = len(all_c)
+    to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
+    
+    # 2. UKŁAD KAFELKÓW (WIZUALNE PODSUMOWANIE)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("### 📊 Twoje Postępy")
-        total_words = len(all_c)
-        # Liczymy powtórki na dziś
-        to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
-        
-        st.write(f"📚 Masz już **{total_words}** słówek w bazie.")
-        if to_review > 0:
-            st.warning(f"🔔 Na dziś zaplanowano **{to_review}** powtórek.")
-        else:
-            st.success("✅ Wszystkie powtórki na dziś zrobione!")
-
+        st.metric("Słówek w bazie", total_words)
     with col2:
-        st.markdown("### 🏆 Dzisiejsze Cele")
+        st.metric("Powtórki na dziś", to_review, delta=-to_review if to_review > 0 else None, delta_color="inverse")
+    with col3:
         goal_min = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
-        st.write(f"1. Spędź min. **{goal_min} minut** na nauce.")
-        st.write(f"2. Przesuń min. **10 słówek** do sekcji 'Wiedza'.")
-        st.write(f"3. Rozwiąż chociaż jeden **Test**.")
+        st.metric("Twój cel", f"{goal_min} min")
+
+    st.write("---")
+
+    # 3. BRIEFING PORANNY
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("### 📊 Twój status")
+        if to_review > 0:
+            st.warning(f"Masz **{to_review}** słówek do powtórzenia. System SRS czeka!")
+        else:
+            st.success("Wszystkie powtórki na dziś wykonane. Możesz dodać nowe słówka!")
+        
+        # Prosta motywacja oparta na wielkości bazy
+        if total_words < 50:
+            st.info("🌱 Twoja baza rośnie! Dodaj jeszcze kilka słówek, aby odblokować pełny potencjał Quizów.")
+        elif total_words > 200:
+            st.info("🌳 Imponująca kolekcja! Pamiętaj o regularnych powtórkach, by nie zapomnieć starszych słów.")
+
+    with c2:
+        st.markdown("### 🏆 Zadania na dziś")
+        st.write(f"✅ Osiągnij cel czasowy (**{goal_min} min**)")
+        st.write("✅ Przejrzyj sekcję **Warsztat**")
+        st.write("✅ Wykonaj min. jeden **Quiz** lub **Test**")
 
     st.divider()
 
-    # 2. MOTYWACJA
+    # 4. MOTYWACJA I OSTATNIE SŁÓWKA
     quotes = [
         "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
         "„Każdy nowy język jest jak otwarte okno, które ukazuje nowy widok na świat.”",
-        "„Nauka języka to posiadanie drugiego duszy.” – Karol Wielki"
+        "„Wer fremde Sprachen nie kennt, weiß nichts von seiner eigenen.” – J.W. Goethe"
     ]
-    st.info(random.choice(quotes))
+    
+    col_q, col_w = st.columns([2, 1])
+    
+    with col_q:
+        st.info(random.choice(quotes))
+        st.caption("💡 Porada: Najlepiej uczyć się rano, gdy mózg jest najbardziej chłonny.")
 
-    # 3. OSTATNIO DODANE
-    with st.expander("🆕 Ostatnio dodane słówka", expanded=True):
-        if all_c:
-            # Sortujemy po ID lub dacie dodania (jeśli masz)
-            recent = all_c[-5:] # Bierze 5 ostatnich z listy
-            for r in reversed(recent):
-                st.write(f"**{r['de']}** – {r['pl']}")
-        else:
-            st.write("Baza jest jeszcze pusta. Dodaj pierwsze słówka!")
+    with col_w:
+        with st.expander("🆕 Ostatnio dodane", expanded=True):
+            if all_c:
+                # Pokazujemy 3 ostatnio dodane słówka
+                recent = all_c[-3:]
+                for r in reversed(recent):
+                    st.write(f"**{r['de']}**")
+            else:
+                st.write("Brak słówek.")
 
 # --- KONIEC SEKCJI 7 ---
 
-# --- 8. POWTÓRKI & TRENING (V255 - Losowy kierunek tłumaczenia) ---
-if choice in ["📅 Powtórki", "🚀 Trening"]:
+# --- 8. POWTÓRKI & TRENING (V256 - Losowy kierunek & Sprytne rodzajniki) ---
+elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
     
+    # 1. POBIERANIE USTAWIEŃ
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
+    # Przygotowanie tagów do filtra
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
+    sel_tag = st.selectbox("Zakres nauki:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
 
+    # 2. INICJALIZACJA PULI SŁÓWEK (Tylko przy zmianie filtra lub wejściu)
     if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
+        
         if is_r:
+            # Dla powtórek filtrujemy po dacie SRS
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
         
@@ -323,26 +353,27 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
         st.session_state.cur_list = pool
         st.session_state.n_idx = 0
         st.session_state.last_tag = sel_tag
-        st.session_state.n_m = "ask"
+        st.session_state.n_m = "ask" # Tryb: ask (pytanie) lub res (wynik)
 
     cards = st.session_state.cur_list
     
     if not cards:
-        st.success("Brak słówek w tej sekcji! ✨")
+        st.success("Brak słówek w tej sekcji! Wszystko opanowane. ✨")
     elif st.session_state.n_idx >= len(cards):
         st.balloons()
-        st.success("Sesja zakończona! 🏆")
+        st.success("Sesja zakończona! Dobra robota. 🏆")
         if st.button("Zacznij od nowa"):
             for k in ["cur_list", "n_idx", "n_m", "u_a", "q_dir"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
+        # --- SILNIK POWTÓREK (FRAGMENT) ---
         @st.fragment
         def flashcard_engine():
             idx = st.session_state.n_idx
             c = cards[idx]
             
-            # --- LOSOWANIE KIERUNKU (tylko raz dla danego słówka) ---
+            # Losowanie kierunku (tylko raz na dane słówko)
             if "q_dir" not in st.session_state:
                 # 0: DE -> PL, 1: PL -> DE
                 st.session_state.q_dir = random.choice([0, 1])
@@ -350,37 +381,43 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            # Wyświetlamy słowo w zależności od wylosowanego kierunku
-            display_word = c["de"] if st.session_state.q_dir == 0 else c["pl"]
-            target_lang = "Polski" if st.session_state.q_dir == 0 else "Niemiecki"
-            correct_val = c["pl"] if st.session_state.q_dir == 0 else c["de"]
+            # Kierunek pytania
+            is_target_de = (st.session_state.q_dir == 1)
+            display_word = c["de"] if not is_target_de else c["pl"]
+            target_lang = "Polski" if not is_target_de else "Niemiecki"
+            correct_val = c["pl"] if not is_target_de else c["de"]
 
+            # Graficzna karta pytania
             st.markdown(f'''
-                <div style="font-size:2.8em; text-align:center; padding:40px; 
+                <div style="font-size:2.6em; text-align:center; padding:40px; 
                 background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
-                border-radius:20px; margin-bottom:10px; color: white;">
-                    <div style="font-size:0.3em; color:gray; margin-bottom:-10px;">Tłumaczysz na {target_lang}</div>
+                border-radius:20px; margin-bottom:10px; color: white; line-height: 1.2;">
+                    <div style="font-size:0.35em; color:gray; margin-bottom:5px; text-transform: uppercase; letter-spacing: 2px;">
+                        Tłumaczysz na: {target_lang}
+                    </div>
                     {display_word}
                 </div>
             ''', unsafe_allow_html=True)
 
+            # --- TRYB: PYTANIE ---
             if st.session_state.n_m == "ask":
                 with st.form(key=f"f_{idx}", clear_on_submit=True):
-                    u_in = st.text_input(f"Twoja odpowiedź ({target_lang}):")
-                    if st.form_submit_button("Sprawdź", use_container_width=True):
+                    u_in = st.text_input(f"Wpisz odpowiedź ({target_lang}):", key=f"in_{idx}")
+                    if st.form_submit_button("Sprawdź", use_container_width=True, type="primary"):
                         st.session_state.u_a = u_in
                         st.session_state.n_m = "res"
                         st.rerun(scope="fragment")
+            
+            # --- TRYB: WYNIK ---
             else:
-                # Logika czyszczenia (rodzajniki ignorujemy tylko przy wpisywaniu po NIEMIECKU)
+                # Logika porównywania (ignoruje rodzajniki przy odpowiedziach niemieckich)
                 def clean_for_compare(text, is_german):
                     t = normalize_text(text)
                     if is_german:
+                        # Usuwamy rodzajniki der/die/das na początku stringa
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
 
-                # Sprawdzamy czy teraz docelowym językiem był niemiecki
-                is_target_de = (st.session_state.q_dir == 1)
                 user_ans = clean_for_compare(st.session_state.u_a, is_target_de)
                 actual_correct = clean_for_compare(correct_val, is_target_de)
                 
@@ -391,7 +428,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                 else:
                     st.error(f"❌ Poprawnie: {correct_val}")
                 
-                # Audio i przykłady
+                # Audio i Przykłady (Audio zawsze z niemieckiego słowa w bazie)
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
@@ -407,8 +444,9 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
 
                 st.divider()
 
+                # Obsługa ocen SRS (tylko w trybie Powtórki)
                 if is_r:
-                    st.write("Oceń trudność:")
+                    st.write("Oceń trudność (wybór planuje datę kolejnej powtórki):")
                     col1, col2, col3 = st.columns(3)
                     d = None
                     if col1.button("🔴 Trudne"): d = 1
