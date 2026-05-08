@@ -151,48 +151,31 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR I NAWIGACJA ---
-st.sidebar.title(f"👤 {u.capitalize()}")
+# --- 6. SIDEBAR I NAWIGACJA (Wersja Skompresowana) ---
+c_top1, c_top2 = st.sidebar.columns([2, 1])
+c_top1.title(f"👤 {u.capitalize()}")
+c_top2.write(f"🔥 **{st.session_state.user_data.get('streak', 0)}d**")
 
-# --- WIDGETY MOTYWACYJNE ---
+# --- KOMPAKTOWE WIDGETY ---
 user_settings = st.session_state.user_data.get("settings", {})
 
-# A. Lejek Pamięci (Pasek opanowania bazy)
 if st.session_state.flashcards:
-    total_cards = len(st.session_state.flashcards)
     today = date.today()
-    # Liczymy słówka "Silne" (następna powtórka za ponad 6 dni)
+    total_cards = len(st.session_state.flashcards)
     strong_cards = len([c for c in st.session_state.flashcards if (datetime.strptime(str(c.get('next_review', today)), "%Y-%m-%d").date() - today).days > 6])
     mastery_perc = int((strong_cards / total_cards) * 100)
     
-    st.sidebar.write(f"🧠 **Opanowanie bazy: {mastery_perc}%**")
+    daily_goal = user_settings.get("daily_goal", 20)
+    total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
+    progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
+
+    # Dwie kolumny dla statystyk, żeby nie "ciągnęły" sidebaru w dół
+    col_stat1, col_stat2 = st.sidebar.columns(2)
+    col_stat1.caption(f"🧠 Baza: {mastery_perc}%")
+    col_stat2.caption(f"🎯 Cel: {int(progress_goal*100)}%")
+    
+    # Jeden wspólny, cienki pasek postępu (Mastery)
     st.sidebar.progress(mastery_perc / 100)
-    st.sidebar.caption(f"{strong_cards} z {total_cards} słówek jest w silnej pamięci")
-
-# B. Cel Dzienny
-# Zakładamy, że sprawdzamy dzisiejszą aktywność w time_stats (sekundy na minuty)
-daily_goal = user_settings.get("daily_goal", 20)
-# Pobieramy czas z dzisiaj (uproszczone: suma minut z tabeli czasu jako przybliżenie aktywności)
-total_mins_today = sum(v for k, v in st.session_state.user_data.get("time_stats", {}).items()) // 60
-# Uwaga: dla pełnej precyzji celu "powtórek" musielibyśmy liczyć kliknięcia, 
-# ale czas nauki jest lepszym wskaźnikiem zaangażowania.
-progress_goal = min(1.0, total_mins_today / daily_goal) if daily_goal > 0 else 0.0
-
-if progress_goal >= 1.0:
-    st.sidebar.success(f"🏆 Cel osiągnięty! ({int(total_mins_today)} min)")
-else:
-    st.sidebar.write(f"🎯 Cel: {int(total_mins_today)} / {daily_goal} min")
-    st.sidebar.progress(progress_goal)
-
-# C. Inteligentna Porada
-tips = [
-    "Ucz się rano – mózg lepiej przyswaja nowe słówka po wypoczynku.",
-    "Metoda 15 minut dziennie jest lepsza niż 3 godziny raz w tygodniu.",
-    "Czytaj na głos – angażujesz wtedy pamięć słuchową i mięśniową.",
-    "Twórz w głowie śmieszne skojarzenia (mnemotechniki) dla trudnych słów.",
-    "Powtarzaj słówka tuż przed snem – mózg utrwali je podczas regeneracji."
-]
-st.sidebar.info(f"💡 **Porada:** {random.choice(tips)}")
 
 st.sidebar.divider()
 
@@ -205,7 +188,7 @@ menu = [
 if u == ADMIN_USER: menu.append("👑 Admin")
 
 if "l_c" not in st.session_state: st.session_state.l_c = "Inne"
-choice = st.sidebar.radio("Nawigacja", menu)
+choice = st.sidebar.radio("Menu", menu, label_visibility="collapsed")
 
 update_activity(st.session_state.l_c)
 
@@ -216,130 +199,25 @@ if st.session_state.l_c != choice:
     st.session_state.n_m = "ask"
     st.session_state.u_a = ""
 
-# --- STOPKA SIDEBARA ---
+# --- DÓŁ SIDEBARA ---
 st.sidebar.divider()
-st.sidebar.info(f"🔥 Passa: **{st.session_state.user_data.get('streak', 0)} dni**")
 
-if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
+# Porada jako mały tekst na dole
+tips = [
+    "Ucz się rano – mózg lepiej przyswaja słówka.",
+    "Metoda 15 min dziennie jest najlepsza.",
+    "Czytaj na głos – angażujesz słuch.",
+    "Twórz śmieszne skojarzenia.",
+    "Powtarzaj słówka tuż przed snem."
+]
+st.sidebar.caption(f"💡 {random.choice(tips)}")
+
+if st.sidebar.button("🚪 Wyloguj", use_container_width=True):
     st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 
-st.sidebar.caption(f"🛡️ System: {APP_VERSION}")
-# --- 7. POWTÓRKI & TRENING (Wersja z obsługą Auto-Audio) ---
-if choice in ["📅 Powtórki", "🚀 Trening"]:
-    is_r = (choice == "📅 Powtórki")
-    st.header(choice)
-    
-    # 0. Pobieranie ustawień z bazy
-    user_settings = st.session_state.user_data.get("settings", {})
-    auto_audio = user_settings.get("auto_audio", True)
-    
-    # 1. Filtrowanie tagów (poza fragmentem, bo rzadko zmieniane)
-    all_tags = set()
-    for c in st.session_state.flashcards:
-        all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
-    
-    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
-
-    # 2. Inicjalizacja listy (poza fragmentem)
-    if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
-        pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
-        if is_r:
-            pool = [c for c in pool if str(c.get("next_review", date.today())) <= str(date.today())]
-        random.shuffle(pool)
-        st.session_state.cur_list = pool
-        st.session_state.n_idx = 0
-        st.session_state.last_tag = sel_tag
-        st.session_state.n_m = "ask"
-
-    cards = st.session_state.cur_list
-    
-    if not cards:
-        st.success("Pusto! 🎉")
-    elif st.session_state.n_idx >= len(cards):
-        st.balloons()
-        st.success("Koniec sesji! 🏆")
-        if st.button("Zacznij od nowa"):
-            del st.session_state.cur_list
-            st.rerun()
-    else:
-        # --- TO JEST FRAGMENT (Tylko to będzie "migać" przy zmianie słówka) ---
-        @st.fragment
-        def flashcard_engine():
-            idx = st.session_state.n_idx
-            c = cards[idx]
-            
-            # Pasek postępu
-            st.progress(idx / len(cards))
-            st.caption(f"Słówko {idx + 1} z {len(cards)}")
-
-            # Karta
-            st.markdown(f'''
-                <div style="font-size:3em; text-align:center; padding:30px; 
-                background: #111; border:3px solid #1E88E5; border-radius:20px; margin-bottom:10px; color: white;">
-                    {c["de"]}
-                </div>
-            ''', unsafe_allow_html=True)
-
-            if st.session_state.n_m == "ask":
-                with st.form(key=f"f_{idx}", clear_on_submit=True):
-                    u_in = st.text_input("Tłumaczenie (PL):")
-                    if st.form_submit_button("Sprawdź", use_container_width=True):
-                        st.session_state.u_a = u_in
-                        st.session_state.n_m = "res"
-                        st.rerun(scope="fragment") # Odświeża TYLKO ten fragment!
-            else:
-                # Widok odpowiedzi
-                is_correct = normalize_text(st.session_state.u_a) == normalize_text(c['pl'])
-                if is_correct:
-                    st.success(f"✅ Dobrze: {c['pl']}")
-                else:
-                    st.error(f"❌ Poprawnie: {c['pl']}")
-                
-                # Przykłady i audio
-                exs = c.get("examples", [])
-                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                if fex:
-                    st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
-                    
-                    # Odtwarzanie warunkowe Auto-Audio
-                    if auto_audio:
-                        play_audio(c['de'], fex)
-                else:
-                    if auto_audio:
-                        play_audio(c['de'])
-
-                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
-                if not auto_audio:
-                    if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
-                        if fex:
-                            play_audio(c['de'], fex)
-                        else:
-                            play_audio(c['de'])
-
-                # Przycisk "Dalej" / "Oceny"
-                if is_r:
-                    st.write("Jak oceniasz?")
-                    col1, col2, col3 = st.columns(3)
-                    d = None
-                    if col1.button("🔴 Słabo"): d = 1
-                    if col2.button("🟡 Średnio"): d = 3
-                    if col3.button("🟢 Dobrze"): d = 7
-                    
-                    if d:
-                        update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
-                        st.session_state.n_idx += 1
-                        st.session_state.n_m = "ask"
-                        st.rerun(scope="fragment")
-                else:
-                    if st.button("Dalej ➡️", use_container_width=True):
-                        st.session_state.n_idx += 1
-                        st.session_state.n_m = "ask"
-                        st.rerun(scope="fragment")
-
-        # Wywołanie fragmentu
-        flashcard_engine()
+st.sidebar.caption(f"v{APP_VERSION}")
 
 # --- 8. QUIZ (Z obsługą Preferencji Nauki) ---
 elif choice == "🕹️ Quiz":
