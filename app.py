@@ -983,7 +983,7 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 14. GENERATOR SŁÓW (V245 - Poziomy + Tematy + Edycja Tagów) ---
+# --- 14. GENERATOR SŁÓW (V246 - Fix AttributeError) ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator słów")
     st.write("Generuj słówka na podstawie poziomu lub konkretnego tematu.")
@@ -1003,7 +1003,6 @@ elif choice == "📦 Generator słów":
                 st.warning("Wybierz poziom lub wpisz temat!")
             else:
                 with st.spinner("AI dobiera słownictwo..."):
-                    # Budowanie promptu hybrydowego
                     context = f"na poziomie {gen_lvl}" if gen_lvl != "Brak" else ""
                     if gen_topic: context += f" o tematyce: {gen_topic}"
                     
@@ -1020,8 +1019,8 @@ elif choice == "📦 Generator słów":
                         raw_res = get_openai_response(prompt)
                         data = json.loads(raw_res)
                         st.session_state.temp_generated = data.get("flashcards", [])
-                        # Zapamiętujemy wybrany poziom, by dodać go do tagów jeśli go brakuje
-                        st.session_state.last_gen_lvl = gen_lvl
+                        # Bezpieczne zapisanie poziomu
+                        st.session_state["last_gen_lvl"] = gen_lvl
                     except Exception as e:
                         st.error(f"Błąd AI: {e}")
 
@@ -1029,15 +1028,17 @@ elif choice == "📦 Generator słów":
     if "temp_generated" in st.session_state and st.session_state.temp_generated:
         st.divider()
         st.subheader("📝 Podgląd i personalizacja")
-        st.caption("AI wygenerowało poniższe propozycje. Możesz je teraz dowolnie edytować.")
+        
+        # Bezpieczne pobranie zapisanego poziomu
+        saved_lvl = st.session_state.get("last_gen_lvl", "Brak")
 
         # Przygotowanie danych do edytora
         df_init = []
         for item in st.session_state.temp_generated:
-            # Łączenie tagów AI z wybranym poziomem (jeśli wybrano)
             base_tags = item.get("tags", "")
-            if st.session_state.last_gen_lvl != "Brak" and st.session_state.last_gen_lvl not in base_tags:
-                base_tags = f"{st.session_state.last_gen_lvl}, {base_tags}"
+            # Jeśli wybraliśmy poziom, a AI go nie dodało - dopisujemy
+            if saved_lvl != "Brak" and saved_lvl not in base_tags:
+                base_tags = f"{saved_lvl}, {base_tags}"
 
             df_init.append({
                 "Dodaj": True,
@@ -1053,7 +1054,7 @@ elif choice == "📦 Generator słów":
             df_init, 
             use_container_width=True, 
             num_rows="dynamic",
-            key="ai_editor_v245"
+            key="ai_editor_v246"
         )
 
         col_save, col_cancel = st.columns(2)
@@ -1075,12 +1076,14 @@ elif choice == "📦 Generator słów":
                     success_count += 1
             
             st.success(f"Pomyślnie dodano {success_count} słówek!")
-            st.session_state.flashcards = load_flashcards(u) # Synchronizacja
-            del st.session_state.temp_generated
+            st.session_state.flashcards = load_flashcards(u)
+            if "temp_generated" in st.session_state:
+                del st.session_state.temp_generated
             st.rerun()
 
         if col_cancel.button("🗑️ Anuluj listę", use_container_width=True):
-            del st.session_state.temp_generated
+            if "temp_generated" in st.session_state:
+                del st.session_state.temp_generated
             st.rerun()
 
 # --- 15. SKANER AI ---
