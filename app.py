@@ -1724,74 +1724,86 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN (V271 - Procentowy Rozkład Czasu - FIX) ---
+# --- 20. ADMIN (V272 - Przywrócenie danych i statystyk) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
     db = get_db()
-    ud_data = db.table("user_data").select("*").execute().data
+    # Pobieramy surowe dane, aby mieć pewność, że nic nie ucieknie
+    try:
+        response = db.table("user_data").select("*").execute()
+        ud_data = response.data
+    except Exception as e:
+        st.error(f"Błąd połączenia z bazą: {e}")
+        ud_data = []
     
     if not ud_data:
-        st.info("Brak danych użytkowników w bazie.")
+        st.info("Baza danych jest pusta lub brak połączenia.")
     else:
-        # 1. Agregacja czasu (Kody z Twojej Sekcji 1)
-        # Mapujemy skróty z bazy na czytelne nazwy w Twojej kolejności
-        order_map = [
-            ("Pow", "📅 Powtórki"),
-            ("Trn", "🚀 Trening"),
-            ("Qiz", "🕹️ Quiz"),
-            ("Mem", "🧠 Memory"),
-            ("Tst", "📝 Testy"),
-            ("War", "🛠️ Warsztat")
-        ]
+        # MAPOWANIE: Klucz z bazy -> [Nazwa wyświetlana, Kolejność w tabeli]
+        # Uwzględniam wszystkie Twoje skróty z Sekcji 1
+        stats_config = {
+            "Pow": {"name": "📅 Powtórki", "order": 1},
+            "Trn": {"name": "🚀 Trening", "order": 2},
+            "Qiz": {"name": "🕹️ Quiz", "order": 3},
+            "Mem": {"name": "🧠 Memory", "order": 4},
+            "Tst": {"name": "📝 Testy", "order": 5},
+            "War": {"name": "🛠️ Warsztat", "order": 6}
+        }
         
         global_stats = {}
-        total_study_time = 0
+        total_relevant_time = 0
 
-        # Sumujemy czas dla wszystkich użytkowników
+        # Przeliczamy dane od nowa dla wszystkich użytkowników
         for user in ud_data:
-            stats = user.get("time_stats", {})
-            for code, sec in stats.items():
-                # Zliczamy tylko te, które są w naszym order_map (ignorujemy Inn, Sta, Kon itp.)
-                if any(code == pair[0] for pair in order_map):
-                    global_stats[code] = global_stats.get(code, 0) + sec
-                    total_study_time += sec
+            time_stats = user.get("time_stats", {})
+            if isinstance(time_stats, dict):
+                for code, sec in time_stats.items():
+                    if code in stats_config:
+                        global_stats[code] = global_stats.get(code, 0) + sec
+                        total_relevant_time += sec
 
-        # 2. Tworzenie tabeli wynikowej
-        st.subheader("📈 Wykorzystanie modułów (Globalnie)")
+        st.subheader("📈 Globalne wykorzystanie modułów")
         
-        if total_study_time > 0:
-            admin_table = []
-            for code, name in order_map:
-                time_sec = global_stats.get(code, 0)
-                perc = (time_sec / total_study_time) * 100
+        if total_relevant_time > 0:
+            final_rows = []
+            # Sortujemy według zdefiniowanej kolejności (order)
+            sorted_codes = sorted(stats_config.keys(), key=lambda x: stats_config[x]["order"])
+            
+            for code in sorted_codes:
+                val_sec = global_stats.get(code, 0)
+                conf = stats_config[code]
                 
-                # Formatowanie czasu do h/m/s
-                m, s = divmod(int(time_sec), 60)
+                perc = (val_sec / total_relevant_time) * 100
+                
+                # Formatowanie czasu
+                m, s = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
                 time_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
                 
-                admin_table.append({
-                    "Kolejność": name,
-                    "Popularność (%)": f"{round(perc, 1)}%",
-                    "Łączny czas": time_str
+                final_rows.append({
+                    "Moduł": conf["name"],
+                    "Udział (%)": f"{round(perc, 1)}%",
+                    "Suma Czasu": time_str
                 })
 
-            # Wyświetlanie tabeli (st.table dla czytelności jak prosiłeś)
-            st.table(pd.DataFrame(admin_table).set_index("Kolejność"))
+            # Wyświetlenie głównej tabeli
+            st.table(final_rows)
             
-            st.caption(f"Suma czystego czasu nauki wszystkich graczy: **{int(total_study_time // 3600)}h {int((total_study_time % 3600) // 60)}m**")
+            # Podsumowanie pod tabelą
+            th, tm = divmod(total_relevant_time // 60, 60)
+            st.success(f"Razem poświęcono na naukę: **{int(th)}h {int(tm)}m**")
         else:
-            st.warning("Brak zarejestrowanego czasu w modułach nauki.")
+            st.warning("Znaleziono użytkowników, ale nie zarejestrowano jeszcze czasu w modułach nauki.")
 
-        # --- DODATEK: PROSTA LISTA UŻYTKOWNIKÓW ---
+        # --- LISTA UŻYTKOWNIKÓW (Dla pewności, że widzimy wszystkich) ---
         st.divider()
-        st.subheader("👤 Status użytkowników")
-        user_summary = []
+        st.subheader("👤 Aktywność użytkowników")
+        user_table = []
         for user in ud_data:
-            user_summary.append({
-                "Użytkownik": user.get("username", "Anonim").capitalize(),
+            user_table.append({
+                "Użytkownik": str(user.get("username", "")).capitalize(),
                 "🔥 Passa": user.get("streak", 0),
                 "Ostatnio": user.get("last_seen", "Brak")
             })
-        st.dataframe(user_summary, use_container_width=True, hide_index=True)
+        st.dataframe(user_table, use_container_width=True, hide_index=True)
