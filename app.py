@@ -744,7 +744,7 @@ elif choice == "🧠 Memory":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 12. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW) ---
+# --- 12. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
 elif choice == "🛠️ Warsztat":
     st.header("🛠️ Warsztat Słówek")
     st.write("Tu trafiają słówka, które sprawiają Ci najwięcej trudności. Opanuj je raz a dobrze!")
@@ -752,7 +752,6 @@ elif choice == "🛠️ Warsztat":
     # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK
     if "w_list" not in st.session_state:
         # Filtrujemy słówka: te z level < 2 lub interval < 2 (najświeższe błędy)
-        # Sortujemy od najniższego interwału (najtrudniejsze)
         hard_cards = [
             c for c in st.session_state.flashcards 
             if c.get("level", 0) < 2 or c.get("interval", 0) < 2
@@ -777,42 +776,61 @@ elif choice == "🛠️ Warsztat":
             del st.session_state.w_list
             st.rerun()
     else:
-        # 2. INTERFEJS TRENINGU
-        curr = st.session_state.w_list[st.session_state.w_idx]
-        
-        progress = (st.session_state.w_idx) / len(st.session_state.w_list)
-        st.progress(progress)
-        st.caption(f"Słówko {st.session_state.w_idx + 1} z {len(st.session_state.w_list)}")
+        # --- SILNIK WARSZTATU (FRAGMENT) ---
+        @st.fragment
+        def workshop_engine():
+            # Musimy pobrać aktualne dane ze stanu sesji wewnątrz fragmentu
+            idx = st.session_state.w_idx
+            w_list = st.session_state.w_list
+            curr = w_list[idx]
+            
+            # Pasek postępu
+            progress = (idx) / len(w_list)
+            st.progress(progress)
+            st.caption(f"Słówko {idx + 1} z {len(w_list)}")
 
-        # Karta Warsztatowa
-        with st.container(border=True):
-            st.markdown(f"<h1 style='text-align: center;'>{curr['de']}</h1>", unsafe_allow_html=True)
-            
-            if st.session_state.w_show:
-                st.markdown(f"<h3 style='text-align: center; color: #FF5252;'>{curr['pl']}</h3>", unsafe_allow_html=True)
-                if curr.get('example'):
-                    st.info(f"💡 Przykład: {curr['example']}")
-            
-            st.write("")
-            if not st.session_state.w_show:
-                if st.button("👁️ Pokaż odpowiedź", use_container_width=True, type="primary"):
-                    st.session_state.w_show = True
-                    st.rerun()
-            else:
-                col_a, col_b = st.columns(2)
-                if col_a.button("❌ Nadal trudne", use_container_width=True):
-                    # Przesuwamy na koniec listy, by wróciło w tej sesji
-                    card = st.session_state.w_list.pop(st.session_state.w_idx)
-                    st.session_state.w_list.append(card)
-                    st.session_state.w_show = False
-                    st.rerun()
+            # Karta Warsztatowa
+            with st.container(border=True):
+                st.markdown(f"<h1 style='text-align: center; margin-bottom: 20px;'>{curr['de']}</h1>", unsafe_allow_html=True)
                 
-                if col_b.button("✅ Już rozumiem", use_container_width=True):
-                    st.session_state.w_idx += 1
-                    st.session_state.w_show = False
-                    st.rerun()
+                if st.session_state.w_show:
+                    st.markdown(f"<h3 style='text-align: center; color: #FF5252; margin-top: -10px;'>{curr['pl']}</h3>", unsafe_allow_html=True)
+                    if curr.get('example'):
+                        st.info(f"💡 Przykład: {curr['example']}")
+                    # Automatyczne audio jeśli jest włączone w ustawieniach
+                    user_settings = st.session_state.user_data.get("settings", {})
+                    if user_settings.get("auto_audio", True):
+                        play_audio(curr['de'], curr.get('example'))
+                
+                st.write("")
+                if not st.session_state.w_show:
+                    if st.button("👁️ Pokaż odpowiedź", use_container_width=True, type="primary"):
+                        st.session_state.w_show = True
+                        st.rerun(scope="fragment")
+                else:
+                    col_a, col_b = st.columns(2)
+                    if col_a.button("❌ Nadal trudne", use_container_width=True):
+                        # Przesuwamy na koniec listy
+                        card = st.session_state.w_list.pop(st.session_state.w_idx)
+                        st.session_state.w_list.append(card)
+                        st.session_state.w_show = False
+                        st.rerun(scope="fragment")
+                    
+                    if col_b.button("✅ Już rozumiem", use_container_width=True):
+                        st.session_state.w_idx += 1
+                        st.session_state.w_show = False
+                        st.rerun(scope="fragment")
 
-    # Statystyki warsztatu w sidebarze (opcjonalnie)
+        # Uruchomienie silnika
+        workshop_engine()
+
+    # Przycisk resetu (poza fragmentem dla pełnego odświeżenia bazy słówek do warsztatu)
+    if st.button("Wygeneruj nową listę warsztatową", type="secondary", use_container_width=True):
+        for k in ["w_list", "w_idx", "w_show"]:
+            if k in st.session_state: del st.session_state[k]
+        st.rerun()
+
+    # Statystyki warsztatu w sidebarze
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
