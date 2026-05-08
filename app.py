@@ -1724,100 +1724,143 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN (V276 - Pełne przywrócenie danych + Nowe statystyki) ---
+# --- 20. ADMIN PRO (V280 - Klasyczny widok + Procentowy Rozkład Czasu) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
-    db = get_db()
-    try:
-        response = db.table("user_data").select("*").execute()
-        ud_data = response.data
-    except Exception as e:
-        st.error(f"Błąd bazy: {e}")
-        ud_data = []
+    if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     
-    if not ud_data:
-        st.info("Brak danych użytkowników.")
-    else:
-        # --- 1. NOWA TABELA: PROCENTOWY ROZKŁAD CZASU (Zgodnie z Twoją prośbą) ---
-        stats_config = {
-            "Pow": {"name": "📅 Powtórki", "order": 1},
-            "Trn": {"name": "🚀 Trening", "order": 2},
-            "Qiz": {"name": "🕹️ Quiz", "order": 3},
-            "Mem": {"name": "🧠 Memory", "order": 4},
-            "Tst": {"name": "📝 Testy", "order": 5},
-            "War": {"name": "🛠️ Warsztat", "order": 6}
-        }
+    db = get_db()
+    ud_data = db.table("user_data").select("*").execute().data
+    all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
+
+    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
+    
+    adm_list = []
+    global_time = {}
+    
+    # Kody z Twojej bazy (zgodnie z logiką nawigacji)
+    tracked_codes = ["Pow", "Trn", "Qiz", "Mem", "Tst", "War", "Inn"]
+    display_names = {
+        "Pow": "📅 Powtórki", 
+        "Trn": "🚀 Trening", 
+        "Qiz": "🕹️ Quiz", 
+        "Mem": "🧠 Memory", 
+        "Tst": "📝 Testy", 
+        "War": "🛠️ Warsztat",
+        "Inn": "Inne"
+    }
+    
+    today = date.today()
+
+    for user in ud_data:
+        username = user["username"]
+        user_cards = df_cards_all[df_cards_all["username"] == username]
+        oc = user_cards["origin"].value_counts() if not user_cards.empty else {}
         
-        global_stats = {}
-        total_study_time = 0
+        # 1. Obliczanie wiedzy (🧠 %)
+        strong_cards = 0
+        if not user_cards.empty:
+            strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
+            wiedza_val = int((strong_cards / len(user_cards)) * 100)
+        else:
+            wiedza_val = 0
 
-        for user in ud_data:
-            t_stats = user.get("time_stats", {})
-            if isinstance(t_stats, dict):
-                for code, sec in t_stats.items():
-                    if code in stats_config:
-                        global_stats[code] = global_stats.get(code, 0) + sec
-                        total_study_time += sec
+        # 2. Agregacja czasu
+        user_stats = user.get("time_stats", {})
+        current_user_merged = {code: 0 for code in tracked_codes}
+        total_sec = 0
+        
+        for raw_key, seconds in user_stats.items():
+            k = str(raw_key).strip()
+            # Przypisanie do kategorii lub do 'Inn' (Inne)
+            f_code = k if k in tracked_codes else "Inn"
+            
+            current_user_merged[f_code] += seconds
+            total_sec += seconds
+            # Do globalnych statystyk bierzemy tylko te z nawigacji (bez 'Inn')
+            if f_code != "Inn":
+                global_time[f_code] = global_time.get(f_code, 0) + seconds
 
+        # 3. Formatowanie danych do głównej tabeli
+        raw_seen = user.get("last_seen", "Brak")
+        formatted_seen = raw_seen.replace(" ", "  |  ") if " " in raw_seen else raw_seen
+        
+        r = int(oc.get("Dodaj", 0))
+        g = int(oc.get("Generator", 0))
+        s = int(oc.get("Skaner", 0))
+            
+        adm_list.append({
+            "Użytkownik": username,
+            "Aktywność (Data | Czas)": formatted_seen,
+            "🔥": user.get("streak", 0),
+            "🧠 %": wiedza_val,
+            "Słówka (R|G|S)": f"{len(user_cards)} ({r}|{g}|{s})", 
+            "Tst": len(user.get("test_history", [])),
+            "Min": int(total_sec // 60),
+            "PLN": round(user.get("historical_cost", 0.0), 2),
+            "__raw_stats": current_user_merged 
+        })
+    
+    if not adm_list:
+        st.warning("Brak danych użytkowników.")
+    else:
+        df_admin = pd.DataFrame(adm_list)
+        
+        # --- TABELA 1: NOWY GLOBALNY ROZKŁAD AKTYWNOŚCI ---
         st.subheader("📈 Globalny rozkład aktywności")
-        if total_study_time > 0:
-            final_rows = []
-            sorted_codes = sorted(stats_config.keys(), key=lambda x: stats_config[x]["order"])
-            for code in sorted_codes:
-                val_sec = global_stats.get(code, 0)
-                perc = (val_sec / total_study_time) * 100
-                m, s = divmod(int(val_sec), 60)
+        total_global_study = sum(global_time.values())
+        
+        if total_global_study > 0:
+            analysis_rows = []
+            # Wyświetlamy w kolejności nawigacji (bez 'Inn')
+            for code in ["Pow", "Trn", "Qiz", "Mem", "Tst", "War"]:
+                val_sec = global_stats_val = global_time.get(code, 0)
+                perc = (val_sec / total_global_study) * 100
+                m, _ = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
-                time_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
-                
-                final_rows.append({
-                    "Moduł": stats_config[code]["name"],
+                time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
+
+                analysis_rows.append({
+                    "Moduł": display_names[code],
                     "Popularność (%)": f"{round(perc, 1)}%",
                     "Łączny czas": time_str
                 })
-            st.table(final_rows)
-        else:
-            st.warning("Brak zarejestrowanego czasu w modułach nauki.")
-
-        # --- 2. PEŁNA TABELA UŻYTKOWNIKÓW (PRZYWRÓCENIE ORYGINALNYCH KOLUMN) ---
+            st.table(pd.DataFrame(analysis_rows).set_index("Moduł"))
+        
         st.divider()
-        st.subheader("👤 Lista i aktywność użytkowników")
-        
-        full_user_list = []
-        for user in ud_data:
-            # Wyciąganie danych dokładnie tak, jak w Twoim pierwotnym kodzie
-            username = str(user.get("username", "Nieznany")).capitalize()
-            last_seen = user.get("last_seen", "Brak")
-            streak = user.get("streak", 0)
-            points = user.get("points", 0)
-            
-            # Statystyki słówek (jeśli istnieją w user_data)
-            words_added = user.get("words_added", 0)
-            
-            # Obliczanie sumy czasu dla danego użytkownika (całkowitej)
-            user_time_dict = user.get("time_stats", {})
-            user_total_sec = sum(user_time_dict.values()) if isinstance(user_time_dict, dict) else 0
-            uh, um = divmod(user_total_sec // 60, 60)
-            user_time_str = f"{int(uh)}h {int(um)}m"
 
-            full_user_list.append({
-                "Użytkownik": username,
-                "🔥 Passa": streak,
-                "🏆 Punkty": points,
-                "🕒 Czas łącznie": user_time_str,
-                "📝 Słówka": words_added,
-                "📅 Ostatnio": last_seen,
-                "📧 Email": user.get("email", "Brak"),
-                "🆔 ID": user.get("id", "")
-            })
-        
-        # Wyświetlenie tabeli z możliwością sortowania
+        # --- TABELA 2: GŁÓWNA LISTA UŻYTKOWNIKÓW ---
+        st.subheader("📋 Podsumowanie kont")
         st.dataframe(
-            full_user_list, 
+            df_admin.drop(columns=["__raw_stats"]), 
             use_container_width=True, 
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "Użytkownik": st.column_config.TextColumn("Użytkownik", width=100),
+                "Aktywność (Data | Czas)": st.column_config.TextColumn("Aktywność (Data | Czas)", width=170),
+                "🔥": st.column_config.NumberColumn("🔥", width=45),
+                "🧠 %": st.column_config.NumberColumn("🧠 %", width=55, format="%d%%"),
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width=130),
+                "Tst": st.column_config.NumberColumn("Tst", width=45),
+                "Min": st.column_config.NumberColumn("Min", width=55),
+                "PLN": st.column_config.NumberColumn("PLN", width=80, format="%.2f zł"),
+            }
         )
-
-        # Statystyki ogólne (liczba kont)
-        st.info(f"Całkowita liczba zarejestrowanych użytkowników: **{len(ud_data)}**")
+        
+        # --- TABELA 3: SZCZEGÓŁY CZASU ---
+        with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
+            detail_rows = []
+            valid_codes = ["Pow", "Trn", "Qiz", "Mem", "Tst", "War", "Inn"]
+            
+            for _, row in df_admin.iterrows():
+                d_row = {"Użytkownik": row["Użytkownik"]}
+                for code in valid_codes:
+                    d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
+                detail_rows.append(d_row)
+            
+            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
