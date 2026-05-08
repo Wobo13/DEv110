@@ -731,7 +731,79 @@ elif choice == "🧠 Memory":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 12. ARENA WYZWAŃ (RANKING TOP 5) ---
+# --- 12. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW) ---
+elif choice == "🛠️ Warsztat":
+    st.header("🛠️ Warsztat Słówek")
+    st.write("Tu trafiają słówka, które sprawiają Ci najwięcej trudności. Opanuj je raz a dobrze!")
+
+    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK
+    if "w_list" not in st.session_state:
+        # Filtrujemy słówka: te z level < 2 lub interval < 2 (najświeższe błędy)
+        # Sortujemy od najniższego interwału (najtrudniejsze)
+        hard_cards = [
+            c for c in st.session_state.flashcards 
+            if c.get("level", 0) < 2 or c.get("interval", 0) < 2
+        ]
+        
+        # Jeśli nie ma "bardzo trudnych", weźmy te z najniższym levelem ogólnie
+        if len(hard_cards) < 5:
+            hard_cards = sorted(st.session_state.flashcards, key=lambda x: x.get("level", 0))[:10]
+
+        random.shuffle(hard_cards)
+        st.session_state.w_list = hard_cards[:15] # Sesja max 15 "koszmarów"
+        st.session_state.w_idx = 0
+        st.session_state.w_show = False
+
+    if not st.session_state.w_list:
+        st.success("Twoja lista trudnych słówek jest pusta! Wygląda na to, że wszystko świetnie pamiętasz. ✨")
+    
+    elif st.session_state.w_idx >= len(st.session_state.w_list):
+        st.balloons()
+        st.success("Warsztat zakończony! Te słówka nie powinny Cię już straszyć.")
+        if st.button("Zacznij od nowa", use_container_width=True):
+            del st.session_state.w_list
+            st.rerun()
+    else:
+        # 2. INTERFEJS TRENINGU
+        curr = st.session_state.w_list[st.session_state.w_idx]
+        
+        progress = (st.session_state.w_idx) / len(st.session_state.w_list)
+        st.progress(progress)
+        st.caption(f"Słówko {st.session_state.w_idx + 1} z {len(st.session_state.w_list)}")
+
+        # Karta Warsztatowa
+        with st.container(border=True):
+            st.markdown(f"<h1 style='text-align: center;'>{curr['de']}</h1>", unsafe_allow_html=True)
+            
+            if st.session_state.w_show:
+                st.markdown(f"<h3 style='text-align: center; color: #FF5252;'>{curr['pl']}</h3>", unsafe_allow_html=True)
+                if curr.get('example'):
+                    st.info(f"💡 Przykład: {curr['example']}")
+            
+            st.write("")
+            if not st.session_state.w_show:
+                if st.button("👁️ Pokaż odpowiedź", use_container_width=True, type="primary"):
+                    st.session_state.w_show = True
+                    st.rerun()
+            else:
+                col_a, col_b = st.columns(2)
+                if col_a.button("❌ Nadal trudne", use_container_width=True):
+                    # Przesuwamy na koniec listy, by wróciło w tej sesji
+                    card = st.session_state.w_list.pop(st.session_state.w_idx)
+                    st.session_state.w_list.append(card)
+                    st.session_state.w_show = False
+                    st.rerun()
+                
+                if col_b.button("✅ Już rozumiem", use_container_width=True):
+                    st.session_state.w_idx += 1
+                    st.session_state.w_show = False
+                    st.rerun()
+
+    # Statystyki warsztatu w sidebarze (opcjonalnie)
+    st.sidebar.divider()
+    st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
+
+# --- 13. ARENA WYZWAŃ (RANKING TOP 5) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
@@ -800,7 +872,7 @@ elif choice == "🏆 Arena Wyzwań":
         if not my_rank.empty:
             st.info(f"Twoja aktualna pozycja w rankingu passy: **{my_rank[0] + 1}** na **{len(df_final)}** użytkowników. Do dzieła!")
 
-# --- 13. GENERATOR ---
+# --- 14. GENERATOR ---
 elif choice == "📦 Generator słów":
     st.header("📦 Generator")
     
@@ -897,7 +969,7 @@ elif choice == "📦 Generator słów":
                 except Exception as e: 
                     st.error(f"Wystąpił błąd podczas pracy AI: {e}")
 
-# --- 14. SKANER AI ---
+# --- 15. SKANER AI ---
 elif choice == "📸 Skaner AI":
     st.header("📸 Skaner AI")
 
@@ -1055,7 +1127,7 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
 
-# --- 15. DODAJ SŁÓWKO ---
+# --- 16. DODAJ SŁÓWKO ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj Słówko")
     
@@ -1138,7 +1210,7 @@ elif choice == "➕ Dodaj":
                     else:
                         st.error("Wpisz najpierw polskie słowo!")
         ai_add_ui()
-# --- 16. SŁOWNIK ---
+# --- 17. SŁOWNIK ---
 elif choice == "📖 Słownik":
     st.header("📖 Słownik")
     
@@ -1205,7 +1277,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko usunięte! 🗑️")
                 st.rerun()
 
-# --- 17. STATYSTYKI ---
+# --- 18. STATYSTYKI ---
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -1349,7 +1421,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else:
         st.info("Brak rozwiązanych testów.")
-# --- 18. KONTO ---
+# --- 19. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     
@@ -1490,7 +1562,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 19. ADMIN PRO (Wersja z Centrowaniem i Przywróconymi Detalami) ---
+# --- 20. ADMIN PRO (Wersja z Centrowaniem i Przywróconymi Detalami) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
