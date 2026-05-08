@@ -1724,82 +1724,74 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. PANEL ADMINA (V270 - Procentowy Rozkład Czasu) ---
-elif choice == "📊 Panel Admina":
-    if u not in ADMIN_USERS:
-        st.error("Brak uprawnień.")
+# --- 20. ADMIN (V271 - Procentowy Rozkład Czasu - FIX) ---
+elif choice == "👑 Admin" and u == ADMIN_USER:
+    st.header("👑 Panel Administratora")
+    
+    db = get_db()
+    ud_data = db.table("user_data").select("*").execute().data
+    
+    if not ud_data:
+        st.info("Brak danych użytkowników w bazie.")
     else:
-        st.header("📊 Statystyki Globalne")
+        # 1. Agregacja czasu (Kody z Twojej Sekcji 1)
+        # Mapujemy skróty z bazy na czytelne nazwy w Twojej kolejności
+        order_map = [
+            ("Pow", "📅 Powtórki"),
+            ("Trn", "🚀 Trening"),
+            ("Qiz", "🕹️ Quiz"),
+            ("Mem", "🧠 Memory"),
+            ("Tst", "📝 Testy"),
+            ("War", "🛠️ Warsztat")
+        ]
         
-        # Pobieramy dane wszystkich użytkowników
-        db = get_db()
-        all_users = db.table("user_data").select("*").execute().data
+        global_stats = {}
+        total_study_time = 0
+
+        # Sumujemy czas dla wszystkich użytkowników
+        for user in ud_data:
+            stats = user.get("time_stats", {})
+            for code, sec in stats.items():
+                # Zliczamy tylko te, które są w naszym order_map (ignorujemy Inn, Sta, Kon itp.)
+                if any(code == pair[0] for pair in order_map):
+                    global_stats[code] = global_stats.get(code, 0) + sec
+                    total_study_time += sec
+
+        # 2. Tworzenie tabeli wynikowej
+        st.subheader("📈 Wykorzystanie modułów (Globalnie)")
         
-        if not all_users:
-            st.info("Brak danych do wyświetlenia.")
-        else:
-            # 1. Agregacja czasu spędzonego w modułach
-            global_stats = {}
-            for usr in all_users:
-                stats = usr.get("time_stats", {})
-                for mod, sec in stats.items():
-                    global_stats[mod] = global_stats.get(mod, 0) + sec
-
-            # 2. Definicja modułów do ujęcia i ich kolejności (zgodnie z nawigacją)
-            ordered_modules = [
-                "📅 Powtórki", 
-                "🚀 Trening", 
-                "🕹️ Quiz", 
-                "🧠 Memory",
-                "📝 Testy", 
-                "🛠️ Warsztat"
-            ]
-
-            # 3. Filtrowanie i przygotowanie danych do tabeli
-            filtered_data = []
-            total_selected_time = 0
-            
-            # Najpierw liczymy sumę czasu tylko dla wybranych modułów
-            for mod in ordered_modules:
-                total_selected_time += global_stats.get(mod, 0)
-
-            if total_selected_time > 0:
-                for mod in ordered_modules:
-                    time_sec = global_stats.get(mod, 0)
-                    percentage = (time_sec / total_selected_time) * 100
-                    
-                    # Formatowanie czasu do czytelnej postaci (opcjonalnie do podglądu)
-                    m, s = divmod(int(time_sec), 60)
-                    h, m = divmod(m, 60)
-                    time_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
-
-                    filtered_data.append({
-                        "Moduł": mod,
-                        "Popularność (%)": round(percentage, 1),
-                        "Łączny Czas": time_str
-                    })
-
-                # 4. Wyświetlanie tabeli
-                st.subheader("📈 Wykorzystanie modułów (Globalnie)")
-                st.write("Tabela pokazuje procentowy udział czasu spędzonego w głównych sekcjach nauki.")
+        if total_study_time > 0:
+            admin_table = []
+            for code, name in order_map:
+                time_sec = global_stats.get(code, 0)
+                perc = (time_sec / total_study_time) * 100
                 
-                st.table(filtered_data)
+                # Formatowanie czasu do h/m/s
+                m, s = divmod(int(time_sec), 60)
+                h, m = divmod(m, 60)
+                time_str = f"{h}h {m}m" if h > 0 else f"{m}m {s}s"
                 
-                # Dodatkowy wskaźnik sumaryczny
-                total_m, _ = divmod(int(total_selected_time), 60)
-                total_h, total_m = divmod(total_m, 60)
-                st.caption(f"Łączny czas poświęcony na naukę przez wszystkich użytkowników: {total_h}h {total_m}m")
-            else:
-                st.warning("Użytkownicy nie spędzili jeszcze czasu w wybranych modułach.")
-
-            # --- LISTA UŻYTKOWNIKÓW (Opcjonalnie pod spodem) ---
-            st.divider()
-            st.subheader("👤 Aktywni użytkownicy")
-            user_list = []
-            for usr in all_users:
-                user_list.append({
-                    "Użytkownik": usr.get("username"),
-                    "Streak": usr.get("streak", 0),
-                    "Ostatnio widziany": usr.get("last_seen", "Brak danych")
+                admin_table.append({
+                    "Kolejność": name,
+                    "Popularność (%)": f"{round(perc, 1)}%",
+                    "Łączny czas": time_str
                 })
-            st.dataframe(user_list, use_container_width=True)
+
+            # Wyświetlanie tabeli (st.table dla czytelności jak prosiłeś)
+            st.table(pd.DataFrame(admin_table).set_index("Kolejność"))
+            
+            st.caption(f"Suma czystego czasu nauki wszystkich graczy: **{int(total_study_time // 3600)}h {int((total_study_time % 3600) // 60)}m**")
+        else:
+            st.warning("Brak zarejestrowanego czasu w modułach nauki.")
+
+        # --- DODATEK: PROSTA LISTA UŻYTKOWNIKÓW ---
+        st.divider()
+        st.subheader("👤 Status użytkowników")
+        user_summary = []
+        for user in ud_data:
+            user_summary.append({
+                "Użytkownik": user.get("username", "Anonim").capitalize(),
+                "🔥 Passa": user.get("streak", 0),
+                "Ostatnio": user.get("last_seen", "Brak")
+            })
+        st.dataframe(user_summary, use_container_width=True, hide_index=True)
