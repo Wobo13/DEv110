@@ -638,16 +638,18 @@ elif choice == "📝 Testy":
             # Uruchomienie silnika testu
             test_engine()
 
-# --- 11. MEMORY GAME (Mechanizm widoczności kart) ---
+# --- 11. MEMORY GAME (V225 - Z Licznikiem i Zapisem Rekordów) ---
 elif choice == "🧠 Memory":
     st.header("🧠 Memory: Znajdź pary")
-    
-    # 1. INICJALIZACJA GRY (Bez zmian)
+    st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami. Liczy się czas!")
+
+    # 1. INICJALIZACJA GRY
     if "mem_grid" not in st.session_state:
         if len(st.session_state.flashcards) < 6:
             st.warning("Dodaj przynajmniej 6 słówek, aby móc zagrać.")
             st.stop()
         
+        # Wybieramy 6 losowych słówek (12 kafli)
         cards_pool = random.sample(st.session_state.flashcards, 6)
         grid = []
         for c in cards_pool:
@@ -659,6 +661,8 @@ elif choice == "🧠 Memory":
         st.session_state.mem_status = ["hidden"] * 12
         st.session_state.mem_first = None
         st.session_state.mem_pairs = 0
+        st.session_state.mem_start_time = None
+        st.session_state.mem_final_time = None
 
     # 2. SILNIK GRY
     @st.fragment
@@ -667,13 +671,40 @@ elif choice == "🧠 Memory":
         status = st.session_state.mem_status
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("Znalezione pary", f"{st.session_state.mem_pairs}/6")
         
+        # Wyświetlanie czasu na żywo
+        if st.session_state.mem_start_time and st.session_state.mem_final_time is None:
+            elapsed = round(time.time() - st.session_state.mem_start_time, 1)
+            c1.metric("⏱️ Czas", f"{elapsed}s")
+        elif st.session_state.mem_final_time:
+            c1.metric("🏁 Wynik", f"{st.session_state.mem_final_time}s")
+        else:
+            c1.metric("⏱️ Czas", "0.0s")
+            
+        c2.metric("🧩 Pary", f"{st.session_state.mem_pairs}/6")
+        
+        # KONIEC GRY
         if st.session_state.mem_pairs == 6:
+            if st.session_state.mem_final_time is None:
+                st.session_state.mem_final_time = round(time.time() - st.session_state.mem_start_time, 2)
+                
+                # ZAPIS DO BAZY
+                db = get_db()
+                new_score = st.session_state.mem_final_time
+                current_scores = st.session_state.user_data.get("memory_scores", [])
+                
+                # Dodajemy wynik, sortujemy i bierzemy top 10 najlepszych (najkrótszych) czasów
+                current_scores.append(new_score)
+                current_scores = sorted([float(s) for s in current_scores])[:10]
+                
+                # Aktualizacja bazy i sesji
+                db.table("user_data").update({"memory_scores": current_scores}).eq("username", u).execute()
+                st.session_state.user_data["memory_scores"] = current_scores
+
             st.balloons()
-            st.success("Brawo! Odnaleziono wszystkie pary! 🎉")
+            st.success(f"Brawo! Ukończono w czasie: {st.session_state.mem_final_time}s")
             if st.button("Zagraj jeszcze raz", use_container_width=True):
-                for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs"]:
+                for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun(scope="fragment")
             return
@@ -686,7 +717,6 @@ elif choice == "🧠 Memory":
             for col in range(4):
                 idx = row * 4 + col
                 
-                # Stan wizualny kafelka
                 tile_text = "❓"
                 tile_type = "secondary"
                 tile_disabled = False
@@ -700,37 +730,30 @@ elif choice == "🧠 Memory":
                     tile_disabled = True
 
                 if cols[col].button(tile_text, key=f"mem_{idx}", use_container_width=True, disabled=tile_disabled, type=tile_type):
+                    # Start czasu przy pierwszym kliknięciu
+                    if st.session_state.mem_start_time is None:
+                        st.session_state.mem_start_time = time.time()
+
                     if st.session_state.mem_first is None:
-                        # PIERWSZA KARTA
                         status[idx] = "flipped"
                         st.session_state.mem_first = idx
                         st.rerun(scope="fragment")
                     else:
-                        # DRUGA KARTA
                         first_idx = st.session_state.mem_first
                         status[idx] = "flipped"
-                        
-                        # Tutaj wymuszamy przerysowanie, żeby druga karta się pojawiła
                         st.rerun(scope="fragment") 
 
-        # LOGIKA SPRAWDZANIA (Uruchamia się PO przerysowaniu drugiej karty)
-        # Sprawdzamy, czy są odkryte dokładnie dwie karty, które nie są jeszcze "matched"
+        # LOGIKA SPRAWDZANIA
         flipped_indices = [i for i, s in enumerate(status) if s == "flipped"]
-        
         if len(flipped_indices) == 2:
             idx1, idx2 = flipped_indices
-            
-            # Pauza, żeby gracz mógł zobaczyć drugą kartę (np. 0.8 sekundy)
-            import time
             time.sleep(0.8)
             
             if grid[idx1]["id"] == grid[idx2]["id"]:
-                # PARA!
                 status[idx1] = "matched"
                 status[idx2] = "matched"
                 st.session_state.mem_pairs += 1
             else:
-                # PUDŁO
                 status[idx1] = "hidden"
                 status[idx2] = "hidden"
             
@@ -740,7 +763,7 @@ elif choice == "🧠 Memory":
     memory_engine()
 
     if st.button("Wygeneruj nową tablicę", type="secondary", use_container_width=True):
-        for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs"]:
+        for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
@@ -834,74 +857,95 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 13. ARENA WYZWAŃ (RANKING TOP 5) ---
+# --- 13. ARENA WYZWAŃ (V225 - Globalny Ranking Memory) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
 
     # 1. POBIERANIE DANYCH Z BAZY
     db = get_db()
-    # Pobieramy wszystkich użytkowników (statystyki) i wszystkie fiszki (do obliczenia wiedzy)
-    all_users = db.table("user_data").select("username", "streak", "last_seen").execute().data
-    all_cards = db.table("flashcards").select("username", "next_review").execute().data
+    # Pobieramy statystyki użytkowników oraz ich rekordy memory
+    all_users_res = db.table("user_data").select("username", "streak", "last_seen", "memory_scores").execute().data
+    all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
     
-    if not all_users:
+    if not all_users_res:
         st.info("Ranking jest obecnie pusty. Bądź pierwszym, który go zapełni!")
     else:
-        df_users = pd.DataFrame(all_users)
-        df_cards = pd.DataFrame(all_cards) if all_cards else pd.DataFrame(columns=["username", "next_review"])
+        df_users = pd.DataFrame(all_users_res)
+        df_cards = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
         
         today = date.today()
         ranking_data = []
 
-        # 2. OBLICZANIE WIEDZY DLA KAŻDEGO UŻYTKOWNIKA
+        # 2. OBLICZANIE WIEDZY I PRZYGOTOWANIE DANYCH
         for _, user in df_users.iterrows():
             uname = user["username"]
             u_cards = df_cards[df_cards["username"] == uname]
             
             wiedza_val = 0
             if not u_cards.empty:
-                # Liczymy słówka silne (> 6 dni do powtórki)
+                # Słówka silne (> 6 dni do powtórki)
                 strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
                 wiedza_val = int((strong / len(u_cards)) * 100)
             
+            # Pobieranie najlepszego wyniku z listy memory_scores
+            m_scores = user.get("memory_scores", [])
+            best_mem = min([float(s) for s in m_scores]) if m_scores and isinstance(m_scores, list) else None
+
             ranking_data.append({
                 "Użytkownik": uname.capitalize(),
                 "Ogień 🔥": user["streak"],
                 "Wiedza 🧠": wiedza_val,
+                "Najlepsze Memory ⏱️": best_mem,
                 "Ostatnio aktywny": user["last_seen"]
             })
 
         df_final = pd.DataFrame(ranking_data)
 
-        # 3. WYŚWIETLANIE DWÓCH KATEGORII
+        # 3. WYŚWIETLANIE RANKINGÓW
+        
+        # --- TABELA 1: PASSA I WIEDZA ---
         col1, col2 = st.columns(2)
 
         with col1:
             st.subheader("🔥 Najdłuższa Passa")
-            # Sortujemy po ogniu i bierzemy Top 5
             top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5)
-            # Resetujemy indeksy, by pokazać miejsca 1-5
             top_streak.index = range(1, len(top_streak) + 1)
             st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
 
         with col2:
             st.subheader("🧠 Mistrzowie Wiedzy")
-            # Sortujemy po wiedzy i bierzemy Top 5
             top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5)
             top_knowledge.index = range(1, len(top_knowledge) + 1)
-            # Formatujemy wyświetlanie procentów
             top_knowledge["Wiedza 🧠"] = top_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
             st.table(top_knowledge[["Użytkownik", "Wiedza 🧠"]])
 
+        st.write("---")
+
+        # --- TABELA 2: GLOBALNY RANKING MEMORY (TOP 10) ---
+        st.subheader("🧩 Mistrzowie Pamięci (Memory Top 10)")
+        # Filtrujemy tylko tych, którzy mają jakikolwiek wynik w Memory
+        df_mem = df_final.dropna(subset=["Najlepsze Memory ⏱️"])
+        
+        if not df_mem.empty:
+            df_mem_sorted = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10)
+            df_mem_sorted.index = range(1, len(df_mem_sorted) + 1)
+            
+            # Formatowanie czasu dla lepszego wyglądu
+            df_mem_sorted["Najlepsze Memory ⏱️"] = df_mem_sorted["Najlepsze Memory ⏱️"].apply(lambda x: f"{x}s")
+            
+            st.table(df_mem_sorted[["Użytkownik", "Najlepsze Memory ⏱️"]])
+        else:
+            st.info("Nikt jeszcze nie ustanowił rekordu w Memory. Bądź pierwszy!")
+
         st.divider()
         
-        # 4. TWOJA POZYCJA (Dla motywacji)
+        # 4. TWOJA POZYCJA
         my_pos_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index()
         my_rank = my_pos_streak[my_pos_streak["Użytkownik"] == u.capitalize()].index
         
         if not my_rank.empty:
-            st.info(f"Twoja aktualna pozycja w rankingu passy: **{my_rank[0] + 1}** na **{len(df_final)}** użytkowników. Do dzieła!")
+            st.info(f"Twoja aktualna pozycja w rankingu ogólnym: **{my_rank[0] + 1}** na **{len(df_final)}** użytkowników. Powodzenia!")
 
 # --- 14. GENERATOR ---
 elif choice == "📦 Generator słów":
@@ -1308,7 +1352,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko usunięte! 🗑️")
                 st.rerun()
 
-# --- 18. STATYSTYKI ---
+# --- 18. STATYSTYKI (V225 - Z Rekordami Memory) ---
 elif choice == "📊 Statystyki":
     st.header("📊 Twoje Statystyki")
     df = pd.DataFrame(st.session_state.flashcards)
@@ -1321,37 +1365,49 @@ elif choice == "📊 Statystyki":
         c2.metric("Passa Nauki", f"{ud.get('streak', 0)} dni")
         
         st.write("---")
+
+        # --- NOWOŚĆ: REKORDY MEMORY ---
+        st.subheader("🏆 Moje Rekordy Memory")
+        mem_scores = ud.get("memory_scores", [])
         
-        # 2. KOLUMNY: Czas nauki (Punkt 1) oraz Fazy zapamiętywania (Punkt 3)
+        if mem_scores:
+            # Wybieramy top 3 najlepsze (najkrótsze) czasy
+            top3 = sorted([float(s) for s in mem_scores])[:3]
+            m_cols = st.columns(3)
+            icons = ["🥇", "🥈", "🥉"]
+            for i, score in enumerate(top3):
+                m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+        else:
+            st.info("Zagraj w Memory, aby ustanowić swój pierwszy rekord!")
+        
+        st.write("---")
+        
+        # 2. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
         col_top1, col_top2 = st.columns(2)
         
         with col_top1:
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
             
-            # Tłumaczymy tylko kluczowe moduły do nauki. Reszta automatycznie trafi do "Inne"
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
-                "Fis": "Fiszki", "Tst": "Testy", "Sta": "Statystyki"
+                "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory",
+                "War": "Warsztat", "Sta": "Statystyki"
             }
             
-            # Skrócona lista definiująca poprawną kolejność w tabeli
             nav_order = [
-                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Statystyki", "Inne"
+                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Warsztat", "Statystyki", "Inne"
             ]
             
-            # Agregacja minut
             aggregated_mins = {name: 0 for name in nav_order}
-            
             for code, sec in time_stats.items():
-                # Jeśli modułu nie ma na liście 'display_names', ląduje w 'Inne'
                 name = display_names.get(code, "Inne")
-                aggregated_mins[name] += sec
+                if name in aggregated_mins:
+                    aggregated_mins[name] += sec
             
             t_data = []
             for name in nav_order:
                 mins = int(aggregated_mins[name] // 60)
-                # Pokazujemy moduł nawet jeśli ma 0 minut, dla zachowania struktury
                 t_data.append({"Moduł": name, "Minuty": mins})
             
             st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
@@ -1359,12 +1415,10 @@ elif choice == "📊 Statystyki":
         with col_top2:
             st.subheader("🧠 Fazy zapamiętywania")
             today = date.today()
-            # Definiujemy progi dla faz zapamiętywania
             phase_counts = {"Słaba (1-2 dni)": 0, "Średnia (3-6 dni)": 0, "Silna (7+ dni)": 0}
             
             for _, row in df.iterrows():
                 try:
-                    # Zamieniamy datę z bazy na obiekt date
                     rev_str = str(row.get('next_review', today))
                     rev_date = datetime.strptime(rev_str, "%Y-%m-%d").date()
                     diff = (rev_date - today).days
@@ -1396,12 +1450,11 @@ elif choice == "📊 Statystyki":
                 label = (date.today() + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         
-        df_sched = pd.DataFrame(sched)
-        st.dataframe(df_sched, use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(sched), use_container_width=True, hide_index=True)
 
         st.write("---")
         
-        # 4. Tabele Poziomów i Źródeł (Obok siebie)
+        # 4. Tabele Poziomów i Źródeł
         col_stats1, col_stats2 = st.columns(2)
         
         with col_stats1:
@@ -1412,19 +1465,18 @@ elif choice == "📊 Statystyki":
             
             today_str = str(date.today())
             
-            if 'category' in df.columns:
-                for _, row in df.iterrows():
-                    cat = row.get('category')
-                    if pd.isna(cat) or not cat: continue
-                    cat_str = str(cat).upper()
-                    next_rev = str(row.get('next_review', today_str))
-                    is_mastered = next_rev > today_str
-                    
-                    for lvl in levels:
-                        if lvl in cat_str:
-                            level_totals[lvl] += 1
-                            if is_mastered:
-                                level_mastered[lvl] += 1
+            for _, row in df.iterrows():
+                cat = row.get('category')
+                if pd.isna(cat) or not cat: continue
+                cat_str = str(cat).upper()
+                next_rev = str(row.get('next_review', today_str))
+                is_mastered = next_rev > today_str
+                
+                for lvl in levels:
+                    if lvl in cat_str:
+                        level_totals[lvl] += 1
+                        if is_mastered:
+                            level_mastered[lvl] += 1
             
             level_data = []
             for lvl in levels:
