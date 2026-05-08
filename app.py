@@ -1924,7 +1924,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 27. ADMIN PRO (V280 - Klasyczny widok + Procentowy Rozkład Czasu) ---
+# --- 27. ADMIN PRO (V298 - Pełny rozkład z Konstruktorem) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
@@ -1943,15 +1943,17 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     adm_list = []
     global_time = {}
     
-    # Kody z Twojej bazy (zgodnie z logiką nawigacji)
-    tracked_codes = ["Pow", "Trn", "Qiz", "Mem", "Tst", "War", "Inn"]
+    # Zaktualizowane kody (zgodnie z nową kolejnością i nową grą)
+    tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Inn"]
     display_names = {
         "Pow": "📅 Powtórki", 
         "Trn": "🚀 Trening", 
         "Qiz": "🕹️ Quiz", 
-        "Mem": "🧠 Memory", 
+        "Fis": "🎴 Fiszki",
         "Tst": "📝 Testy", 
+        "Mem": "🧠 Memory", 
         "War": "🛠️ Warsztat",
+        "Kon": "🏗️ Konstruktor",
         "Inn": "Inne"
     }
     
@@ -2011,15 +2013,15 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     else:
         df_admin = pd.DataFrame(adm_list)
         
-        # --- TABELA 1: NOWY GLOBALNY ROZKŁAD AKTYWNOŚCI ---
+        # --- TABELA 1: GLOBALNY ROZKŁAD AKTYWNOŚCI ---
         st.subheader("📈 Globalny rozkład aktywności")
         total_global_study = sum(global_time.values())
         
         if total_global_study > 0:
             analysis_rows = []
-            # Wyświetlamy w kolejności nawigacji (bez 'Inn')
-            for code in ["Pow", "Trn", "Qiz", "Mem", "Tst", "War"]:
-                val_sec = global_stats_val = global_time.get(code, 0)
+            # Wyświetlamy w Twojej wymarzonej kolejności (bez 'Inn')
+            for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon"]:
+                val_sec = global_time.get(code, 0)
                 perc = (val_sec / total_global_study) * 100
                 m, _ = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
@@ -2055,7 +2057,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         # --- TABELA 3: SZCZEGÓŁY CZASU ---
         with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
-            valid_codes = ["Pow", "Trn", "Qiz", "Mem", "Tst", "War", "Inn"]
+            # Tutaj też uwzględniamy pełną listę
+            valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Inn"]
             
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
