@@ -193,10 +193,14 @@ if st.session_state.l_c != choice:
     st.session_state.n_m = "ask"
     st.session_state.u_a = ""
 
-# --- 7. POWTÓRKI & TRENING (Wersja ULTRA FAST z st.fragment) ---
-if choice in ["📅 Powtórki", "🚀 Trening"]:
+# --- 7. POWTÓRKI & TRENING (Wersja z obsługą Auto-Audio) ---
+elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
+    
+    # 0. Pobieranie ustawień z bazy
+    user_settings = st.session_state.user_data.get("settings", {})
+    auto_audio = user_settings.get("auto_audio", True)
     
     # 1. Filtrowanie tagów (poza fragmentem, bo rzadko zmieniane)
     all_tags = set()
@@ -265,8 +269,21 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 if fex:
                     st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
-                
-                play_audio(c['de'], fex)
+                    
+                    # Odtwarzanie warunkowe Auto-Audio
+                    if auto_audio:
+                        play_audio(c['de'], fex)
+                else:
+                    if auto_audio:
+                        play_audio(c['de'])
+
+                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
+                if not auto_audio:
+                    if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
+                        if fex:
+                            play_audio(c['de'], fex)
+                        else:
+                            play_audio(c['de'])
 
                 # Przycisk "Dalej" / "Oceny"
                 if is_r:
