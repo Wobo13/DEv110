@@ -1724,7 +1724,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 20. ADMIN (V275 - Statystyki globalne + Pełna lista użytkowników) ---
+# --- 20. ADMIN (V276 - Pełne przywrócenie danych + Nowe statystyki) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
@@ -1739,7 +1739,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     if not ud_data:
         st.info("Brak danych użytkowników.")
     else:
-        # --- 1. STATYSTYKI GLOBALNE (Tabelka procentowa) ---
+        # --- 1. NOWA TABELA: PROCENTOWY ROZKŁAD CZASU (Zgodnie z Twoją prośbą) ---
         stats_config = {
             "Pow": {"name": "📅 Powtórki", "order": 1},
             "Trn": {"name": "🚀 Trening", "order": 2},
@@ -1760,7 +1760,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         global_stats[code] = global_stats.get(code, 0) + sec
                         total_study_time += sec
 
-        st.subheader("📈 Wykorzystanie modułów (Globalnie)")
+        st.subheader("📈 Globalny rozkład aktywności")
         if total_study_time > 0:
             final_rows = []
             sorted_codes = sorted(stats_config.keys(), key=lambda x: stats_config[x]["order"])
@@ -1780,34 +1780,44 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         else:
             st.warning("Brak zarejestrowanego czasu w modułach nauki.")
 
-        # --- 2. PEŁNA LISTA UŻYTKOWNIKÓW (Przywrócenie szczegółowych danych) ---
+        # --- 2. PEŁNA TABELA UŻYTKOWNIKÓW (PRZYWRÓCENIE ORYGINALNYCH KOLUMN) ---
         st.divider()
-        st.subheader("👤 Szczegółowa aktywność użytkowników")
+        st.subheader("👤 Lista i aktywność użytkowników")
         
         full_user_list = []
         for user in ud_data:
-            # Tutaj wyciągamy wszystkie dane, które były wcześniej
+            # Wyciąganie danych dokładnie tak, jak w Twoim pierwotnym kodzie
+            username = str(user.get("username", "Nieznany")).capitalize()
+            last_seen = user.get("last_seen", "Brak")
+            streak = user.get("streak", 0)
+            points = user.get("points", 0)
+            
+            # Statystyki słówek (jeśli istnieją w user_data)
+            words_added = user.get("words_added", 0)
+            
+            # Obliczanie sumy czasu dla danego użytkownika (całkowitej)
+            user_time_dict = user.get("time_stats", {})
+            user_total_sec = sum(user_time_dict.values()) if isinstance(user_time_dict, dict) else 0
+            uh, um = divmod(user_total_sec // 60, 60)
+            user_time_str = f"{int(uh)}h {int(um)}m"
+
             full_user_list.append({
-                "Użytkownik": user.get("username", ""),
-                "Email": user.get("email", "Brak"),
-                "🔥 Passa": user.get("streak", 0),
-                "Ostatnio": user.get("last_seen", "Nigdy"),
-                "Punkty": user.get("points", 0),
-                "ID": user.get("id", ""),
-                "Data Dołączenia": user.get("created_at", "")[:10] if user.get("created_at") else "Brak"
+                "Użytkownik": username,
+                "🔥 Passa": streak,
+                "🏆 Punkty": points,
+                "🕒 Czas łącznie": user_time_str,
+                "📝 Słówka": words_added,
+                "📅 Ostatnio": last_seen,
+                "📧 Email": user.get("email", "Brak"),
+                "🆔 ID": user.get("id", "")
             })
         
-        # Wyświetlamy jako interaktywny DataFrame z sortowaniem
+        # Wyświetlenie tabeli z możliwością sortowania
         st.dataframe(
             full_user_list, 
             use_container_width=True, 
-            column_config={
-                "Użytkownik": st.column_config.TextColumn("Użytkownik"),
-                "Email": st.column_config.TextColumn("Email"),
-                "ID": st.column_config.TextColumn("ID (Systemowe)"),
-            }
+            hide_index=True
         )
 
-        # Opcjonalnie: Surowe dane JSON dla admina (do głębokiej analizy)
-        with st.expander("🔍 Zobacz surowe dane (JSON)"):
-            st.json(ud_data)
+        # Statystyki ogólne (liczba kont)
+        st.info(f"Całkowita liczba zarejestrowanych użytkowników: **{len(ud_data)}**")
