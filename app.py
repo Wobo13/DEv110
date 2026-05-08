@@ -383,11 +383,15 @@ elif choice == "🕹️ Quiz":
 
         quiz_engine()
 
-# --- 9. FISZKI (Wersja ULTRA FAST z st.fragment) ---
+# --- 9. FISZKI (Wersja z obsługą Auto-Audio) ---
 elif choice == "🎴 Fiszki":
     st.header("🎴 Fiszki")
     
-    # Inicjalizacja stanu (poza fragmentem, aby zachować ciągłość przy zmianie modułu)
+    # 1. Pobieranie ustawienia z bazy
+    user_settings = st.session_state.user_data.get("settings", {})
+    auto_audio = user_settings.get("auto_audio", True)
+    
+    # Inicjalizacja stanu
     if "f_idx" not in st.session_state: st.session_state.f_idx = 0
     if "f_flipped" not in st.session_state: st.session_state.f_flipped = False
     
@@ -428,11 +432,25 @@ elif choice == "🎴 Fiszki":
             if st.session_state.f_flipped:
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                
                 if fex:
                     st.info(f"🇩🇪 **{fex}**\n\n🇵🇱 {exs[0].get('pl','')}")
-                    play_audio(c['de'], fex)
+                    
+                    # Logika Auto-Audio dla słówka i przykładu
+                    if auto_audio:
+                        play_audio(c['de'], fex)
                 else:
-                    play_audio(c['de'])
+                    # Logika Auto-Audio tylko dla słówka
+                    if auto_audio:
+                        play_audio(c['de'])
+
+                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
+                if not auto_audio:
+                    if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
+                        if fex:
+                            play_audio(c['de'], fex)
+                        else:
+                            play_audio(c['de'])
             
             # Nawigacja - używamy st.rerun(scope="fragment") dla maksymalnej płynności
             st.write("")
