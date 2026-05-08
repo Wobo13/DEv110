@@ -1308,10 +1308,11 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 17. ADMIN PRO (Wersja Skompresowana) ---
+# --- 17. ADMIN PRO (Wersja ULTRA CLEAN) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
+    # Przycisk wymuszający przeładowanie danych
     if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
         st.cache_data.clear()
         st.rerun()
@@ -1319,6 +1320,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
+    # Pobieramy dane użytkowników i fiszek
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
@@ -1335,22 +1337,24 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
         
-        # Wiedza (Spójne z sidebarem)
+        # Obliczanie Wiedzy (Słówka silne > 6 dni)
         strong_cards = 0
         if not user_cards.empty:
             strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
-            wiedza = f"{int((strong_cards / len(user_cards)) * 100)}%"
+            wiedza_val = int((strong_cards / len(user_cards)) * 100)
         else:
-            wiedza = "0%"
+            wiedza_val = 0
 
-        # Statystyki czasu
+        # Agregacja czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
+        
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
             k_low = k.lower()
             f_code = "Inn"
+            
             if k in tracked_codes: f_code = k
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
@@ -1362,7 +1366,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             total_sec += seconds
             global_time[f_code] = global_time.get(f_code, 0) + seconds
 
-        # Kompresja kolumn Słówka (Suma i rozbicie R|G|S)
+        # Formatowanie kolumny Słówka (Suma i rozbicie Ręcznie|Generator|Skaner)
         r = int(oc.get("Dodaj", 0))
         g = int(oc.get("Generator", 0))
         s = int(oc.get("Skaner", 0))
@@ -1372,7 +1376,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             "Użytkownik": username,
             "Aktywność": user.get("last_seen", "Brak"),
             "🔥": user.get("streak", 0),
-            "🧠 Wiedza": wiedza,
+            "🧠 Wiedza": f"{wiedza_val}%",
             "Słówka (R|G|S)": slowka_fmt, 
             "Testy": len(user.get("test_history", [])),
             "Czas (m)": int(total_sec // 60),
@@ -1381,13 +1385,29 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         })
     
     if not adm_list:
-        st.warning("Brak danych.")
+        st.warning("Brak danych użytkowników.")
     else:
         df_admin = pd.DataFrame(adm_list)
         st.subheader("📋 Podsumowanie")
-        # Wyświetlamy tabelę
-        st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
         
+        # Konfiguracja tabeli głównej
+        st.dataframe(
+            df_admin.drop(columns=["__raw_stats"]), 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Użytkownik": st.column_config.TextColumn("Użytkownik", width="medium"),
+                "Aktywność": st.column_config.TextColumn("Aktywność", width="small"),
+                "🔥": st.column_config.NumberColumn("🔥", width="small", help="Dni passy"),
+                "🧠 Wiedza": st.column_config.TextColumn("🧠 Wiedza", width="small"),
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width="medium"),
+                "Testy": st.column_config.NumberColumn("Testy", width="small"),
+                "Czas (m)": st.column_config.NumberColumn("Czas (m)", width="small"),
+                "PLN": st.column_config.NumberColumn("PLN", width="small", format="%.2f zł"),
+            }
+        )
+        
+        # Sekcja szczegółowa
         with st.expander("🔍 Szczegółowy podział czasu (min)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
@@ -1395,12 +1415,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 for code in tracked_codes:
                     d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
                 detail_rows.append(d_row)
-            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+            
+            st.dataframe(
+                pd.DataFrame(detail_rows), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
-        # WYKRES
+        # Wykres Globalny
         if global_time:
             st.write("---")
             chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
+            
             if chart_data:
                 fig = go.Figure(data=[go.Bar(
                     x=list(chart_data.keys()), 
@@ -1409,5 +1435,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     text=list(chart_data.values()),
                     textposition='auto'
                 )])
-                fig.update_layout(template="plotly_dark", height=300, margin=dict(l=20, r=20, t=40, b=20), title="Globalny czas (min)")
+                fig.update_layout(
+                    template="plotly_dark", 
+                    height=300, 
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    title="Globalny czas na modułach (min)"
+                )
                 st.plotly_chart(fig, use_container_width=True)
