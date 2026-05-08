@@ -1308,7 +1308,7 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 17. ADMIN PRO ---
+# --- 17. ADMIN PRO (Wersja Skompresowana) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
@@ -1335,23 +1335,22 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
         
-        # Obliczanie poziomu opanowania (słówka silne: powtórka > 6 dni)
+        # Wiedza (Spójne z sidebarem)
         strong_cards = 0
         if not user_cards.empty:
             strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
-            mastery = f"{int((strong_cards / len(user_cards)) * 100)}%"
+            wiedza = f"{int((strong_cards / len(user_cards)) * 100)}%"
         else:
-            mastery = "0%"
+            wiedza = "0%"
 
+        # Statystyki czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
-        
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
             k_low = k.lower()
             f_code = "Inn"
-            
             if k in tracked_codes: f_code = k
             elif "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
@@ -1362,18 +1361,22 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             current_user_merged[f_code] += seconds
             total_sec += seconds
             global_time[f_code] = global_time.get(f_code, 0) + seconds
+
+        # Kompresja kolumn Słówka (Suma i rozbicie R|G|S)
+        r = int(oc.get("Dodaj", 0))
+        g = int(oc.get("Generator", 0))
+        s = int(oc.get("Skaner", 0))
+        slowka_fmt = f"{len(user_cards)} ({r}|{g}|{s})"
             
         adm_list.append({
             "Użytkownik": username,
-            "Ostatnia aktywność": user.get("last_seen", "Brak"),
+            "Aktywność": user.get("last_seen", "Brak"),
             "🔥": user.get("streak", 0),
-            "🧠 Opanowanie": mastery,
-            "Słów": len(user_cards), 
-            "Ręcznie": int(oc.get("Dodaj", 0)), 
-            "Generator": int(oc.get("Generator", 0)), 
-            "Skaner": int(oc.get("Skaner", 0)), 
-            "Czas (min)": int(total_sec // 60),
-            "Koszt (PLN)": round(user.get("historical_cost", 0.0), 2),
+            "🧠 Wiedza": wiedza,
+            "Słówka (R|G|S)": slowka_fmt, 
+            "Testy": len(user.get("test_history", [])),
+            "Czas (m)": int(total_sec // 60),
+            "PLN": round(user.get("historical_cost", 0.0), 2),
             "__raw_stats": current_user_merged
         })
     
@@ -1381,11 +1384,11 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.warning("Brak danych.")
     else:
         df_admin = pd.DataFrame(adm_list)
-        st.subheader("📋 Podsumowanie użytkowników")
-        # Wyświetlamy tabelę z nowymi kolumnami
+        st.subheader("📋 Podsumowanie")
+        # Wyświetlamy tabelę
         st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True)
         
-        with st.expander("🔍 Podział czasu na moduły (minuty)"):
+        with st.expander("🔍 Szczegółowy podział czasu (min)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
@@ -1398,7 +1401,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         if global_time:
             st.write("---")
             chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
-            
             if chart_data:
                 fig = go.Figure(data=[go.Bar(
                     x=list(chart_data.keys()), 
@@ -1407,5 +1409,5 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     text=list(chart_data.values()),
                     textposition='auto'
                 )])
-                fig.update_layout(template="plotly_dark", height=400, title="Globalny czas na modułach (minuty)")
+                fig.update_layout(template="plotly_dark", height=300, margin=dict(l=20, r=20, t=40, b=20), title="Globalny czas (min)")
                 st.plotly_chart(fig, use_container_width=True)
