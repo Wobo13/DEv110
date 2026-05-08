@@ -258,27 +258,22 @@ if st.sidebar.button("🚪 Wyloguj się", use_container_width=True):
     st.rerun()
 
 st.sidebar.caption(f"v{APP_VERSION}")
-# --- 7. POWTÓRKI & TRENING (V238 - Separacja logiki SRS) ---
+# --- 7. POWTÓRKI & TRENING (V250 - Elastyczne sprawdzanie rodzajników) ---
 if choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
     
-    # 0. Ustawienia
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. Filtrowanie tagów
     all_tags = set()
     for c in st.session_state.flashcards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="sel_tag_rep")
 
-    # 2. Inicjalizacja sesji nauki
     if "cur_list" not in st.session_state or st.session_state.get("last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
-        
-        # Kluczowa różnica: Powtórki filtrują tylko to, co "na dziś", Trening bierze wszystko
         if is_r:
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
@@ -301,7 +296,6 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # --- SILNIK MODUŁU (FRAGMENT) ---
         @st.fragment
         def flashcard_engine():
             idx = st.session_state.n_idx
@@ -310,7 +304,7 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            # Wizualizacja karty
+            # Karta (Niemiecki)
             st.markdown(f'''
                 <div style="font-size:2.8em; text-align:center; padding:40px; 
                 background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
@@ -327,32 +321,41 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state.n_m = "res"
                         st.rerun(scope="fragment")
             else:
-                # Wynik
-                is_correct = normalize_text(st.session_state.u_a) == normalize_text(c['pl'])
+                # --- LOGIKA SPRYTEGO SPRAWDZANIA ---
+                def clean_for_compare(text):
+                    t = normalize_text(text)
+                    # Usuwamy rodzajniki na początku, aby zaakceptować odpowiedź bez nich
+                    t = re.sub(r'^(der|die|das)\s+', '', t)
+                    return t.strip()
+
+                user_ans = clean_for_compare(st.session_state.u_a)
+                correct_ans = clean_for_compare(c['pl'])
+                
+                is_correct = user_ans == correct_ans
+                
                 if is_correct:
                     st.success(f"✅ Dobrze: {c['pl']}")
                 else:
                     st.error(f"❌ Poprawnie: {c['pl']}")
                 
-                # Audio i przykłady
+                # Audio i przykłady (Audio zawsze z rodzajnikiem, bo bierze c['de'])
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                
+                if auto_audio:
+                    play_audio(c['de'], fex)
+
                 if fex:
                     st.info(f"💡 {fex}\n\n({exs[0].get('pl','')})")
-                    if auto_audio: play_audio(c['de'], fex)
-                elif auto_audio:
-                    play_audio(c['de'])
-
+                
                 if not auto_audio:
                     if st.button("🔊 Odsłuchaj", use_container_width=True):
                         play_audio(c['de'], fex) if fex else play_audio(c['de'])
 
                 st.divider()
 
-                # --- LOGIKA DECYZYJNA ---
                 if is_r:
-                    # POWTÓRKI: Tu zmieniamy dane w bazie
-                    st.write("Oceń trudność (wpływa na algorytm):")
+                    st.write("Oceń trudność:")
                     col1, col2, col3 = st.columns(3)
                     d = None
                     if col1.button("🔴 Trudne"): d = 1
@@ -360,14 +363,12 @@ if choice in ["📅 Powtórki", "🚀 Trening"]:
                     if col3.button("🟢 Łatwe"): d = 10
                     
                     if d:
-                        # Aktualizujemy datę następnej powtórki
                         new_date = str(date.today() + timedelta(days=d))
                         update_word(c['id'], {"next_review": new_date})
                         st.session_state.n_idx += 1
                         st.session_state.n_m = "ask"
                         st.rerun(scope="fragment")
                 else:
-                    # TRENING: Tylko przejście dalej, brak zmian w bazie
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state.n_idx += 1
                         st.session_state.n_m = "ask"
