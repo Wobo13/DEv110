@@ -218,7 +218,7 @@ def update_activity(m):
     # Zapis do bazy (asynchronicznie w tle dla systemu)
     save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V298 - Pełny kod z przywróconym Warsztatem) ---
+# --- 6. SIDEBAR (V299 - Pełny kod z Wężem i zliczaniem czasu) ---
 with st.sidebar:
     # 1. Nagłówek: Nazwa Wielką Literą + Streak
     user_display = str(u).capitalize()
@@ -238,8 +238,9 @@ with st.sidebar:
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # Cel (Realna nauka - włączając Warsztat i Konstruktora)
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon"]
+    # Cel (Realna nauka - włączając wszystkie moduły gier i nauki)
+    # Dodano "Wan" dla Lingwistycznego Węża
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan"]
     current_stats = st.session_state.user_data.get("time_stats", {})
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
@@ -258,7 +259,7 @@ with st.sidebar:
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja z przywróconym Warsztatem)
+    # 4. MENU (Nawigacja z przywróconym Warsztatem i nowym Wężem)
     menu_options = [
         "🏠 Start", 
         "📅 Powtórki", 
@@ -267,8 +268,9 @@ with st.sidebar:
         "🎴 Fiszki", 
         "📝 Testy", 
         "🧠 Memory", 
-        "🛠️ Warsztat",    # <--- PRZYWRÓCONO!
+        "🛠️ Warsztat",
         "🏗️ Konstruktor", 
+        "🐍 Lingwistyczny Wąż", # <--- NOWOŚĆ!
         "🏆 Arena Wyzwań",
         "📦 Generator słów", 
         "📸 Skaner AI", 
@@ -1086,6 +1088,105 @@ elif choice == "🏗️ Konstruktor":
 
     if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True):
         for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
+            if k in st.session_state: del st.session_state[k]
+        st.rerun()
+
+# --- 15. LINGWISTYCZNY WĄŻ (V1.0 - Łańcuch Słów) ---
+elif choice == "🐍 Lingwistyczny Wąż":
+    st.header("🐍 Lingwistyczny Wąż")
+    st.write("Buduj łańcuch słów! Każde kolejne musi zaczynać się na ostatnią literę poprzedniego.")
+
+    # 1. INICJALIZACJA STANU GRY
+    if "snake_chain" not in st.session_state:
+        if len(st.session_state.flashcards) < 5:
+            st.warning("Dodaj min. 5 słówek, aby móc zagrać w Węża.")
+            st.stop()
+        
+        # Start gry: System losuje pierwsze słowo z bazy
+        first_word = random.choice(st.session_state.flashcards)
+        st.session_state.snake_chain = [first_word]
+        st.session_state.snake_used_ids = {first_word['id']}
+        st.session_state.snake_msg = "Zaczynamy! Twoja kolej."
+        st.session_state.snake_status = "player" # player / system / end
+
+    # 2. SILNIK GRY (FRAGMENT)
+    @st.fragment
+    def snake_engine():
+        chain = st.session_state.snake_chain
+        last_word_obj = chain[-1]
+        last_word_de = last_word_obj['de'].strip().lower()
+        
+        # Oczyszczanie ostatniej litery (ignorujemy znaki specjalne na końcu jeśli są)
+        last_letter = re.sub(r'[^a-zäöüß]', '', last_word_de)[-1]
+        
+        # --- UI: Wyświetlanie łańcucha ---
+        st.markdown("### Aktualny łańcuch:")
+        cols = st.columns(len(chain[-5:])) # Pokazujemy ostatnie 5 ogniw dla czytelności
+        for i, word in enumerate(chain[-5:]):
+            with cols[i]:
+                color = "#4CAF50" if i % 2 == 0 else "#1E88E5"
+                st.markdown(f"""
+                    <div style="background:{color}; padding:10px; border-radius:10px; text-align:center; color:white; font-weight:bold;">
+                        {word['de']}<br><span style="font-size:0.7em; font-weight:normal;">{word['pl']}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+        
+        st.divider()
+        st.info(f"Ostatnie słowo kończy się na: **{last_letter.upper()}**")
+
+        # --- TRYB GRACZA ---
+        if st.session_state.snake_status == "player":
+            with st.form("snake_input", clear_on_submit=True):
+                u_input = st.text_input("Wpisz niemieckie słowo ze swojej bazy zaczynające się na tę literę:").strip().lower()
+                if st.form_submit_button("Dodaj ogniwo 🔗", use_container_width=True):
+                    # Szukamy słowa w bazie użytkownika
+                    found = [c for c in st.session_state.flashcards 
+                             if normalize_text(c['de']).startswith(normalize_text(u_input)) 
+                             and normalize_text(c['de']) == normalize_text(u_input)
+                             and c['id'] not in st.session_state.snake_used_ids]
+                    
+                    if not found:
+                        st.error("Nie znaleziono takiego słowa w Twojej bazie (lub zostało już użyte)!")
+                    elif not u_input.startswith(last_letter):
+                        st.error(f"Słowo musi zaczynać się na literę '{last_letter.upper()}'!")
+                    else:
+                        # Gracz dodał poprawne słowo
+                        st.session_state.snake_chain.append(found[0])
+                        st.session_state.snake_used_ids.add(found[0]['id'])
+                        st.session_state.snake_status = "system"
+                        st.rerun(scope="fragment")
+
+        # --- TRYB SYSTEMU ---
+        elif st.session_state.snake_status == "system":
+            with st.spinner("System szuka słowa w Twojej bazie..."):
+                time.sleep(1) # Efekt myślenia
+                possible = [c for c in st.session_state.flashcards 
+                            if normalize_text(c['de']).startswith(last_letter)
+                            and c['id'] not in st.session_state.snake_used_ids]
+                
+                if possible:
+                    bot_word = random.choice(possible)
+                    st.session_state.snake_chain.append(bot_word)
+                    st.session_state.snake_used_ids.add(bot_word['id'])
+                    st.session_state.snake_status = "player"
+                    st.rerun(scope="fragment")
+                else:
+                    st.session_state.snake_status = "end"
+                    st.balloons()
+                    st.success("Wygrałeś! System nie znalazł już żadnego słowa w Twojej bazie na tę literę. 🏆")
+                    st.rerun(scope="fragment")
+
+        # --- KONIEC GRY ---
+        if st.session_state.snake_status == "end":
+            if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
+                for k in ["snake_chain", "snake_used_ids", "snake_status"]:
+                    if k in st.session_state: del st.session_state[k]
+                st.rerun()
+
+    snake_engine()
+
+    if st.button("Resetuj grę / Zmień słowo startowe", type="secondary", use_container_width=True):
+        for k in ["snake_chain", "snake_used_ids", "snake_status"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
