@@ -1256,7 +1256,7 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
 
-# --- 16. DODAJ (V261 - Z edycją przed zapisem i poprawioną nazwą) ---
+# --- 16. DODAJ (V262 - Wymuszone rodzajniki) ---
 elif choice == "➕ Dodaj":
     st.header("➕ Dodaj nowe słówko")
     
@@ -1291,23 +1291,24 @@ elif choice == "➕ Dodaj":
         manual_add_ui()
 
     with tab2:
-        st.info("Wpisz słowo, a AI przygotuje resztę. Będziesz mógł to sprawdzić przed zapisem.")
-        ai_word = st.text_input("Jakie słowo przygotować?", placeholder="np. die Entscheidung", key="ai_input_field")
+        st.info("Wpisz słowo, a AI przygotuje resztę (zawsze z rodzajnikiem).")
+        ai_word = st.text_input("Jakie słowo przygotować?", placeholder="np. Entscheidung", key="ai_input_field")
         
         if st.button("Przygotuj dane przez AI ✨", use_container_width=True):
             if ai_word:
-                with st.spinner("AI analizuje słowo..."):
-                    prompt = f"""Przygotuj dane dla niemieckiego słowa lub frazy: '{ai_word}'.
+                with st.spinner("AI analizuje słowo i sprawdza rodzajnik..."):
+                    # WZMOCNIONY PROMPT: Dodany rygorystyczny wymóg rodzajnika
+                    prompt = f"""Przygotuj dane dla niemieckiego słowa/frazy: '{ai_word}'.
+                    ZASADA KRYTYCZNA: Jeśli słowo jest rzeczownikiem, MUSISZ dodać rodzajnik (der, die, das).
                     Zwróć WYŁĄCZNIE JSON:
                     {{
-                      "de": "{ai_word}",
+                      "de": "tutaj słowo koniecznie z rodzajnikiem jeśli to rzeczownik",
                       "pl": "tłumaczenie",
                       "tags": "Poziom, Część mowy, Temat",
                       "ex_de": "przykład użycia po niemiecku",
                       "ex_pl": "tłumaczenie przykładu"
                     }}"""
                     try:
-                        # Używamy Twojej funkcji get_openai_response
                         res = get_openai_response(prompt)
                         data = json.loads(res)
                         st.session_state.single_temp = [data]
@@ -1316,7 +1317,7 @@ elif choice == "➕ Dodaj":
             else:
                 st.warning("Wpisz słowo!")
 
-        # --- SEKCJA EDYCJI (Pojawia się po wygenerowaniu) ---
+        # --- SEKCJA EDYCJI ---
         if "single_temp" in st.session_state and st.session_state.single_temp:
             st.divider()
             st.subheader("📝 Sprawdź i popraw przed zapisem")
@@ -1335,7 +1336,7 @@ elif choice == "➕ Dodaj":
                 df_init,
                 use_container_width=True,
                 num_rows="fixed",
-                key="single_word_editor_v1"
+                key="single_word_editor_v2"
             )
 
             c_save, c_cancel = st.columns(2)
