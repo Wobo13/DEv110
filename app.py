@@ -1308,11 +1308,10 @@ elif choice == "⚙️ Moje Konto":
             st.session_state.flashcards = []
             st.rerun()
 
-# --- 17. ADMIN PRO (Wersja ULTRA CLEAN) ---
+# --- 17. ADMIN PRO (Wersja Ultra-Compact) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
     
-    # Przycisk wymuszający przeładowanie danych
     if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
         st.cache_data.clear()
         st.rerun()
@@ -1320,7 +1319,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
     
     db = get_db()
-    # Pobieramy dane użytkowników i fiszek
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
@@ -1337,7 +1335,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts()
         
-        # Obliczanie Wiedzy (Słówka silne > 6 dni)
+        # Wiedza
         strong_cards = 0
         if not user_cards.empty:
             strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
@@ -1345,100 +1343,71 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         else:
             wiedza_val = 0
 
-        # Agregacja czasu
+        # Czas
         user_stats = user.get("time_stats", {})
-        current_user_merged = {code: 0 for code in tracked_codes}
-        total_sec = 0
+        total_sec = sum(user_stats.values())
         
-        for raw_key, seconds in user_stats.items():
-            k = str(raw_key).strip()
-            k_low = k.lower()
+        # Agregacja do globalnego wykresu
+        for k, v in user_stats.items():
+            k_low = str(k).lower()
             f_code = "Inn"
-            
-            if k in tracked_codes: f_code = k
-            elif "pow" in k_low: f_code = "Pow"
+            if "pow" in k_low: f_code = "Pow"
             elif "trn" in k_low or "tre" in k_low: f_code = "Trn"
             elif "qiz" in k_low or "qui" in k_low: f_code = "Qiz"
             elif "fis" in k_low: f_code = "Fis"
             elif "tst" in k_low or "tes" in k_low: f_code = "Tst"
-            
-            current_user_merged[f_code] += seconds
-            total_sec += seconds
-            global_time[f_code] = global_time.get(f_code, 0) + seconds
+            global_time[f_code] = global_time.get(f_code, 0) + v
 
-        # Formatowanie kolumny Słówka (Suma i rozbicie Ręcznie|Generator|Skaner)
-        r = int(oc.get("Dodaj", 0))
-        g = int(oc.get("Generator", 0))
-        s = int(oc.get("Skaner", 0))
+        # Czytelniejsza Aktywność: Rozdzielamy datę i godzinę
+        raw_seen = user.get("last_seen", "Brak")
+        formatted_seen = raw_seen.replace(" ", "  |  ") if " " in raw_seen else raw_seen
+
+        # Grupowanie słówek
+        r, g, s = int(oc.get("Dodaj", 0)), int(oc.get("Generator", 0)), int(oc.get("Skaner", 0))
         slowka_fmt = f"{len(user_cards)} ({r}|{g}|{s})"
             
         adm_list.append({
             "Użytkownik": username,
-            "Aktywność": user.get("last_seen", "Brak"),
+            "Aktywność": formatted_seen,
             "🔥": user.get("streak", 0),
-            "🧠 Wiedza": f"{wiedza_val}%",
+            "🧠": f"{wiedza_val}%",
             "Słówka (R|G|S)": slowka_fmt, 
-            "Testy": len(user.get("test_history", [])),
-            "Czas (m)": int(total_sec // 60),
-            "PLN": round(user.get("historical_cost", 0.0), 2),
-            "__raw_stats": current_user_merged
+            "Tst": len(user.get("test_history", [])),
+            "Min": int(total_sec // 60),
+            "PLN": round(user.get("historical_cost", 0.0), 2)
         })
     
     if not adm_list:
-        st.warning("Brak danych użytkowników.")
+        st.warning("Brak danych.")
     else:
         df_admin = pd.DataFrame(adm_list)
         st.subheader("📋 Podsumowanie")
         
-        # Konfiguracja tabeli głównej
+        # KLUCZOWA ZMIANA: Ręczne ustawienie szerokości (width w pikselach)
         st.dataframe(
-            df_admin.drop(columns=["__raw_stats"]), 
+            df_admin, 
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Użytkownik": st.column_config.TextColumn("Użytkownik", width="medium"),
-                "Aktywność": st.column_config.TextColumn("Aktywność", width="small"),
-                "🔥": st.column_config.NumberColumn("🔥", width="small", help="Dni passy"),
-                "🧠 Wiedza": st.column_config.TextColumn("🧠 Wiedza", width="small"),
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width="medium"),
-                "Testy": st.column_config.NumberColumn("Testy", width="small"),
-                "Czas (m)": st.column_config.NumberColumn("Czas (m)", width="small"),
-                "PLN": st.column_config.NumberColumn("PLN", width="small", format="%.2f zł"),
+                "Użytkownik": st.column_config.TextColumn("Użytkownik", width=100),
+                "Aktywność": st.column_config.TextColumn("Aktywność (Data | Czas)", width=160),
+                "🔥": st.column_config.NumberColumn("🔥", width=40),
+                "🧠": st.column_config.TextColumn("🧠", width=45),
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width=130),
+                "Tst": st.column_config.NumberColumn("Tst", width=40),
+                "Min": st.column_config.NumberColumn("Min", width=50),
+                "PLN": st.column_config.NumberColumn("PLN", width=70, format="%.2f zł"),
             }
         )
         
-        # Sekcja szczegółowa
-        with st.expander("🔍 Szczegółowy podział czasu (min)"):
-            detail_rows = []
-            for _, row in df_admin.iterrows():
-                d_row = {"Użytkownik": row["Użytkownik"]}
-                for code in tracked_codes:
-                    d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
-                detail_rows.append(d_row)
-            
-            st.dataframe(
-                pd.DataFrame(detail_rows), 
-                use_container_width=True, 
-                hide_index=True
-            )
-
-        # Wykres Globalny
+        # Wykres (mniejszy i bardziej kompaktowy)
         if global_time:
             st.write("---")
             chart_data = {display_names.get(k, k): int(v // 60) for k, v in global_time.items() if (v // 60) > 0}
-            
             if chart_data:
                 fig = go.Figure(data=[go.Bar(
-                    x=list(chart_data.keys()), 
-                    y=list(chart_data.values()), 
-                    marker_color='#FF5252',
-                    text=list(chart_data.values()),
-                    textposition='auto'
+                    x=list(chart_data.keys()), y=list(chart_data.values()), 
+                    marker_color='#FF5252', text=list(chart_data.values()), textposition='auto'
                 )])
-                fig.update_layout(
-                    template="plotly_dark", 
-                    height=300, 
-                    margin=dict(l=20, r=20, t=40, b=20),
-                    title="Globalny czas na modułach (min)"
-                )
+                fig.update_layout(template="plotly_dark", height=250, margin=dict(l=10, r=10, t=30, b=10), title="Globalne minuty")
                 st.plotly_chart(fig, use_container_width=True)
