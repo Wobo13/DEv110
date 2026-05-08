@@ -1207,12 +1207,11 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V1.1 - Smooth Logic) ---
+# --- 16. BALONOWY WYŚCIG (V1.2 - Naprawa kliknięć i stabilny timer) ---
 elif choice == "🎈 Balonowy Wyścig":
     st.header("🎈 Balonowy Wyścig")
-    st.write("Masz 30 sekund! Wybierz poprawne tłumaczenie. Szybkość to klucz!")
-
-    # 1. INICJALIZACJA STANU GRY (Tylko raz na wejście)
+    
+    # 1. INICJALIZACJA
     if "bal_active" not in st.session_state:
         st.session_state.update({
             "bal_active": False,
@@ -1234,54 +1233,53 @@ elif choice == "🎈 Balonowy Wyścig":
         st.session_state.bal_opts = opts
         return True
 
-    # --- EKRAN KOŃCOWY ---
-    if not st.session_state.bal_active and st.session_state.bal_time_left <= 0:
-        st.balloons()
-        st.success(f"### Koniec czasu! Twój wynik: {st.session_state.bal_score} pkt 🏆")
-        
-        # Zapisywanie rekordu do bazy (Admin/Statystyki)
-        if st.session_state.bal_score > 0:
-            scores = st.session_state.user_data.get("baloon_scores", [])
-            scores.append(st.session_state.bal_score)
-            st.session_state.user_data["baloon_scores"] = sorted(list(set(scores)), reverse=True)[:10]
-            save_user_data(u, st.session_state.user_data)
-
-        if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
-            st.session_state.bal_score = 0
-            st.session_state.bal_time_left = 30
-            st.session_state.bal_active = True
-            st.session_state.bal_start_ts = time.time()
-            next_bal_round()
+    # --- LOGIKA KONCA GRY ---
+    if st.session_state.bal_active:
+        elapsed = time.time() - st.session_state.bal_start_ts
+        if elapsed >= 30:
+            st.session_state.bal_active = False
+            st.session_state.bal_time_left = 0
+            # Zapis rekordu do bazy danych
+            if st.session_state.bal_score > 0:
+                current_scores = list(st.session_state.user_data.get("baloon_scores", []))
+                current_scores.append(st.session_state.bal_score)
+                # Trzymamy top 10 unikalnych wyników
+                st.session_state.user_data["baloon_scores"] = sorted(list(set(current_scores)), reverse=True)[:10]
+                save_user_data(u, st.session_state.user_data)
             st.rerun()
 
-    # --- EKRAN STARTOWY ---
-    elif not st.session_state.bal_active:
-        st.info("Gotowy? Gra zacznie się natychmiast po kliknięciu!")
-        if st.button("🚀 START", use_container_width=True, type="primary"):
-            if next_bal_round():
-                st.session_state.bal_active = True
+    # --- WIDOKI ---
+    if not st.session_state.bal_active:
+        if st.session_state.bal_time_left <= 0:
+            st.balloons()
+            st.success(f"### Koniec! Wynik: {st.session_state.bal_score} pkt 🏆")
+            if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
                 st.session_state.bal_score = 0
                 st.session_state.bal_time_left = 30
+                st.session_state.bal_active = True
                 st.session_state.bal_start_ts = time.time()
+                next_bal_round()
                 st.rerun()
-            else:
-                st.warning("Potrzebujesz min. 4 słówek w bazie.")
+        else:
+            st.info("Gotowy na Time Attack? 30 sekund na liczniku!")
+            if st.button("🚀 START", use_container_width=True, type="primary"):
+                if next_bal_round():
+                    st.session_state.bal_active = True
+                    st.session_state.bal_score = 0
+                    st.session_state.bal_start_ts = time.time()
+                    st.rerun()
+                else:
+                    st.warning("Dodaj min. 4 słówka do bazy.")
 
-    # --- SILNIK GRY ---
     else:
-        # Używamy fragmentu, ale zoptymalizowanego
+        # SILNIK GRY (FRAGMENT)
         @st.fragment(run_every=1.0)
         def balloon_engine():
-            elapsed = time.time() - st.session_state.bal_start_ts
-            remaining = max(0, int(30 - elapsed))
+            # Obliczamy czas wewnątrz fragmentu dla efektu wizualnego
+            rem = max(0, int(30 - (time.time() - st.session_state.bal_start_ts)))
             
-            if remaining <= 0:
-                st.session_state.bal_active = False
-                st.session_state.bal_time_left = 0
-                st.rerun()
-
             c1, c2 = st.columns(2)
-            c1.metric("⏱️ Czas", f"{remaining}s")
+            c1.metric("⏱️ Czas", f"{rem}s")
             c2.metric("⭐ Punkty", st.session_state.bal_score)
 
             word = st.session_state.bal_word
@@ -1292,26 +1290,25 @@ elif choice == "🎈 Balonowy Wyścig":
                 </div>
             """, unsafe_allow_html=True)
 
-            # Wyświetlanie opcji
+            # PRZYCISKI - KLUCZE SĄ STAŁE (bez rem), aby kliknięcie działało!
             cols = st.columns(3)
             for i, opt in enumerate(st.session_state.bal_opts):
-                if cols[i].button(opt, key=f"bal_{opt}_{remaining}", use_container_width=True):
-                    if opt == word['pl']:
+                if cols[i].button(opt, key=f"btn_{i}", use_container_width=True):
+                    if opt == st.session_state.bal_word['pl']:
                         st.session_state.bal_score += 1
-                        # Krótki błysk sukcesu bez pełnego rerun bazy
                         next_bal_round()
                         st.rerun(scope="fragment")
                     else:
-                        st.toast("Błąd! 💨")
+                        st.toast("Pudło! 💨")
                         next_bal_round()
                         st.rerun(scope="fragment")
 
         balloon_engine()
-
+        
         if st.button("❌ Przerwij", type="secondary", use_container_width=True):
             st.session_state.bal_active = False
             st.rerun()
-
+            
 # --- 20. ARENA WYZWAŃ (V300 - Pełny Ranking z nowymi grami) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
