@@ -1207,11 +1207,10 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V1.2 - Naprawa kliknięć i stabilny timer) ---
+# --- 16. BALONOWY WYŚCIG (V1.3 - Blokada po czasie) ---
 elif choice == "🎈 Balonowy Wyścig":
     st.header("🎈 Balonowy Wyścig")
     
-    # 1. INICJALIZACJA
     if "bal_active" not in st.session_state:
         st.session_state.update({
             "bal_active": False,
@@ -1233,17 +1232,16 @@ elif choice == "🎈 Balonowy Wyścig":
         st.session_state.bal_opts = opts
         return True
 
-    # --- LOGIKA KONCA GRY ---
+    # --- LOGIKA KOŃCA GRY (Globalna) ---
     if st.session_state.bal_active:
         elapsed = time.time() - st.session_state.bal_start_ts
         if elapsed >= 30:
             st.session_state.bal_active = False
             st.session_state.bal_time_left = 0
-            # Zapis rekordu do bazy danych
+            # Zapis rekordu
             if st.session_state.bal_score > 0:
                 current_scores = list(st.session_state.user_data.get("baloon_scores", []))
                 current_scores.append(st.session_state.bal_score)
-                # Trzymamy top 10 unikalnych wyników
                 st.session_state.user_data["baloon_scores"] = sorted(list(set(current_scores)), reverse=True)[:10]
                 save_user_data(u, st.session_state.user_data)
             st.rerun()
@@ -1261,39 +1259,39 @@ elif choice == "🎈 Balonowy Wyścig":
                 next_bal_round()
                 st.rerun()
         else:
-            st.info("Gotowy na Time Attack? 30 sekund na liczniku!")
+            st.info("Gotowy? 30 sekund na liczniku!")
             if st.button("🚀 START", use_container_width=True, type="primary"):
                 if next_bal_round():
                     st.session_state.bal_active = True
                     st.session_state.bal_score = 0
                     st.session_state.bal_start_ts = time.time()
                     st.rerun()
-                else:
-                    st.warning("Dodaj min. 4 słówka do bazy.")
 
     else:
         # SILNIK GRY (FRAGMENT)
         @st.fragment(run_every=1.0)
         def balloon_engine():
-            # Obliczamy czas wewnątrz fragmentu dla efektu wizualnego
-            rem = max(0, int(30 - (time.time() - st.session_state.bal_start_ts)))
+            elapsed = time.time() - st.session_state.bal_start_ts
+            rem = max(0, int(30 - elapsed))
             
+            # CRITICAL CHECK: Jeśli wewnątrz fragmentu czas minął, blokujemy UI
+            if rem <= 0:
+                st.warning("Czas minął! Zaraz nastąpi podsumowanie...")
+                st.session_state.bal_active = False
+                st.rerun() # To wymusi wyjście z fragmentu do logiki głównej
+                return
+
             c1, c2 = st.columns(2)
             c1.metric("⏱️ Czas", f"{rem}s")
             c2.metric("⭐ Punkty", st.session_state.bal_score)
 
             word = st.session_state.bal_word
-            st.markdown(f"""
-                <div style="text-align:center; padding:20px; background:#111; 
-                border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;">
-                    <h2 style="color:white; margin:0;">{word['de']}</h2>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="text-align:center; padding:20px; background:#111; border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;"><h2 style="color:white; margin:0;">{word['de']}</h2></div>""", unsafe_allow_html=True)
 
-            # PRZYCISKI - KLUCZE SĄ STAŁE (bez rem), aby kliknięcie działało!
             cols = st.columns(3)
             for i, opt in enumerate(st.session_state.bal_opts):
-                if cols[i].button(opt, key=f"btn_{i}", use_container_width=True):
+                # Dodatkowy warunek disabled=True, jeśli czas bliski zeru
+                if cols[i].button(opt, key=f"btn_{i}", use_container_width=True, disabled=(rem <= 0)):
                     if opt == st.session_state.bal_word['pl']:
                         st.session_state.bal_score += 1
                         next_bal_round()
