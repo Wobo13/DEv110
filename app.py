@@ -983,102 +983,85 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 14. GENERATOR ---
-elif choice == "📦 Generator słów":
-    st.header("📦 Generator")
-    
-    # --- WYŚWIETLANIE WYNIKÓW PO OSTATNIM GENEROWANIU ---
-    if "last_generated" in st.session_state:
-        st.success(f"🎉 Pomyślnie wygenerowano i dodano {len(st.session_state.last_generated)} nowych słówek!")
-        
-        # Tabela ze spisem dodanych słówek (teraz pokazuje też tagi)
-        df_new = pd.DataFrame(st.session_state.last_generated)
-        st.dataframe(df_new, use_container_width=True, hide_index=True)
-        
-        if st.button("Ukryj listę", use_container_width=True):
-            del st.session_state.last_generated
-            st.rerun()
-            
-        st.write("---")
-    # ----------------------------------------------------
+# --- 14. GENERATOR AI (V240 - Z podglądem i edycją przed zapisem) ---
+elif choice == "🤖 Generator AI":
+    st.header("🤖 Inteligentny Generator Słówek")
+    st.write("Generuj tematyczne listy słówek wraz z przykładami użycia.")
 
-    cols = st.columns(5)
-    for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
-        if cols[i].button(lvl, use_container_width=True, key=f"gen_btn_{lvl}"):
-            with st.spinner(f"AI pobiera i analizuje słówka dla poziomu {lvl}... To potrwa kilka sekund."):
-                try:
-                    # Pobieranie bazy i odfiltrowanie już posiadanych
-                    res_lib = get_db().table("vocab_library").select("word").eq("level", lvl).execute()
-                    my_w = [x['de'].lower() for x in st.session_state.flashcards]
-                    avail = [w['word'] for w in res_lib.data if w['word'].lower() not in my_w]
-                    
-                    if not avail:
-                        st.warning(f"Masz już wszystkie słówka z poziomu {lvl} w swojej bazie!")
-                        st.stop()
-                        
-                    sel = random.sample(avail, min(25, len(avail)))
-                    
-                    # Generowanie danych przez AI - wymuszamy generowanie tematyki i części mowy
-                    prompt = f"Przetłumacz i otaguj słowa: {sel}. Dodaj minimum 2 tagi (część mowy oraz kategoria tematyczna). Zwróć wynik TYLKO w formacie JSON: {{\"flashcards\": [{{ \"de\":\"...\", \"pl\":\"...\", \"category\":\"Rzeczownik, Dom\", \"examples\":[{{ \"de\":\"...\", \"pl\":\"...\" }}] }}]}}"
-                    
-                    raw_res = get_openai_response(prompt)
-                    raw_res = raw_res.replace("```json", "").replace("```", "").strip()
-                    data = json.loads(raw_res)
-                    
-                    flashcards_data = data.get("flashcards", data.get("words", []))
-                    
-                    insert_payload = []
-                    display_list = [] # Do wyświetlenia użytkownikowi
-                    
-                    for w in flashcards_data:
-                        # 1. Pobieramy tagi od AI
-                        raw_cat = w.get("category", "")
-                        
-                        # 2. Rozbijamy, czyścimy ze spacji i zmieniamy z małych na duże litery (np. rzeczownik -> Rzeczownik)
-                        tags = [t.strip().capitalize() for t in str(raw_cat).split(",") if t.strip()]
-                        
-                        # 3. Usuwamy złośliwe/pomieszane poziomy, które mogło dodać AI
-                        clean_tags = [t for t in tags if t.upper() not in ["A1", "A2", "B1", "B2", "C1"]]
-                        
-                        # 4. Twardo doklejamy wciśnięty na przycisku poziom
-                        clean_tags.append(lvl)
-                        final_cat = ", ".join(clean_tags)
-                        
-                        card = {
-                            "username": u,
-                            "de": w.get("de", ""),
-                            "pl": w.get("pl", ""),
-                            "category": final_cat,
-                            "examples": w.get("examples", []),
-                            "next_review": str(date.today()),
-                            "origin": "Generator"
-                        }
-                        insert_payload.append(card)
-                        display_list.append({
-                            "Niemiecki (DE)": card["de"], 
-                            "Polski (PL)": card["pl"],
-                            "Tagi": final_cat
-                        })
-                    
-                    if insert_payload:
-                        # Jedno zapytanie do bazy (Ogromny skok wydajności w komunikacji z Supabase)
-                        get_db().table("flashcards").insert(insert_payload).execute()
-                        
-                        added = len(insert_payload)
-                        st.session_state.user_data["historical_cost"] += (added * 0.005) 
-                        save_user_data(u, st.session_state.user_data)
-                        
-                        # Aktualizacja lokalnej bazy
-                        st.session_state.flashcards = load_flashcards(u)
-                        
-                        # Zapisanie listy do sesji, aby przetrwała st.rerun()
-                        st.session_state.last_generated = display_list
-                        st.rerun()
-                    else:
-                        st.error("AI zwróciło pustą odpowiedź. Spróbuj kliknąć jeszcze raz.")
-                        
-                except Exception as e: 
-                    st.error(f"Wystąpił błąd podczas pracy AI: {e}")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        topic = st.text_input("Temat (np. 'Podróż pociągiem', 'Wizyta u lekarza'):")
+    with col2:
+        count = st.number_input("Liczba słówek:", 3, 15, 5)
+
+    if st.button("Generuj propozycje ✨", use_container_width=True):
+        with st.spinner("AI przygotowuje listę..."):
+            prompt = f"""Wygeneruj {count} słówek/fraz po niemiecku na temat: {topic}.
+            Dla każdego słowa podaj polskie tłumaczenie oraz jeden przykład użycia po niemiecku i polsku.
+            Zwróć wynik WYŁĄCZNIE jako surowy JSON w formacie:
+            [
+              {{"de": "słowo", "pl": "tłumaczenie", "ex_de": "przykład de", "ex_pl": "przykład pl"}}
+            ]"""
+            
+            try:
+                raw_res = ask_ai(prompt)
+                # Oczyszczanie tekstu z markdownowych znaczników ```json ... ```
+                clean_json = raw_res.replace("```json", "").replace("```", "").strip()
+                st.session_state.temp_generated = json.loads(clean_json)
+                st.session_state.gen_topic = topic
+            except Exception as e:
+                st.error(f"Błąd generowania: {e}")
+
+    # --- SEKCJA PODGLĄDU I EDYCJI ---
+    if "temp_generated" in st.session_state and st.session_state.temp_generated:
+        st.divider()
+        st.subheader("📝 Edytuj i zatwierdź listę")
+        st.info("Możesz zmienić tekst bezpośrednio w tabeli. Usuń zaznaczenie, aby pominąć słowo.")
+
+        # Przygotowanie danych do edytowalnej tabeli
+        df_data = []
+        for i, item in enumerate(st.session_state.temp_generated):
+            df_data.append({
+                "Dodaj": True,
+                "Niemiecki": item["de"],
+                "Polski": item["pl"],
+                "Przykład DE": item["ex_de"],
+                "Przykład PL": item["ex_pl"]
+            })
+
+        # Wyświetlenie edytowalnej tabeli
+        edited_df = st.data_editor(
+            df_data, 
+            use_container_width=True, 
+            num_rows="dynamic",
+            key="ai_editor"
+        )
+
+        col_save, col_cancel = st.columns(2)
+        
+        if col_save.button("✅ Dodaj wybrane do bazy", use_container_width=True, type="primary"):
+            success_count = 0
+            for row in edited_df:
+                if row["Dodaj"]:
+                    new_word = {
+                        "de": row["Niemiecki"],
+                        "pl": row["Polski"],
+                        "category": st.session_state.gen_topic,
+                        "next_review": str(date.today()),
+                        "level": 0,
+                        "examples": [{"de": row["Przykład DE"], "pl": row["Przykład PL"]}]
+                    }
+                    save_word(u, new_word)
+                    success_count += 1
+            
+            st.success(f"Dodano {success_count} słówek do bazy!")
+            st.session_state.flashcards = load_flashcards(u) # Odświeżenie bazy
+            del st.session_state.temp_generated # Czyszczenie bufora
+            st.rerun()
+
+        if col_cancel.button("🗑️ Odrzuć wszystko", use_container_width=True):
+            del st.session_state.temp_generated
+            st.rerun()
 
 # --- 15. SKANER AI ---
 elif choice == "📸 Skaner AI":
