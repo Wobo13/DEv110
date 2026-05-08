@@ -362,14 +362,12 @@ if choice == "🏠 Start":
 
 # --- KONIEC SEKCJI 7 ---
 
-# --- 8. POWTÓRKI & TRENING (V258 - Separacja stanów) ---
+# --- 8. POWTÓRKI & TRENING (V259 - Inteligentne synonimy) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     st.header(choice)
     
-    # Unikalny prefiks kluczy dla każdego trybu, by uniknąć resetowania nawzajem
     pfx = "rep" if is_r else "trn"
-    
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
@@ -379,14 +377,11 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     
     sel_tag = st.selectbox("Zakres nauki:", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
-    # Inicjalizacja puli słówek specyficznej dla trybu
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
         pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
-        
         if is_r:
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
-        
         random.shuffle(pool)
         st.session_state[f"{pfx}_list"] = pool
         st.session_state[f"{pfx}_idx"] = 0
@@ -401,7 +396,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         st.balloons()
         st.success("Sesja zakończona! 🏆")
         if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn"):
-            # Czyścimy tylko klucze powiązane z obecnym trybem (pfx)
             for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
@@ -412,7 +406,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
             if idx >= len(cards):
                 st.rerun()
                 return
-
             c = cards[idx]
             
             if f"{pfx}_dir" not in st.session_state:
@@ -445,17 +438,27 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                def clean_for_compare(text, is_german):
+                # --- NOWA LOGIKA SPRAWDZANIA SYNONIMÓW ---
+                def clean_text(text, is_german):
                     t = normalize_text(text)
                     if is_german:
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
 
-                u_a = st.session_state.get(f"{pfx}_user_ans", "")
-                if clean_for_compare(u_a, is_target_de) == clean_for_compare(correct_val, is_target_de):
-                    st.success(f"✅ Dobrze: {correct_val}")
+                user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_de)
+                
+                # Rozbijamy poprawną odpowiedź na listę synonimów
+                # Dzielimy po: / lub , lub ;
+                correct_synonyms = re.split(r'[/,;]', correct_val)
+                correct_synonyms = [clean_text(s, is_target_de) for s in correct_synonyms if s.strip()]
+                
+                # Sprawdzamy czy odpowiedź użytkownika jest w liście synonimów
+                is_correct = user_ans in correct_synonyms
+                
+                if is_correct:
+                    st.success(f"✅ Dobrze! Poprawne znaczenia: {correct_val}")
                 else:
-                    st.error(f"❌ Poprawnie: {correct_val}")
+                    st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
                 
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
@@ -463,7 +466,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if fex: st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
 
                 st.divider()
-
                 if is_r:
                     st.write("Oceń trudność:")
                     col1, col2, col3 = st.columns(3)
