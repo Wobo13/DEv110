@@ -2779,41 +2779,44 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V460 - German Grammar Logic Fix & Diacritics Tolerance) ---
+# --- 28. SPARING AI (V470 - Ultra Stable Connection & Fail-Safe) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Rozmawiaj swobodnie. System nie będzie Cię karał za brak specjalnych znaków, ale zadba o poprawną strukturę.")
+    st.write("Rozmawiaj swobodnie. System zadba o poprawną strukturę i poprawi błędy.")
 
-    # 1. FUNKCJA NAPRAWCZA DLA JSON (Regex + Cleanup)
+    # 1. FUNKCJA PARSOWANIA (Zabezpieczona)
     def extract_ai_data(raw_text):
-        data = {"reply": "", "translation": "", "correction": None}
+        data = {"reply": "Błąd odpowiedzi AI.", "translation": "", "correction": None}
+        if not raw_text: return data
         try:
-            cleaned = json.loads(raw_text)
+            # Próba wyciągnięcia JSON-a z tekstu, jeśli AI dodało coś poza nim
+            clean_json = raw_text[raw_text.find("{"):raw_text.rfind("}")+1]
+            cleaned = json.loads(clean_json)
             data["reply"] = cleaned.get("reply", raw_text)
             data["translation"] = cleaned.get("translation", "")
             corr = cleaned.get("correction", "Brak uwag")
-            data["correction"] = corr if corr not in ["Brak uwag", ""] else None
+            data["correction"] = corr if corr not in ["Brak uwag", "", "null"] else None
         except:
+            # Regex jako plan ratunkowy
             import re
             r = re.search(r'"reply":\s*"(.*?)"', raw_text)
             t = re.search(r'"translation":\s*"(.*?)"', raw_text)
             c = re.search(r'"correction":\s*"(.*?)"', raw_text)
             data["reply"] = r.group(1) if r else raw_text
             data["translation"] = t.group(1) if t else ""
-            corr = c.group(1) if c else "Brak uwag"
-            data["correction"] = corr if corr not in ["Brak uwag", ""] else None
+            data["correction"] = c.group(1) if c and c.group(1) not in ["Brak uwag", ""] else None
         return data
 
     scenarios = {
         "🍽️ Restauracja": {"de": "Im Restaurant bestellen", "cs": "V restauraci"},
-        "🏥 U lekarza": {"de": "Beim Arzt - Symptome beschreiben", "cs": "U lekarze"},
-        "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovni pohovor"},
-        "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nakup v obchode"},
-        "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letisti / nadrazi"},
-        "☕ Luźna rozmowa": {"de": "Smalltalk o pogodzie i hobby", "cs": "Pokec o pocasi a hobby"}
+        "🏥 U lekarza": {"de": "Beim Arzt - Symptome beschreiben", "cs": "U lékaře"},
+        "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovní pohovor"},
+        "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nákup v obchodě"},
+        "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letišti / nádraží"},
+        "☕ Luźna rozmowa": {"de": "Smalltalk über das Wetter i Hobbys", "cs": "Pokec o počasí a hobby"}
     }
 
     if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -2829,10 +2832,12 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history = []
                     st.rerun()
     else:
+        # 2. INICJALIZACJA (Fail-safe)
         if not st.session_state.chat_history:
             with st.spinner("Budowanie scenariusza..."):
                 details = scenarios[st.session_state.chat_scenario]
-                intro_p = f"Jesteś partnerem ({current_lang_name}). Scenariusz: {details[L_CODE]}. Przywitaj się. Zwróć JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
+                # Maksymalnie uproszczony prompt startowy
+                intro_p = f"Rozpocznij rozmowę jako asystent ({current_lang_name}). Scenariusz: {details[L_CODE]}. Przywitaj się krótko. Zwróć JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
                 try:
                     raw = get_openai_response(intro_p)
                     data = extract_ai_data(raw)
@@ -2841,20 +2846,24 @@ elif choice == "🤖 Sparing AI":
                     })
                     st.rerun()
                 except:
-                    st.error("Błąd połączenia.")
+                    st.error("Błąd połączenia z API OpenAI.")
+                    if st.button("🔄 Spróbuj ponownie"): st.rerun()
+                    if st.button("⬅️ Wróć do wyboru"):
+                        st.session_state.chat_scenario = None
+                        st.rerun()
                     st.stop()
 
         # Belka kontrolna
         c_top1, c_top2 = st.columns([4, 1])
         c_top1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
-        if c_top2.button("🏁 Koniec", use_container_width=True):
+        if c_top2.button("🏁 Koniec"):
             st.session_state.chat_scenario = None
             st.session_state.chat_history = []
             st.rerun()
 
         st.divider()
 
-        # 3. RENDEROWANIE CZATU
+        # 3. CZAT
         for i, msg in enumerate(st.session_state.chat_history):
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
@@ -2868,32 +2877,24 @@ elif choice == "🤖 Sparing AI":
                     if st.button("🔊 Słuchaj", key=f"sp_aud_{i}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        # 4. OBSŁUGA WIADOMOŚCI (Z poprawionym promptem)
+        # 4. OBSŁUGA INPUTU
         u_in = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
-
         if u_in:
             st.session_state.chat_history.append({"role": "user", "content": u_in})
-            with st.spinner("AI analizuje..."):
-                # POPRAWIONY PROMPT (LOGIKA DE + TOLERANCJA ZNAKÓW)
+            with st.spinner("Analizuję..."):
                 prompt = f"""
                 Jesteś nauczycielem {current_lang_name}. Scenariusz: {st.session_state.chat_scenario}.
-                Użytkownik napisał: "{u_in}".
-                
-                Zasady korekty:
-                1. Jeśli język to Niemiecki (de), pamiętaj, że WSZYSTKIE RZECZOWNIKI piszemy DUŻĄ LITERĄ. Nigdy nie sugeruj pisania ich małą literą.
-                2. Jeśli użytkownik używa zwykłych liter zamiast znaków specjalnych (np. 'u' zamiast 'ü', 'ss' zamiast 'ß', 'a' zamiast 'á'), NIE traktuj tego jako błąd gramatyczny. Możesz to zignorować lub wspomnieć o tym tylko jako o drobnej uwadze, jeśli to konieczne.
-                3. Skup się na błędach w szyku zdania, rodzajnikach (der/die/das) i odmianie.
-                
-                Zwróć JSON: {{"reply": "naturalna odpowiedź", "translation": "tłumaczenie PL", "correction": "Poprawna forma w {current_lang_name} + krótkie wyjaśnienie PL LUB 'Brak uwag'"}}
+                Użytkownik napisał: "{u_in}". Odpowiedz naturalnie (max 2 zdania).
+                Zasady: 1. W de rzeczowniki dużą literą. 2. Toleruj brak umlautów. 
+                Zwróć JSON: {{"reply": "...", "translation": "...", "correction": "Poprawna forma + wyjaśnienie PL LUB 'Brak uwag'"}}
                 """
                 try:
                     raw_res = get_openai_response(prompt)
                     data = extract_ai_data(raw_res)
-                    
                     st.session_state.chat_history[-1]["correction"] = data["correction"]
                     st.session_state.chat_history.append({
                         "role": "assistant", "content": data["reply"], "trans": data["translation"]
                     })
                     st.rerun()
                 except:
-                    st.error("Błąd analizy wiadomości.")
+                    st.error("Problem z odpowiedzią AI. Spróbuj wysłać ponownie.")
