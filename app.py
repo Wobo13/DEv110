@@ -233,10 +233,10 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. START SESJI (V292 - Zoptymalizowana synchronizacja) ---
+# --- 5. START SESJI (V5 - Tu naliczamy passę za cel) ---
 u = st.session_state.user
 
-# Ładowanie danych (tu wyzwalana jest logika passy z Sekcji 3)
+# Inicjalizacja danych w sesji (jeśli nie istnieją)
 if "user_data" not in st.session_state:
     st.session_state.user_data = load_user_data(u)
 
@@ -245,33 +245,56 @@ if "flashcards" not in st.session_state:
 
 def update_activity(m):
     curr = time.time()
-    user_data = st.session_state.user_data
-    last_ts = user_data.get("last_ts", curr)
+    ud = st.session_state.user_data
+    last_ts = ud.get("last_ts", curr)
     delta = curr - last_ts
     
-    # Flagujemy, czy dane wymagają zapisu do bazy
+    # Przygotowanie dat do porównania logiki passy
+    today_str = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    
     needs_save = False
 
-    # Jeśli przerwa między akcjami jest mniejsza niż 10 minut (nauka ciągła)
+    # Sprawdzamy czy aktywność mieści się w progu 10 minut (ciągłość nauki)
     if 0 < delta < 600:
-        # Normalizacja nazwy sekcji do krótkiego kodu bazy
+        # 1. Normalizacja nazwy sekcji i dopisanie czasu
         clean = re.sub(r'[^\w\s]', '', m).lower().strip()
         pl_map = str.maketrans("ąćęłńóśźż", "acelnoszz")
-        clean = clean.translate(pl_map)
-        label = CLEAN_TIME_LABELS.get(clean, "Inn")
+        label = CLEAN_TIME_LABELS.get(clean.translate(pl_map), "Inn")
         
-        # Aktualizacja lokalna w sesji
-        stats = dict(user_data.get("time_stats", {}))
+        stats = dict(ud.get("time_stats", {}))
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
         needs_save = True
 
-    # Aktualizacja timestampu i formatu czytelnego dla człowieka
+        # 2. LOGIKA PASSY (STREAK) - Sprawdzamy czy cel został właśnie osiągnięty
+        # Lista modułów wliczanych do realnej nauki
+        study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+        total_sec = sum(stats.get(code, 0) for code in study_modules)
+        goal_min = ud.get("settings", {}).get("daily_goal", 20)
+        
+        # WARUNEK: Jeśli suma sekund >= cel w minutach * 60 
+        # ORAZ użytkownik nie dostał jeszcze passy za dzisiejszy dzień
+        if total_sec >= (goal_min * 60) and ud.get("last_date") != today_str:
+            current_streak = ud.get("streak", 0)
+            
+            # Jeśli ostatni cel był wczoraj - kontynuujemy passę
+            if ud.get("last_date") == yesterday_str:
+                st.session_state.user_data["streak"] = current_streak + 1
+            else:
+                # Jeśli była przerwa (lub pierwszy raz) - ustawiamy na 1
+                st.session_state.user_data["streak"] = 1
+            
+            # Zapisujemy datę dzisiejszą jako datę ostatniego sukcesu (last_date)
+            st.session_state.user_data["last_date"] = today_str
+            st.toast(f"🔥 Gratulacje! Cel osiągnięty. Passa: {st.session_state.user_data['streak']} dni!")
+            needs_save = True
+
+    # Aktualizacja timestampów aktywności
     st.session_state.user_data["last_ts"] = curr
     st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M")
     
-    # Zapisujemy do Supabase tylko jeśli faktycznie naliczyliśmy czas nauki
-    # Zapobiega to spamowaniu bazy przy każdym kliknięciu w menu
+    # Zapis do bazy danych (Supabase) tylko jeśli nastąpiła zmiana
     if needs_save:
         save_user_data(u, st.session_state.user_data)
 
