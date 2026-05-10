@@ -1622,94 +1622,110 @@ elif choice == "🎈 Balonowy Wyścig":
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
             
-# --- 20. ARENA WYZWAŃ (V280 - Multilang Ranking System) ---
+# --- 20. ARENA WYZWAŃ (V282 - Safe Ranking & API Error Fix) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header("🏆 Arena Wyzwań")
-    st.write(f"Sprawdź, jak wypadasz na tle innych użytkowników w języku {current_lang_name}!")
+    st.write(f"Sprawdź, jak wypadasz na tle innych w języku {current_lang_name}!")
 
-    # 1. POBIERANIE DANYCH WSZYSTKICH UŻYTKOWNIKÓW
-    db = get_db()
-    all_users_res = db.table("users_auth").select("username, user_data").execute()
-    
+    # 1. POBIERANIE DANYCH WSZYSTKICH UŻYTKOWNIKÓW (Bezpieczne zapytanie)
+    try:
+        db = get_db()
+        # Pobieramy dane z tabeli user_data, która zazwyczaj ma luźniejsze uprawnienia niż users_auth
+        all_users_res = db.table("user_data").select("username, streak, stats, game_scores, memory_scores_de, memory_scores_cs, top_balloons_de, top_balloons_cs").execute()
+        raw_users = all_users_res.data if all_users_res.data else []
+    except Exception as e:
+        st.error(f"Nie udało się pobrać danych rankingu: {e}")
+        raw_users = []
+
     leaderboard_data = []
     
-    for user_row in all_users_res.data:
-        uname = user_row["username"]
-        u_data = user_row.get("user_data", {})
-        if not u_data: continue
+    # 2. PRZETWARZANIE DANYCH
+    for u_row in raw_users:
+        uname = u_row.get("username", "Anonim")
+        streak = u_row.get("streak", 0)
         
-        # Statystyki globalne (Ogień)
-        streak = u_data.get("streak", 0)
+        # Pobieranie wiedzy - używamy snapshotu ze stats, jeśli istnieje, 
+        # bo pobieranie tysięcy fiszek wszystkich osób w pętli zablokuje Ci bazę.
+        stats = u_row.get("stats", {})
+        wiedza_perc = stats.get(f"wiedza_{L_CODE}", 0) # Zakładamy, że Admin Pro zapisuje te snapshoty
         
-        # Statystyki specyficzne dla języka (Wiedza)
-        # Musimy załadować słówka tego użytkownika, aby obliczyć jego wiedzę w danym języku
-        user_cards_res = db.table("flashcards").select("*").eq("username", uname).eq("lang", L_CODE).execute()
-        user_cards = user_cards_res.data if user_cards_res.data else []
-        
-        wiedza_perc = 0
-        if user_cards:
-            today_dt = date.today()
-            # Liczymy "mocne" słówka (termin powtórki > 6 dni)
-            strong = len([c for c in user_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-            wiedza_perc = int((strong / len(user_cards)) * 100)
+        # Jeśli nie ma snapshotu, a to Twój profil, weź dane z sesji
+        if uname == u:
+            # Liczymy Twoją wiedzę na żywo
+            my_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+            if my_cards:
+                today_dt = date.today()
+                strong = len([c for c in my_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
+                wiedza_perc = int((strong / len(my_cards)) * 100)
+
+        # Rekordy gier
+        g_scores = u_row.get("game_scores", {})
         
         leaderboard_data.append({
             "Użytkownik": uname,
             "Ogień 🔥": streak,
             "Wiedza 🧠": f"{wiedza_perc}%",
-            "wiedza_raw": wiedza_perc,
-            "game_scores": u_data.get("game_scores", {})
+            "w_raw": wiedza_perc,
+            "memory": u_row.get(f"memory_scores_{L_CODE}", []),
+            "balloons": u_row.get(f"top_balloons_{L_CODE}", [])
         })
 
-    # 2. WYŚWIETLANIE RANKINGÓW GŁÓWNYCH
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🔥 Najdłuższa Passa")
-        df_streak = pd.DataFrame(leaderboard_data).sort_values(by="Ogień 🔥", ascending=False)
-        st.table(df_streak[["Użytkownik", "Ogień 🔥"]].head(10))
+    if not leaderboard_data:
+        st.info("Ranking jest obecnie pusty.")
+    else:
+        # 3. WYŚWIETLANIE RANKINGÓW GŁÓWNYCH
+        col1, col2 = st.columns(2)
         
-    with col2:
-        st.subheader(f"🧠 Mistrzowie Wiedzy ({current_lang_name})")
-        df_knowledge = pd.DataFrame(leaderboard_data).sort_values(by="wiedza_raw", ascending=False)
-        st.table(df_knowledge[["Użytkownik", "Wiedza 🧠"]].head(10))
-
-    st.divider()
-
-    # 3. MISTRZOWIE GIER (TOP 10)
-    st.subheader("🧩 Mistrzowie Gier (Top 10)")
-    
-    game_tab = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
-    
-    games_map = {
-        "Memory": "memory_best",
-        "Balony": "balloons_best",
-        "Wąż": "snake_best"
-    }
-
-    for tab, (g_name, g_key) in zip(game_tab, games_map.items()):
-        with tab:
-            game_rank = []
-            for entry in leaderboard_data:
-                score = entry["game_scores"].get(g_key, 0)
-                if score > 0:
-                    game_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": score})
+        with col1:
+            st.subheader("🔥 Najdłuższa Passa")
+            df_streak = pd.DataFrame(leaderboard_data).sort_values(by="Ogień 🔥", ascending=False).head(10)
+            st.table(df_streak[["Użytkownik", "Ogień 🔥"]])
             
-            if game_rank:
-                df_game = pd.DataFrame(game_rank).sort_values(by="Rekord", ascending=(g_name == "Memory")) # W Memory mniej = lepiej
-                st.table(df_game.head(10))
-            else:
-                st.info(f"Brak rekordów w {g_name} dla tego języka.")
+        with col2:
+            st.subheader(f"🧠 Wiedza ({current_lang_name})")
+            df_knowledge = pd.DataFrame(leaderboard_data).sort_values(by="w_raw", ascending=False).head(10)
+            st.table(df_knowledge[["Użytkownik", "Wiedza 🧠"]])
 
-    # 4. TWOJA POZYCJA
-    my_entry = next((item for item in leaderboard_data if item["Użytkownik"] == u), None)
-    if my_entry:
-        my_rank_streak = df_streak["Ogień 🔥"].tolist().index(my_entry["Ogień 🔥"]) + 1
-        total_u = len(leaderboard_data)
-        st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank_streak} na {total_u}** użytkowników.")
+        st.divider()
+
+        # 4. MISTRZOWIE GIER
+        st.subheader("🧩 Rekordy Gier")
+        t_mem, t_bal = st.tabs(["⏱️ Memory", "🎈 Balony"])
+
+        with t_mem:
+            mem_rank = []
+            for entry in leaderboard_data:
+                scores = entry["memory"]
+                if scores and isinstance(scores, list):
+                    best = min([float(s) for s in scores])
+                    mem_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best}s", "val": best})
+            
+            if mem_rank:
+                df_m = pd.DataFrame(mem_rank).sort_values("val").head(10)
+                st.table(df_m[["Użytkownik", "Rekord"]])
+            else: st.caption("Brak rekordów.")
+
+        with t_bal:
+            bal_rank = []
+            for entry in leaderboard_data:
+                scores = entry["balloons"]
+                if scores and isinstance(scores, list):
+                    best = max([int(s) for s in scores])
+                    bal_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best} pkt", "val": best})
+            
+            if bal_rank:
+                df_b = pd.DataFrame(bal_rank).sort_values("val", ascending=False).head(10)
+                st.table(df_b[["Użytkownik", "Rekord"]])
+            else: st.caption("Brak rekordów.")
+
+        # 5. TWOJA POZYCJA
+        my_entry = next((item for item in leaderboard_data if item["Użytkownik"] == u), None)
+        if my_entry:
+            total_u = len(leaderboard_data)
+            st.info(f"Jesteś w gronie {total_u} aktywnych użytkowników. Walcz o podium!")
 
 # --- 21. GENERATOR SŁÓW (V251 - Multilang + Sidebar Slim Match) ---
 elif choice == "📦 Generator":
