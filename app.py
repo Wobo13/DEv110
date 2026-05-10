@@ -2245,6 +2245,17 @@ elif choice == "⚙️ Moje Konto":
         st.warning("Uwaga: Te operacje są nieodwracalne!")
         conf = st.checkbox("Potwierdzam chęć usunięcia danych")
         
+        # --- NOWOŚĆ: RESET SAMEGO STREAKA ---
+        st.write("---")
+        st.subheader("🔥 Resetuj Passę (Streak)")
+        st.caption("Ustawia ogień na 0 i pozwala zdobyć go dzisiaj od nowa po osiągnięciu celu.")
+        if st.button("Ustaw Streak na 0", type="secondary", disabled=not conf, use_container_width=True):
+            st.session_state.user_data["streak"] = 0
+            st.session_state.user_data["last_date"] = "2000-01-01" # Ustawienie starej daty wymusza nowy start
+            save_user_data(u, st.session_state.user_data)
+            st.session_state.acc_msg = "✅ Twoja passa została wyzerowana. Do dzieła!"
+            st.rerun()
+
         # --- RESET STATYSTYK ---
         st.write("---")
         st.subheader("🧹 Reset samych statystyk")
