@@ -550,7 +550,7 @@ if choice == "🏠 Start":
             else:
                 st.write("Baza jest pusta.")
 
-# --- 8. POWTÓRKI & TRENING (V260 - Multilang: DE/CS + SRS + Synonimy) ---
+# --- 8. POWTÓRKI & TRENING (V261 - Multilang + Przywrócony SRS 1-3-7) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -562,17 +562,16 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. FILTROWANIE BAZY SŁÓWEK POD AKTUALNY JĘZYK
+    # 1. FILTROWANIE SŁÓWEK POD AKTUALNY JĘZYK
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
-    # Pobieranie tagów tylko dla aktualnego języka
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
-    # 2. INICJALIZACJA KOLEJKI NAUKI
+    # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag or st.session_state.get(f"{pfx}_last_lang") != L_CODE:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         
@@ -584,13 +583,13 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         st.session_state[f"{pfx}_list"] = pool
         st.session_state[f"{pfx}_idx"] = 0
         st.session_state[f"{pfx}_last_tag"] = sel_tag
-        st.session_state[f"{pfx}_last_lang"] = L_CODE # Zapobiega mieszaniu języków przy zmianie w Sidebarze
+        st.session_state[f"{pfx}_last_lang"] = L_CODE
         st.session_state[f"{pfx}_mode"] = "ask"
 
     cards = st.session_state.get(f"{pfx}_list", [])
     
     if not cards:
-        st.success(f"Świetnie! Brak słówek do nauki w sekcji {choice} ({current_lang_name}). ✨")
+        st.success(f"Świetnie! Brak słówek w sekcji {choice} ({current_lang_name}). ✨")
     elif st.session_state[f"{pfx}_idx"] >= len(cards):
         st.balloons()
         st.success("Sesja zakończona! 🏆")
@@ -618,7 +617,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
             target_lang_label = "Polski" if not is_target_foreign else current_lang_name
             correct_val = c["pl"] if not is_target_foreign else c["de"]
 
-            # Grafika karty
             border_color = "#4CAF50" if is_r else "#FF9800"
             st.markdown(f'''
                 <div style="font-size:2.6em; text-align:center; padding:40px; 
@@ -639,7 +637,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                # Logika sprawdzania synonimów
                 def clean_text(text, is_foreign):
                     t = normalize_text(text)
                     if is_foreign and L_CODE == "de":
@@ -657,12 +654,10 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 else:
                     st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
                 
-                # Audio i przykłady (Lektor dostosowany do L_CODE)
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
                 if auto_audio: 
-                    # Zawsze czytamy słowo w języku obcym (c['de']) z akcentem L_CODE
                     play_audio(c['de'], fex, lang=L_CODE)
                 
                 if fex: 
@@ -670,12 +665,14 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
                 st.divider()
                 if is_r:
-                    st.write("Oceń trudność (algorytm SRS):")
+                    st.write("Oceń trudność (SRS):")
                     col1, col2, col3 = st.columns(3)
                     d = None
+                    # PRZYWRÓCONE WARTOŚCI: 1, 3, 7
                     if col1.button("🔴 Trudne"): d = 1
-                    if col2.button("🟡 Średnie"): d = 4
-                    if col3.button("🟢 Łatwe"): d = 10
+                    if col2.button("🟡 Średnie"): d = 3
+                    if col3.button("🟢 Łatwe"): d = 7
+                    
                     if d:
                         update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
                         st.session_state[f"{pfx}_idx"] += 1
@@ -690,7 +687,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
 
         flashcard_engine()
-
+        
 # --- 9. QUIZ (V240 - Obsługa Wielu Języków DE/CS) ---
 elif choice == "🕹️ Quiz":
     # Dynamiczny tytuł z flagą i nazwą języka
