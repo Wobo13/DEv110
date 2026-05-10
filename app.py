@@ -72,50 +72,42 @@ def play_audio(txt, ex_txt=None):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- 3. FUNKCJE DANYCH (V4 - Pełna obsługa kolumny last_date) ---
+# --- 3. FUNKCJE DANYCH (V5 - Reset statystyk dziennych) ---
 def load_user_data(username):
     db = get_db()
     res = db.table("user_data").select("*").eq("username", username).execute()
     
-    # Przygotowanie dat do porównania
-    today = date.today()
-    today_str = today.isoformat() # Format YYYY-MM-DD zgodny z typem DATE w Supabase
-    yesterday_str = (today - timedelta(days=1)).isoformat()
+    # Przygotowanie daty dzisiejszej w formacie ISO (YYYY-MM-DD)
+    today_str = date.today().isoformat()
 
     if res.data:
         data = res.data[0]
-        last_date = data.get("last_date")
-        current_streak = data.get("streak", 0)
-
-        # 1. LOGIKA PASSY I RESETU CZASU
-        # Jeśli ostatnia aktywność była wcześniej niż dzisiaj
-        if last_date != today_str:
-            # Sprawdzamy czy to kontynuacja (wczoraj)
-            if last_date == yesterday_str:
-                current_streak += 1
-            else:
-                # Przerwa lub pierwszy raz - startujemy od 1
-                current_streak = 1
+        last_date = data.get("last_date") # Data ostatniego osiągnięcia CELU
+        
+        # MECHANIZM RESETU CZASU NA NOWY DZIEŃ
+        # Sprawdzamy pomocniczą zmienną sesyjną, by uniknąć pętli resetu przy odświeżaniu
+        if st.session_state.get("last_session_check") != today_str:
+            # Jeśli w bazie last_date (dzień spełnienia celu) nie jest dzisiejszy,
+            # oznacza to, że dzisiaj użytkownik jeszcze nie uczył się (lub nie skończył celu),
+            # więc zerujemy czas nauki w sesji.
+            if last_date != today_str:
+                data["time_stats"] = {}
             
-            # Zerujemy czas nauki na nowy dzień
-            data["time_stats"] = {} 
-            data["streak"] = current_streak
-            data["last_date"] = today_str
-            
-            # Natychmiastowy zapis, by zsynchronizować bazę
-            save_user_data(username, data)
+            st.session_state["last_session_check"] = today_str
+            # UWAGA: Tutaj NIE zwiększamy już passy automatycznie przy logowaniu.
+            # Zrobi to funkcja update_activity w Sekcji 5, gdy cel zostanie osiągnięty.
         
         return data
 
-    # 2. INICJALIZACJA NOWEGO UŻYTKOWNIKA
+    # INICJALIZACJA DLA NOWEGO UŻYTKOWNIKA
     init = {
         "username": username, 
-        "streak": 1, 
+        "streak": 0, 
         "historical_cost": 0.0, 
         "time_stats": {}, 
         "last_ts": time.time(), 
         "last_seen": datetime.now().strftime("%d.%m %H:%M"),
-        "last_date": today_str, # Wstawiamy dzisiejszą datę w formacie YYYY-MM-DD
+        "last_date": "2000-01-01", # Bardzo stara data, aby wymusić start od zera
         "test_history": [],
         "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
     }
@@ -123,18 +115,18 @@ def load_user_data(username):
     return init
 
 def save_user_data(username, data):
+    # Tworzymy kopię, by nie modyfikować oryginału w sesji
     d = data.copy()
     if "username" in d:
         del d["username"]
     
-    # Konwersja time_stats do czystego JSONa
+    # Zabezpieczenie typu JSON dla time_stats
     if "time_stats" in d and isinstance(d["time_stats"], dict):
         d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
     
-    # Supabase/Postgres typ DATE nie przyjmuje None ani pustego stringa. 
-    # Upewniamy się, że last_date ma zawsze format YYYY-MM-DD
+    # Upewniamy się, że last_date ma format YYYY-MM-DD
     if not d.get("last_date"):
-        d["last_date"] = date.today().isoformat()
+        d["last_date"] = "2000-01-01"
 
     get_db().table("user_data").update(d).eq("username", username).execute()
 
@@ -154,13 +146,15 @@ def save_word(username, word_obj):
 
 def update_word(word_id, fields):
     try:
+        # Zabezpieczenie typów danych dla bazy (BigInt/Integer)
         if "level" in fields and fields["level"] is not None:
             fields["level"] = int(fields["level"])
         if "interval" in fields and fields["interval"] is not None:
             fields["interval"] = int(fields["interval"])
+
         get_db().table("flashcards").update(fields).eq("id", word_id).execute()
     except Exception as e:
-        st.error(f"⚠️ Błąd aktualizacji: {e}")
+        st.error(f"⚠️ Błąd bazy danych (update_word): {e}")
 
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
