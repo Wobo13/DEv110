@@ -1284,58 +1284,58 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR SŁÓW (V310 - Clean Multilang & Fixed Grid) ---
+# --- 14. KONSTRUKTOR SŁÓW (V311 - Fix Lang Leak & UI) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h1>", unsafe_allow_html=True)
 
-    # 1. CSS DLA KLIENTA (STYLISTYKA)
+    # 1. CSS - Wymuszenie widoczności przycisków
     st.markdown("""
         <style>
-            div.stButton > button.letter-btn-style {
+            /* Styl dla liter w gridzie */
+            .stButton > button {
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
                 background: rgba(255, 255, 255, 0.05) !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                border-radius: 10px !important;
-                color: white !important;
-                font-size: 1.4rem !important;
+                border-radius: 8px !important;
+                height: 50px !important;
                 font-weight: bold !important;
-                height: 55px !important;
-                transition: all 0.2s ease !important;
+                font-size: 1.2rem !important;
             }
             .slot-box {
-                font-size: 2.2rem;
-                letter-spacing: 6px;
+                font-size: 2.5rem;
+                letter-spacing: 10px;
                 text-align: center;
                 color: #ff4b4b;
                 font-family: 'Courier New', monospace;
-                padding: 15px;
+                padding: 20px;
                 background: rgba(255, 75, 75, 0.05);
-                border: 1px dashed rgba(255, 75, 75, 0.3);
-                border-radius: 12px;
-                margin: 15px 0;
-            }
-            .small-label {
-                font-size: 0.8rem;
-                color: #888;
-                text-transform: uppercase;
-                margin-bottom: 5px;
+                border: 1px dashed #ff4b4b;
+                border-radius: 15px;
+                margin: 20px 0;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. LOGIKA INICJALIZACJI
-    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    # 2. FILTROWANIE BAZY (Kluczowy Fix)
+    # Pobieramy TYLKO słówka, które mają przypisany aktualny język (L_CODE)
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
     
     if not lang_cards:
-        st.warning(f"Baza {current_lang_name} jest pusta. Dodaj słówka, aby grać!")
+        st.warning(f"Baza {current_lang_name} jest pusta. Dodaj słówka w sekcji Dodaj/Skaner!")
     else:
+        # Resetowanie gry przy zmianie języka
+        if "konstr_lang_ref" not in st.session_state or st.session_state.konstr_lang_ref != L_CODE:
+            st.session_state.konstr_lang_ref = L_CODE
+            for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
+                if k in st.session_state: del st.session_state[k]
+
         if "konstr_word" not in st.session_state:
             card = random.choice(lang_cards)
-            word = card['de'].strip()
+            # 'de' w Twojej bazie to słowo obce (zarówno dla DE jak i CS)
+            word = str(card['de']).strip()
             
-            # Pula zawiera TYLKO litery ze słowa (bez zmyłek)
             letters = list(word)
             random.shuffle(letters)
             
@@ -1345,15 +1345,15 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_ans = ""
             st.session_state.konstr_used_indices = []
 
-        # Panel Zadania
+        # UI Zadania
         st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; text-align: center;">
-                <div class="small-label">Przetłumacz na {current_lang_name}:</div>
-                <div style="font-size: 1.8rem; font-weight: bold; color: white;">{st.session_state.konstr_pl}</div>
+            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; text-align: center;">
+                <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Przetłumacz na {current_lang_name}:</div>
+                <div style="font-size: 2rem; font-weight: bold; color: white;">{st.session_state.konstr_pl}</div>
             </div>
         """, unsafe_allow_html=True)
 
-        # Wyświetlanie postępu (Sloty)
+        # Slot na odpowiedź
         target_word = st.session_state.konstr_word
         display_ans = ""
         for i in range(len(target_word)):
@@ -1361,51 +1361,40 @@ elif choice == "🏗️ Konstruktor":
                 display_ans += st.session_state.konstr_ans[i]
             else:
                 display_ans += "_"
-        
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # 3. SIATKA LITER (Stały układ 6-kolumnowy)
-        st.write("<div class='small-label' style='text-align:center;'>Dostępne litery:</div>", unsafe_allow_html=True)
+        # Siatka liter
+        st.write("<div style='text-align:center; color: #888; margin-bottom:10px;'>DOSTĘPNE LITERY:</div>", unsafe_allow_html=True)
         cols = st.columns(6)
         for idx, char in enumerate(st.session_state.konstr_pool):
             col_idx = idx % 6
             with cols[col_idx]:
                 label = "␣" if char == " " else char
-                
-                # Przycisk wyszarzony po użyciu, ale zachowuje miejsce
-                if idx in st.session_state.konstr_used_indices:
-                    st.button(label, key=f"k_{idx}", disabled=True, use_container_width=True)
-                else:
-                    # Używamy custom_class przez markdown nie jest możliwe bezpośrednio w st.button, 
-                    # więc stylizujemy ogólnie wszystkie buttony w sidebarze/mainie
-                    if st.button(label, key=f"k_{idx}", use_container_width=True):
-                        st.session_state.konstr_ans += char
-                        st.session_state.konstr_used_indices.append(idx)
-                        st.rerun()
+                is_used = idx in st.session_state.konstr_used_indices
+                if st.button(label, key=f"btn_k_{idx}", disabled=is_used, use_container_width=True):
+                    st.session_state.konstr_ans += char
+                    st.session_state.konstr_used_indices.append(idx)
+                    st.rerun()
 
         st.write("")
         c1, c2 = st.columns(2)
-        
         if c1.button("🔄 Resetuj", use_container_width=True):
             st.session_state.konstr_ans = ""
             st.session_state.konstr_used_indices = []
             st.rerun()
-            
         if c2.button("⏭️ Pomiń", use_container_width=True):
-            for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
-                if k in st.session_state: del st.session_state[k]
+            del st.session_state.konstr_word
             st.rerun()
 
-        # 4. WALIDACJA
+        # Wynik
         if st.session_state.konstr_ans == target_word:
             st.balloons()
-            st.success(f"Świetnie! Poprawnie ułożone: **{target_word}**")
-            if st.button("Następne wyzwanie ➡️", type="primary", use_container_width=True):
-                for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
-                    if k in st.session_state: del st.session_state[k]
+            st.success(f"Brawo! Poprawne słowo: **{target_word}**")
+            if st.button("Następne ➡️", type="primary", use_container_width=True):
+                del st.session_state.konstr_word
                 st.rerun()
         elif len(st.session_state.konstr_ans) >= len(target_word):
-            st.warning("Ułożone słowo różni się od wzorca. Spróbuj zresetować!")
+            st.error("Błąd w pisowni! Spróbuj zresetować.")
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
