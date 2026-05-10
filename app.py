@@ -266,7 +266,14 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V250 - Multilang Data Init) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V251 - Fix NameError 'u') ---
+
+# Najpierw sprawdzamy, czy użytkownik jest w sesji
+if "user" in st.session_state:
+    u = st.session_state.user  # <--- DEFINIUJEMY 'u' TUTAJ, ABY SIDEBAR GO WIDZIAŁ
+else:
+    u = None
+
 def load_user_data(username):
     """Pobiera dane profilu użytkownika i inicjalizuje strukturę wielu języków."""
     try:
@@ -274,8 +281,7 @@ def load_user_data(username):
         if res.data:
             data = res.data[0]
             
-            # 1. INICJALIZACJA STRUKTURY DLA REKORDÓW (Zabezpieczenie przed brakującymi kluczami)
-            # Lista kluczy, które muszą istnieć w obiekcie sesji
+            # Inicjalizacja wymaganych kluczy (DE i CS)
             required_keys = [
                 "memory_scores_de", "memory_scores_cs",
                 "top_balloons_de", "top_balloons_cs",
@@ -284,10 +290,9 @@ def load_user_data(username):
             
             for key in required_keys:
                 if key not in data or data[key] is None:
-                    data[key] = [] if "scores" in key or "top" in key or "history" in key else {}
+                    data[key] = [] if any(x in key for x in ["scores", "top", "history"]) else {}
 
-            # 2. MIGRACJA "W LOCIE" (Jeśli w sesji są stare klucze bez końcówek)
-            # Jeśli jakimś cudem w obiekcie są stare nazwy, przepisujemy je do _de
+            # Migracja starych rekordów do wersji _de (jeśli istnieją stare klucze)
             if "memory_scores" in data and not data["memory_scores_de"]:
                 data["memory_scores_de"] = data["memory_scores"]
             if "top_balloons" in data and not data["top_balloons_de"]:
@@ -295,52 +300,64 @@ def load_user_data(username):
 
             return data
     except Exception as e:
-        st.error(f"Błąd podczas ładowania danych użytkownika: {e}")
+        st.error(f"Błąd ładowania danych: {e}")
     return None
 
 def save_user_data(username, data):
-    """Zapisuje cały obiekt user_data do bazy Supabase."""
+    """Zapisuje dane do Supabase, usuwając klucze techniczne."""
+    if not username: return
     try:
-        # Usuwamy klucze systemowe, których Supabase nie przyjmie (jeśli istnieją)
-        clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
-        
+        # Usuwamy id, created_at i inne pola, których Supabase nie pozwoli nadpisać
+        clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username", "last_ts"]}
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
     except Exception as e:
-        # To tutaj pojawiał się błąd ze screena - teraz clean_data będzie zgodne z bazą
         st.error(f"Błąd zapisu danych: {e}")
 
 def update_activity(current_choice):
-    """Aktualizuje czas spędzony w danej sekcji i zapisuje stan."""
-    if "user_data" not in st.session_state or not st.session_state.user_data:
+    """Nalicza czas nauki i zapisuje postęp."""
+    if "user_data" not in st.session_state or not st.session_state.user_data or not u:
         return
 
     now = time.time()
-    if "last_time" in st.session_state:
-        elapsed = now - st.session_state.last_time
-        # Mapowanie wyboru menu na krótki kod statystyk
+    # Inicjalizacja last_ts, jeśli nie istnieje
+    if "last_ts_activity" not in st.session_state:
+        st.session_state.last_ts_activity = now
+        return
+
+    delta = now - st.session_state.last_ts_activity
+    
+    # Tylko jeśli aktywność trwała krócej niż 10 min (zapobiega błędnym naliczeniom przy otwartej karcie)
+    if 0 < delta < 600:
+        # Mapowanie nazw menu na kody (Poprawione o Memory i Balony)
         mapping = {
-            "🏠 Start": "Sta", "📅 Powtórki": "Pow", "🚀 Trening": "Trn",
-            "🕹️ Quiz": "Qiz", "🎴 Fiszki": "Fis", "📝 Testy": "Tst",
-            "🧠 Memory": "Mem", "🛠️ Warsztat": "War", "🏗️ Konstruktor": "Kon",
-            "🐍 Lingwistyczny Wąż": "Wan", "🎈 Balonowy Wyścig": "Bal", "📊 Statystyki": "Stt"
+            "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
+            "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
+            "wąż": "Wan", "wyścig": "Bal", "statystyki": "Sta"
         }
         
-        # Wyciągamy kod sekcji (np. 'Qiz')
-        code = "Inne"
+        # Oczyszczamy wybór menu, aby dopasować do klucza
+        clean_choice = "".join(filter(str.isalpha, current_choice.lower()))
+        label = "Inn"
         for k, v in mapping.items():
-            if k in current_choice:
-                code = v
+            if k in clean_choice:
+                label = v
                 break
         
-        # Zapisujemy czas
-        stats = st.session_state.user_data.get("time_stats", {})
-        stats[code] = stats.get(code, 0) + elapsed
+        ud = st.session_state.user_data
+        stats = dict(ud.get("time_stats", {}))
+        stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
         
-        # Próba zapisu do bazy
-        save_user_data(st.session_state.user, st.session_state.user_data)
+        # Zapisujemy postęp
+        save_user_data(u, st.session_state.user_data)
 
-    st.session_state.last_time = now
+    st.session_state.last_ts_activity = now
+
+# --- START SESJI ---
+if u and "user_data" not in st.session_state:
+    st.session_state.user_data = load_user_data(u)
+    if "flashcards" not in st.session_state:
+        st.session_state.flashcards = load_flashcards(u)
 
 # --- 6. SIDEBAR (V305 - Obsługa Wielu Języków: DE/CS) ---
 with st.sidebar:
