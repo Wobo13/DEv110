@@ -1111,10 +1111,10 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR (V1.0 - Układanie słów z liter) ---
+# --- 14. KONSTRUKTOR (V1.1 - Obsługa spacji i fraz) ---
 elif choice == "🏗️ Konstruktor":
     st.header("🏗️ Konstruktor Słów")
-    st.write("Ułóż niemieckie słowo z rozsypanych liter. Pamiętaj o poprawnej pisowni!")
+    st.write("Ułóż niemieckie słowo lub frazę. Pamiętaj o spacjach!")
 
     # 1. INICJALIZACJA GRY
     if "kon_word" not in st.session_state:
@@ -1122,13 +1122,13 @@ elif choice == "🏗️ Konstruktor":
             st.warning("Dodaj min. 3 słówka, aby móc zagrać.")
             st.stop()
         
-        # Losujemy słowo (lepiej rzeczownik lub czasownik, unikamy bardzo krótkich < 3 litery)
+        # Losujemy słowo/frazę
         pool = [c for c in st.session_state.flashcards if len(c['de']) > 2]
         target = random.choice(pool if pool else st.session_state.flashcards)
         
         de_word = target['de'].strip()
-        # Przygotowanie liter (rozbijamy na listę, mieszamy)
-        letters = [l for l in de_word if l != " "]
+        # Przygotowanie liter: ZACHOWUJEMY spacje w puli
+        letters = [l for l in de_word]
         random.shuffle(letters)
         
         st.session_state.update({
@@ -1149,49 +1149,50 @@ elif choice == "🏗️ Konstruktor":
         
         st.info(f"### 🇵🇱 {kon_pl}")
         
-        # Widok ułożonego słowa
+        # Widok ułożonego słowa (zamieniamy spacje na widoczne luki/znaki dla czytelności)
         current_str = "".join(user_build)
-        display_str = current_str + "_" * (len(kon_w.replace(" ", "")) - len(user_build))
+        remaining = len(kon_w) - len(user_build)
+        display_str = current_str.replace(" ", "•") + "_" * remaining
         
         st.markdown(f"""
-            <div style="font-size: 3em; text-align: center; letter-spacing: 10px; 
-            padding: 20px; background: #0e1117; border: 2px dashed #444; border-radius: 10px; color: #00ff00;">
+            <div style="font-size: 2.5em; text-align: center; letter-spacing: 5px; 
+            padding: 20px; background: #0e1117; border: 2px dashed #444; border-radius: 10px; color: #00ff00; font-family: monospace;">
                 {display_str}
             </div>
+            <div style="text-align: center; font-size: 0.8em; color: gray;">(• = spacja)</div>
         """, unsafe_allow_html=True)
         
         st.write("")
 
-        # Przycisk cofania (Backspase)
+        # Przycisk cofania
         if user_build and not st.session_state.kon_done:
-            if st.button("⬅️ Cofnij ostatnią literę", use_container_width=True):
+            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True):
                 last_l = st.session_state.kon_user.pop()
                 st.session_state.kon_shuffled.append(last_l)
                 st.rerun(scope="fragment")
 
-        # Kafelki z dostępnymi literami
+        # Kafelki z dostępnymi znakami (w tym spacje)
         cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
         for i, letter in enumerate(shuffled):
-            if cols[i % 8].button(letter, key=f"let_{i}_{letter}"):
+            # Wyświetlamy napis "Spacja" zamiast pustego przycisku
+            label = "␣" if letter == " " else letter
+            if cols[i % 8].button(label, key=f"let_{i}_{letter}_{random.randint(0,999)}", use_container_width=True):
                 st.session_state.kon_user.append(letter)
                 st.session_state.kon_shuffled.pop(i)
                 
-                # Sprawdzanie czy to już koniec
-                if len(st.session_state.kon_user) == len(kon_w.replace(" ", "")):
+                if len(st.session_state.kon_user) == len(kon_w):
                     st.session_state.kon_done = True
                 st.rerun(scope="fragment")
 
         # Logika sprawdzania wyniku
         if st.session_state.kon_done:
             final_guess = "".join(st.session_state.kon_user)
-            actual_clean = kon_w.replace(" ", "")
             
-            if final_guess.lower() == actual_clean.lower():
+            if final_guess.lower() == kon_w.lower():
                 st.balloons()
-                st.success(f"🎊 Idealnie! Słowo to: **{kon_w}**")
-                # Nagroda: +2 punkty (jeśli masz system punktów)
+                st.success(f"🎊 Idealnie! To: **{kon_w}**")
             else:
-                st.error(f"❌ Prawie! Poprawny zapis to: **{kon_w}**")
+                st.error(f"❌ Prawie! Poprawny zapis: **{kon_w}**")
             
             if st.button("Następne słowo 🏗️", use_container_width=True, type="primary"):
                 for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
