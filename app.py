@@ -1111,27 +1111,30 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR (V1.3 - Poprawka stabilności sesji i spacji) ---
+# --- 14. KONSTRUKTOR (V1.4 - Poprawiona logika resetu i bezpiecznika) ---
 elif choice == "🏗️ Konstruktor":
     st.header("🏗️ Konstruktor Słów")
     st.write("Ułóż niemieckie słowo lub frazę. Pamiętaj o spacjach!")
 
-    # 1. INICJALIZACJA GRY (Mózg gry)
+    # Funkcja pomocnicza do czyszczenia stanu gry
+    def reset_konstructor():
+        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
+            if k in st.session_state: 
+                del st.session_state[k]
+
+    # 1. INICJALIZACJA GRY
     if "kon_word" not in st.session_state:
         if len(st.session_state.flashcards) < 3:
-            st.warning("Dodaj min. 3 słówka, aby móc zagrać.")
+            st.warning("Dodaj min. 3 słówka, aby uruchomić ten moduł.")
             st.stop()
         
-        # Wybieramy słowo/frazę
         pool = [c for c in st.session_state.flashcards if len(c['de']) > 2]
         target = random.choice(pool if pool else st.session_state.flashcards)
         
         de_word = target['de'].strip()
-        # Rozbijamy na znaki (wliczając spacje)
         letters = [l for l in de_word]
         random.shuffle(letters)
         
-        # Zapisujemy stan początkowy
         st.session_state.kon_word = de_word
         st.session_state.kon_pl = target['pl']
         st.session_state.kon_shuffled = letters
@@ -1142,10 +1145,11 @@ elif choice == "🏗️ Konstruktor":
     # 2. SILNIK GRY (Fragment UI)
     @st.fragment
     def constructor_engine():
-        # BEZPIECZNIK: Jeśli sesja wygaśnie w trakcie renderowania fragmentu
+        # BEZPIECZNIK: Jeśli sesja wyparuje, pokazujemy tylko jeden, działający przycisk
         if "kon_word" not in st.session_state or "kon_seed" not in st.session_state:
-            st.warning("Sesja gry wygasła. Odświeżam...")
-            if st.button("Zacznij od nowa"):
+            st.warning("Sesja gry wygasła lub została zresetowana.")
+            if st.button("🚀 Kliknij tutaj, aby zacząć nową rundę", use_container_width=True):
+                reset_konstructor()
                 st.rerun()
             return
 
@@ -1160,7 +1164,6 @@ elif choice == "🏗️ Konstruktor":
         # Podgląd postępu
         current_str = "".join(user_build)
         remaining = len(kon_w) - len(user_build)
-        # Wizualizacja spacji jako kropki dla ułatwienia
         display_str = current_str.replace(" ", "•") + "_" * remaining
         
         st.markdown(f"""
@@ -1180,15 +1183,13 @@ elif choice == "🏗️ Konstruktor":
                 st.session_state.kon_shuffled.append(last_l)
                 st.rerun(scope="fragment")
 
-        # Kafelki z literami i spacjami
+        # Kafelki z literami
         cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
         for i, letter in enumerate(shuffled):
             label = "Spacja ␣" if letter == " " else letter
-            # Klucz musi być unikalny i zawierać seed, by nie było konfliktu DuplicateKey
             if cols[i % 8].button(label, key=f"k_{k_seed}_{i}", use_container_width=True):
                 st.session_state.kon_user.append(letter)
                 st.session_state.kon_shuffled.pop(i)
-                
                 if len(st.session_state.kon_user) == len(kon_w):
                     st.session_state.kon_done = True
                 st.rerun(scope="fragment")
@@ -1203,17 +1204,15 @@ elif choice == "🏗️ Konstruktor":
                 st.error(f"❌ Prawie! Poprawny zapis: **{kon_w}**")
             
             if st.button("Następne słowo 🏗️", use_container_width=True, type="primary", key=f"next_{k_seed}"):
-                for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
-                    if k in st.session_state: del st.session_state[k]
+                reset_konstructor()
                 st.rerun()
 
     # Uruchomienie fragmentu
     constructor_engine()
 
-    # Reset ręczny (poza fragmentem)
-    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="global_reset"):
-        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
-            if k in st.session_state: del st.session_state[k]
+    # Główny reset (zawsze widoczny pod grą)
+    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="global_reset_kon"):
+        reset_konstructor()
         st.rerun()
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
