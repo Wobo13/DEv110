@@ -15,24 +15,54 @@ from PIL import Image
 import plotly.graph_objects as go
 from postgrest import SyncPostgrestClient
 
-# --- 1. KONFIGURACJA (V219 - Poprawione Mapowanie Czasu) ---
+# --- 1. KONFIGURACJA (V315 - Full Imports & Multilang Support) ---
+import streamlit as st
+import json
+import random
+import re
+import hashlib
+import pandas as pd
+import time
+import base64
+import pytz
+import unicodedata
+from datetime import datetime, date, timedelta
+from io import BytesIO
+from gtts import gTTS
+from openai import OpenAI
+from PIL import Image
+import plotly.graph_objects as go
+import plotly.express as px  # <-- KLUCZOWY IMPORT DLA WYKRESÓW W STATYSTYKACH
+from postgrest import SyncPostgrestClient
+
+# USTAWIENIA STRONY (Musi być na samym początku skryptu)
+st.set_page_config(
+    page_title="Niemiecki Master",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# SEKRETY I KLUCZE
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
-APP_VERSION = "V219 (Time Stats Fix)"
+APP_VERSION = "V315 (Multilang AI + Fixed Stats)"
 ADMIN_USER = "wobo"
 
-# Słownik mapujący nazwy z menu (choice) na krótkie kody w bazie danych
+# SŁOWNIK MAPUJĄCY MODUŁY DO STATYSTYK CZASU
 CLEAN_TIME_LABELS = {
     "powtorki": "Pow", 
     "trening": "Trn", 
     "quiz": "Qiz", 
     "fiszki": "Fis",
     "testy": "Tst", 
-    "memory": "Mem",          # <--- DODANO
-    "warsztat": "War",        # <--- DODANO
-    "arena wyzwan": "Arn",    # <--- DODANO
+    "memory": "Mem", 
+    "warsztat": "War", 
+    "konstruktor": "Kon",
+    "lingwistyczny waz": "Wan",
+    "balonowy wyscig": "Bal",
     "skaner": "Skn", 
     "generator": "Gen", 
     "dodaj": "Dod",
@@ -40,6 +70,12 @@ CLEAN_TIME_LABELS = {
     "statystyki": "Sta", 
     "konto": "Kon", 
     "admin": "Adm"
+}
+
+# MAPOWANIE JĘZYKÓW
+LANG_MAP = {
+    "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki"}, 
+    "Czeski": {"code": "cs", "label": "🇨🇿 Czeski"}
 }
 
 # --- 2. SILNIK BAZY I POMOCNIKI (V221 - Multilang Audio, AI & Diacritics Normalize) ---
@@ -2259,120 +2295,128 @@ elif choice == "📖 Słownik":
                 st.toast("Usunięto! 🗑️")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V305 - Full Multilang & History Filtering) ---
+# --- 25. STATYSTYKI (V306 - Full Restore + Multilang Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.header(f"📊 Statystyki Postępu: {current_lang_name}")
+    st.header(f"📊 Statystyki: {current_lang_name}")
     
-    ud = st.session_state.user_data
-    # Filtrujemy fiszki tylko dla aktualnego języka
-    my_lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-    
-    if not my_lang_cards:
-        st.info(f"Nie masz jeszcze żadnych słówek w języku {current_lang_name}. Dodaj je, aby zobaczyć statystyki!")
+    # 1. PRZYGOTOWANIE DANYCH
+    df_full = pd.DataFrame(st.session_state.flashcards)
+    if not df_full.empty:
+        df = df_full[df_full.get("lang", "de") == L_CODE].copy()
     else:
-        # 1. KPI - GŁÓWNE WSKAŹNIKI
+        df = pd.DataFrame()
+
+    ud = st.session_state.user_data
+    today = date.today()
+
+    if df.empty:
+        st.info(f"Brak danych dla języka {current_lang_name}. Dodaj słówka, aby zobaczyć analizę.")
+    else:
+        # 2. METRYKI GŁÓWNE
         col1, col2, col3, col4 = st.columns(4)
         
-        # Liczenie "mocnych" słówek (tych z datą powtórki > 6 dni od dziś)
-        today_dt = date.today()
-        strong_words = [c for c in my_lang_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6]
-        
-        with col1:
-            st.metric("Suma słówek", len(my_lang_cards))
-        with col2:
-            st.metric("Opanowane", len(strong_words))
-        with col3:
-            perc_mastered = round((len(strong_words) / len(my_lang_cards)) * 100) if my_lang_cards else 0
-            st.metric("Procent wiedzy", f"{perc_mastered}%")
-        with col4:
-            st.metric("Aktualna passa", f"{ud.get('streak', 0)} 🔥")
+        # Liczenie opanowanych (review > 6 dni)
+        mastered_count = len([c for _, c in df.iterrows() if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
+        perc_mastered = int((mastered_count / len(df)) * 100)
+
+        col1.metric("Suma słówek", len(df))
+        col2.metric("Opanowane", mastered_count)
+        col3.metric("Wiedza %", f"{perc_mastered}%")
+        col4.metric("Passa (Global)", f"{ud.get('streak', 0)} 🔥")
 
         st.write("---")
 
-        # 2. WYKRES ROZKŁADU NAUKI (SRM)
+        # 3. WYKRES KOŁOWY (ROZKŁAD MATERIAŁU)
         st.subheader("📈 Rozkład opanowania materiału")
+        cat_map = {"Nowe (dziś)": 0, "W trakcie": 0, "Opanowane": 0}
+        for _, row in df.iterrows():
+            diff = (pd.to_datetime(row.get('next_review', today)).date() - today).days
+            if diff <= 0: cat_map["Nowe (dziś)"] += 1
+            elif diff <= 6: cat_map["W trakcie"] += 1
+            else: cat_map["Opanowane"] += 1
         
-        # Przygotowanie danych do wykresu kołowego
-        categories = {"Nowe": 0, "W trakcie": 0, "Opanowane": 0}
-        for c in my_lang_cards:
-            diff = (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days
-            if diff <= 0: categories["Nowe"] += 1
-            elif diff <= 6: categories["W trakcie"] += 1
-            else: categories["Opanowane"] += 1
-            
         fig_pie = px.pie(
-            names=list(categories.keys()), 
-            values=list(categories.values()),
-            color=list(categories.keys()),
-            color_discrete_map={'Nowe':'#ff4b4b', 'W trakcie':'#ffa500', 'Opanowane':'#4CAF50'},
+            names=list(cat_map.keys()), 
+            values=list(cat_map.values()),
+            color=list(cat_map.keys()),
+            color_discrete_map={"Nowe (dziś)": "#ff4b4b", "W trakcie": "#ffa500", "Opanowane": "#4CAF50"},
             hole=0.4
         )
-        fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
         st.plotly_chart(fig_pie, use_container_width=True)
 
         st.write("---")
 
-        # 3. HISTORIA TESTÓW (Z FILTROWANIEM JĘZYKA)
-        st.subheader(f"📝 Ostatnie testy: {current_lang_name}")
+        # 4. CZAS NAUKI I PROGNOZA
+        col_t1, col_t2 = st.columns(2)
         
-        raw_history = ud.get("test_history", [])
-        
-        # FILTR: Pokazujemy tylko testy z aktualnym L_CODE. 
-        # Dla bardzo starych testów, które nie miały tagu lang, domyślnie przyjmujemy 'de'.
-        filtered_history = [t for t in raw_history if t.get("lang", "de") == L_CODE]
+        with col_t1:
+            st.subheader("⏱️ Czas nauki (min)")
+            current_stats = ud.get("time_stats", {})
+            m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+            labels = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon"}
+            
+            t_data = []
+            for code in m_list:
+                m = int(current_stats.get(code, 0) // 60)
+                if m > 0: t_data.append({"Moduł": labels.get(code, code), "Minuty": m})
+            
+            if t_data:
+                st.table(pd.DataFrame(t_data))
+            else:
+                st.caption("Brak sesji czasowych dzisiaj.")
 
-        if filtered_history:
-            # Tworzymy DataFrame i odwracamy kolejność (najnowsze na górze)
-            df_hist = pd.DataFrame(filtered_history)[::-1]
-            
-            # Formułujemy czytelną tabelę
-            display_df = df_hist[["date", "score", "total", "perc"]].copy()
-            display_df.columns = ["Data", "Punkty", "Z pytań", "Wynik %"]
-            
-            # Wykres liniowy ostatnich 10 wyników
-            st.markdown("**Trend ostatnich wyników:**")
-            trend_data = df_hist.head(10)[::-1] # 10 ostatnich w kolejności chronologicznej
-            fig_trend = px.line(trend_data, x="date", y="perc", markers=True)
-            fig_trend.update_layout(yaxis_range=[0,105], height=250, margin=dict(t=20, b=20, l=0, r=0))
-            fig_trend.update_traces(line_color='#ff4b4b', line_width=3)
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
-            # Tabela pod wykresem
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
-        else:
-            st.info(f"Brak zapisanych wyników testów dla języka {current_lang_name}. Rozwiąż swój pierwszy test w sekcji 📝 Testy!")
+        with col_t2:
+            st.subheader("📅 Prognoza powtórek")
+            sched = []
+            for i in range(7):
+                target_date = str(today + timedelta(days=i))
+                count = len(df[df['next_review'] == target_date])
+                if i == 0: count = len(df[df['next_review'] <= target_date])
+                lbl = "Dziś" if i == 0 else (today + timedelta(days=i)).strftime("%d.%m")
+                sched.append({"Dzień": lbl, "Słówka": count})
+            st.table(pd.DataFrame(sched))
 
         st.write("---")
 
-        # 4. REKORDY GIER (Specific for Language)
-        st.subheader("🎮 Twoje rekordy")
-        c1, c2 = st.columns(2)
+        # 5. POZIOMY CEFR I ŹRÓDŁA
+        col_b1, col_b2 = st.columns(2)
         
-        with c1:
-            st.markdown("**🎈 Balonowy Wyścig**")
-            best_bal = ud.get(f"top_balloons_{L_CODE}", [0])
-            st.write(f"Najlepszy wynik: **{max(best_bal) if best_bal else 0} pkt**")
-            
-        with c2:
-            st.markdown("**⏱️ Memory**")
-            best_mem = ud.get(f"memory_scores_{L_CODE}", [])
-            if best_mem:
-                st.write(f"Najlepszy czas: **{min(best_mem)}s**")
+        with col_b1:
+            st.subheader("📊 Poziomy CEFR")
+            level_data = []
+            for lvl in ["A1", "A2", "B1", "B2", "C1"]:
+                mask = df['category'].str.contains(lvl, case=False, na=False)
+                count = len(df[mask])
+                if count > 0: level_data.append({"Poziom": lvl, "Suma": count})
+            if level_data:
+                st.bar_chart(pd.DataFrame(level_data).set_index("Poziom"))
             else:
-                st.write("Brak rekordów")
+                st.caption("Brak tagów poziomów (np. A1, B2).")
 
-        # Przycisk czyszczenia statystyk (opcjonalnie)
-        with st.expander("⚙️ Zarządzanie danymi"):
-            if st.button(f"Wyczyść historię testów ({current_lang_name})"):
-                # Usuwamy tylko te testy, które pasują do obecnego języka
-                new_history = [t for t in raw_history if t.get("lang", "de") != L_CODE]
-                st.session_state.user_data["test_history"] = new_history
-                save_user_data(st.session_state.user, st.session_state.user_data)
-                st.success(f"Historia {current_lang_name} wyczyszczona!")
-                st.rerun()
+        with col_b2:
+            st.subheader("📌 Źródła")
+            if 'origin' in df.columns:
+                origin_counts = df['origin'].value_counts().reset_index()
+                origin_counts.columns = ['Źródło', 'Suma']
+                st.table(origin_counts)
+
+        st.write("---")
+
+        # 6. HISTORIA TESTÓW (FILTROWANA)
+        st.subheader(f"📝 Historia testów: {current_lang_name}")
+        raw_hist = ud.get("test_history", [])
+        filtered_hist = [t for t in raw_hist if t.get("lang", "de") == L_CODE]
+        
+        if filtered_hist:
+            df_h = pd.DataFrame(filtered_hist)[::-1]
+            df_h = df_h[["date", "score", "total", "perc"]]
+            df_h.columns = ["Data", "Wynik", "Suma", "%"]
+            st.dataframe(df_h, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"Brak testów dla języka {current_lang_name}.")
 
 # --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
 elif choice == "⚙️ Konto":
