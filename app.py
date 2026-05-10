@@ -2146,33 +2146,37 @@ elif choice == "📊 Statystyki":
     else:
         st.info("Brak rozwiązanych testów.")
 
-# --- 26. KONTO (V302 - Zarządzanie i Reset Passy) ---
+# --- 26. KONTO ---
 elif choice == "⚙️ Moje Konto":
     st.header("⚙️ Zarządzanie Kontem")
     
-    # Komunikaty po akcjach
+    # --- WYŚWIETLANIE KOMUNIKATÓW PO PRZEŁADOWANIU ---
     if "acc_msg" in st.session_state:
         st.success(st.session_state.acc_msg)
         del st.session_state.acc_msg
+    # ------------------------------------------------
 
     # --- 1. PREFERENCJE NAUKI ---
-    with st.expander("🛠️ Preferencje nauki", expanded=True):
-        st.write("Dostosuj działanie aplikacji:")
+    with st.expander("🛠️ Preferencje nauki"):
+        st.write("Dostosuj działanie aplikacji do swojego stylu:")
         
-        # Inicjalizacja ustawień, jeśli ich nie ma
+        # Inicjalizacja ustawień w user_data, jeśli ich nie ma
         if "settings" not in st.session_state.user_data:
             st.session_state.user_data["settings"] = {
                 "auto_audio": True,
                 "show_hints": True,
                 "default_test_size": 10,
-                "daily_goal": 20
+                "daily_goal": 20  # Wartość domyślna celu
             }
         
         s = st.session_state.user_data["settings"]
         
-        s["auto_audio"] = st.toggle("Automatyczne audio", s.get("auto_audio", True))
-        s["show_hints"] = st.toggle("Podpowiedzi w Quizach", s.get("show_hints", True))
-        s["daily_goal"] = st.slider("Dzienny cel nauki (minuty)", 1, 120, s.get("daily_goal", 20))
+        s["auto_audio"] = st.toggle("Automatyczne odtwarzanie lektora (Audio)", s.get("auto_audio", True))
+        s["show_hints"] = st.toggle("Pokazuj podpowiedzi PL w Quizie", s.get("show_hints", True))
+        s["default_test_size"] = st.slider("Domyślna liczba pytań w teście", 5, 50, s.get("default_test_size", 10))
+        
+        # --- NOWOŚĆ: Ustawienie celu dziennego ---
+        s["daily_goal"] = st.slider("Twój dzienny cel nauki (minuty)", 5, 120, s.get("daily_goal", 20))
         
         if st.button("Zapisz ustawienia", use_container_width=True):
             save_user_data(u, st.session_state.user_data)
@@ -2191,38 +2195,96 @@ elif choice == "⚙️ Moje Konto":
                 else:
                     st.error("Błędne stare hasło!")
 
-    # --- 3. EKSPORT I IMPORT ---
-    with st.expander("📥 Eksport i Import (CSV)"):
+    # --- 3. EKSPORT I IMPORT (CSV) ---
+    with st.expander("📥 Eksport i Import słówek (CSV)"):
+        st.subheader("Eksportuj swoje dane")
         if st.session_state.flashcards:
             df_export = pd.DataFrame(st.session_state.flashcards)
+            # Przygotowujemy czysty CSV do pobrania
             csv = df_export[["de", "pl", "category", "origin"]].to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Pobierz bazę .CSV", data=csv, file_name=f"backup_{u}.csv", use_container_width=True)
-
-    # --- 4. RESET I USUWANIE (NIEBEZPIECZNA STREFA) ---
-    with st.expander("🗑️ Niebezpieczna strefa"):
-        st.warning("Te operacje są nieodwracalne!")
-        conf = st.checkbox("Potwierdzam chęć modyfikacji danych krytycznych")
+            st.download_button(
+                label="📥 Pobierz moją bazę jako plik .CSV",
+                data=csv,
+                file_name=f"niemiecki_master_backup_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
         
-        # --- PRZYCISK RESETU STREAKA (To, o co pytałeś) ---
         st.write("---")
-        st.subheader("🔥 Resetuj Passę (Streak)")
-        st.caption("Ustawia ogień na 0 i pozwala zdobyć go dzisiaj od nowa po osiągnięciu celu.")
+        st.subheader("Importuj słówka z pliku")
+        st.info("Wymagane kolumny w pliku CSV: de, pl, category")
+        uploaded_file = st.file_uploader("Wybierz plik .csv", type="csv")
         
-        if st.button("Ustaw Streak na 0", type="secondary", disabled=not conf, use_container_width=True):
-            # Ustawiamy parametry tak, jakby użytkownik nigdy nie osiągnął celu
-            st.session_state.user_data["streak"] = 0
-            st.session_state.user_data["last_date"] = "2000-01-01"
-            save_user_data(u, st.session_state.user_data)
-            
-            st.session_state.acc_msg = "✅ Passa została wyzerowana. Ucz się, aby zdobyć 1d!"
-            st.rerun()
+        if uploaded_file and st.button("🚀 Rozpocznij import"):
+            try:
+                imp_df = pd.read_csv(uploaded_file)
+                if all(col in imp_df.columns for col in ["de", "pl"]):
+                    new_cards = []
+                    for _, row in imp_df.iterrows():
+                        new_cards.append({
+                            "username": u,
+                            "de": str(row["de"]),
+                            "pl": str(row["pl"]),
+                            "category": str(row.get("category", "Import")),
+                            "next_review": str(date.today()),
+                            "origin": "Import"
+                        })
+                    
+                    if new_cards:
+                        get_db().table("flashcards").insert(new_cards).execute()
+                        st.session_state.flashcards = load_flashcards(u)
+                        st.success(f"Pomyślnie zaimportowano {len(new_cards)} słówek!")
+                        st.rerun()
+                else:
+                    st.error("Plik nie posiada wymaganych kolumn (de, pl).")
+            except Exception as e:
+                st.error(f"Błąd importu: {e}")
 
-        # --- HARD RESET SŁÓWEK ---
+    # --- 4. USUWANIE I RESET DANYCH ---
+    with st.expander("🗑️ Niebezpieczna strefa (Reset i Usuwanie)"):
+        st.warning("Uwaga: Te operacje są nieodwracalne!")
+        conf = st.checkbox("Potwierdzam chęć usunięcia danych")
+        
+        # --- RESET STATYSTYK ---
+        st.write("---")
+        st.subheader("🧹 Reset samych statystyk")
+        st.caption("Zachowuje wszystkie Twoje słówka, ale zeruje czas nauki, historię testów i daty powtórek.")
+        conf_stats = st.checkbox("Potwierdzam reset STATYSTYK (słówka zostaną)")
+        
+        if st.button("Zresetuj statystyki nauki", type="secondary", disabled=not conf_stats, use_container_width=True):
+            with st.spinner("Resetowanie..."):
+                # 1. Zerujemy user_data w bazie
+                st.session_state.user_data["time_stats"] = {}
+                st.session_state.user_data["test_history"] = []
+                st.session_state.user_data["streak"] = 0
+                save_user_data(u, st.session_state.user_data)
+                
+                # 2. Resetujemy daty powtórek wszystkich słówek na dzisiaj
+                get_db().table("flashcards").update({"next_review": str(date.today())}).eq("username", u).execute()
+                
+                st.session_state.acc_msg = "✅ Statystyki nauki zostały zresetowane. Możesz zacząć od zera!"
+                st.session_state.flashcards = load_flashcards(u)
+                st.rerun()
+
+        # --- USUWANIE POZIOMÓW ---
+        st.write("---")
+        st.subheader("Wybierz poziomy do usunięcia")
+        col_d = st.columns(5)
+        for i, lvl in enumerate(["A1", "A2", "B1", "B2", "C1"]):
+            if col_d[i].button(lvl, disabled=not conf, key=f"del_lvl_{lvl}"):
+                res = get_db().table("flashcards").delete().eq("username", u).ilike("category", f"%{lvl}%").execute()
+                count = len(res.data) if res.data else 0
+                st.session_state.acc_msg = f"🗑️ Usunięto {count} słówek z poziomu {lvl}."
+                st.session_state.flashcards = load_flashcards(u)
+                st.rerun()
+        
+        # --- HARD RESET ---
         st.write("---")
         if st.button("🔥 USUŃ TRWALE CAŁĄ BAZĘ SŁÓWEK", type="primary", disabled=not conf, use_container_width=True):
-            get_db().table("flashcards").delete().eq("username", u).execute()
+            res = get_db().table("flashcards").delete().eq("username", u).execute()
+            count = len(res.data) if res.data else 0
+            st.session_state.acc_msg = f"🔥 Baza została wyczyszczona (usunięto {count} słówek)."
             st.session_state.flashcards = []
-            st.session_state.acc_msg = "🔥 Baza słówek została wyczyszczona."
             st.rerun()
 
 # --- 27. ADMIN PRO (V300 - Pełny rozkład z Wężem i Balonem) ---
