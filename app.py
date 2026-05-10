@@ -370,9 +370,9 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V351 - Full Language Names & Slim Style) ---
+# --- 6. SIDEBAR (V351 - Full Language Names & Slim Style + Fix Choice Variable) ---
 with st.sidebar:
-    # 1. Agresywny CSS dla oszczędności każdego piksela
+    # 1. Agresywny CSS dla maksymalnej oszczędności miejsca
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: none;}
@@ -421,12 +421,16 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 3. Język (POWRÓT DO PEŁNYCH NAZW)
+    # 3. Język (Pełne nazwy w selektorze)
     LANG_MAP = {
         "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki"}, 
         "Czeski": {"code": "cs", "label": "🇨🇿 Czeski"}
     }
     
+    # Inicjalizacja klucza języka jeśli nie istnieje
+    if "current_lang" not in st.session_state:
+        st.session_state.current_lang = "Niemiecki"
+
     selected_lang = st.selectbox(
         "Język nauki", 
         options=list(LANG_MAP.keys()), 
@@ -435,7 +439,7 @@ with st.sidebar:
         label_visibility="collapsed"
     )
 
-    if selected_lang != st.session_state.get("current_lang", "Niemiecki"):
+    if selected_lang != st.session_state.current_lang:
         st.session_state.current_lang = selected_lang
         st.session_state.choice = "🏠 Start"
         st.rerun()
@@ -451,7 +455,6 @@ with st.sidebar:
         wiedza = int((strong / len(all_c)) * 100)
 
     current_stats = ud.get("time_stats", {})
-    # Moduły do naliczania czasu
     m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
@@ -465,8 +468,12 @@ with st.sidebar:
     st.markdown("<hr>", unsafe_allow_html=True)
 
     # --- 5. FUNKCJA POMOCNICZA MENU ---
+    # Inicjalizacja wyboru jeśli nie istnieje
+    if "choice" not in st.session_state:
+        st.session_state.choice = "🏠 Start"
+
     def menu_item(label, target):
-        is_selected = st.session_state.get("choice") == target
+        is_selected = st.session_state.choice == target
         btn_label = f"{'▶ ' if is_selected else ''}{label}"
         if st.button(btn_label, key=f"btn_{target}"):
             st.session_state.choice = target
@@ -475,8 +482,7 @@ with st.sidebar:
     # --- 6. STRUKTURA MENU ---
     menu_item("🏠 Start", "🏠 Start")
 
-    # Rozwinięcie automatyczne jeśli aktywny moduł jest w danej grupie
-    choice_now = st.session_state.get("choice", "🏠 Start")
+    choice_now = st.session_state.choice
 
     with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy"])):
         menu_item("📅 Powtórki", "📅 Powtórki")
@@ -493,7 +499,7 @@ with st.sidebar:
         menu_item("🎈 Balonowy Wyścig", "🎈 Balonowy Wyścig")
         menu_item("🏆 Arena Wyzwań", "🏆 Arena Wyzwań")
 
-    # Narzędzia
+    # Pozostałe narzędzia
     for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
@@ -505,6 +511,9 @@ with st.sidebar:
     if st.button("🚪 Wyloguj", use_container_width=True):
         st.session_state.clear()
         st.rerun()
+
+# --- KLUCZOWY ŁĄCZNIK: Definicja zmiennej choice dla reszty skryptu ---
+choice = st.session_state.get("choice", "🏠 Start")
 
 # --- 7. START (V1.5 - Fix NameError choice) ---
 
