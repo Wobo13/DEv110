@@ -1530,28 +1530,48 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V311 - Fix AttributeError & API Safe) ---
+# --- 16. BALONOWY WYŚCIG (V312 - Visible Balloons & Simple Scoring) ---
 elif choice == "🎈 Balonowy Wyścig":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h2 style='text-align: center;'>🎈 Balonowy Wyścig: {current_lang_name}</h2>", unsafe_allow_html=True)
 
-    # 1. CSS
+    # 1. CSS - POTĘŻNY UPGRADE WIDOCZNOŚCI PRZYCISKÓW
     st.markdown("""
         <style>
-            .balloon-btn {
-                display: inline-block;
-                padding: 15px 25px;
-                font-size: 1.1rem;
-                font-weight: bold;
-                text-align: center;
-                background: linear-gradient(145deg, #ff4b4b, #ff7676);
-                border-radius: 50px;
+            /* Stylizacja przycisków jako kolorowe balony */
+            [data-testid="stMain"] div.stButton > button {
+                background: linear-gradient(135deg, #ff4b4b 0%, #ff7676 100%) !important;
                 color: white !important;
-                border: none;
-                transition: all 0.3s ease;
+                border: 2px solid #ff2a2a !important;
+                border-radius: 30px !important; /* Zaokrąglone jak balony */
+                padding: 15px 20px !important;
+                font-weight: bold !important;
+                font-size: 1.1rem !important;
+                box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3) !important;
+                transition: all 0.2s ease !important;
+                height: auto !important;
+                min-height: 60px !important;
+                margin-top: 10px !important;
             }
+            
+            [data-testid="stMain"] div.stButton > button:hover {
+                transform: translateY(-3px) scale(1.02) !important;
+                box-shadow: 0 6px 20px rgba(255, 75, 75, 0.5) !important;
+                background: linear-gradient(135deg, #ff3333 0%, #ff5e5e 100%) !important;
+            }
+
+            /* Specyficzny styl dla przycisku wyjścia (mniej krzykliwy) */
+            div.stButton > button[key*="exit_btn"] {
+                background: transparent !important;
+                color: #888 !important;
+                border: 1px solid #444 !important;
+                box-shadow: none !important;
+                font-size: 0.9rem !important;
+                min-height: 40px !important;
+            }
+
             .target-card {
                 background: rgba(255, 255, 255, 0.05);
                 border: 2px solid #ff4b4b;
@@ -1561,6 +1581,7 @@ elif choice == "🎈 Balonowy Wyścig":
                 font-size: 2.2rem;
                 font-weight: bold;
                 margin-bottom: 20px;
+                color: white;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -1571,17 +1592,15 @@ elif choice == "🎈 Balonowy Wyścig":
     if len(lang_cards) < 4:
         st.warning(f"Potrzebujesz minimum 4 słówek w języku {current_lang_name}, aby zacząć!")
     else:
-        # INICJALIZACJA (Fix dla AttributeError)
+        # INICJALIZACJA
         if "bal_active" not in st.session_state or st.session_state.get("bal_lang_ref") != L_CODE:
             st.session_state.bal_active = True
             st.session_state.bal_score = 0
-            st.session_state.bal_start_time = time.time() # Tu tworzymy brakujący atrybut
+            st.session_state.bal_start_time = time.time()
             st.session_state.bal_duration = 30
             st.session_state.bal_lang_ref = L_CODE
             if "bal_target" in st.session_state: del st.session_state.bal_target
 
-        # BEZPIECZNE POBIERANIE CZASU
-        # Pobieramy czas tylko jeśli gra jest aktywna i atrybut istnieje
         if st.session_state.bal_active and "bal_start_time" in st.session_state:
             elapsed = time.time() - st.session_state.bal_start_time
             time_left = max(0, int(st.session_state.bal_duration - elapsed))
@@ -1592,7 +1611,7 @@ elif choice == "🎈 Balonowy Wyścig":
         if time_left <= 0 and st.session_state.bal_active:
             st.session_state.bal_active = False
             st.balloons()
-            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Wynik: {st.session_state.bal_score}</h2></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Wynik: {st.session_state.bal_score} pkt</h2></div>", unsafe_allow_html=True)
             if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
                 del st.session_state.bal_active
                 st.rerun()
@@ -1610,24 +1629,33 @@ elif choice == "🎈 Balonowy Wyścig":
                 st.session_state.bal_target = target
                 st.session_state.bal_options = options
 
-            # UI
-            st.markdown(f"<div style='display:flex; justify-content:space-around;'><b>⏱️ {time_left}s</b> <b style='color:#ffbc00;'>⭐ {st.session_state.bal_score}</b></div>", unsafe_allow_html=True)
+            # UI Statystyk
+            st.markdown(f"""
+                <div style='display:flex; justify-content:space-around; margin-bottom:10px;'>
+                    <span style='font-size:1.2rem;'>⏱️ <b>{time_left}s</b></span>
+                    <span style='font-size:1.2rem; color:#ffbc00;'>⭐ <b>{st.session_state.bal_score}</b></span>
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.markdown(f"<div class='target-card'>{st.session_state.bal_target['de']}</div>", unsafe_allow_html=True)
 
+            # RENDEROWANIE BALONÓW (PRZYCISKÓW)
             cols = st.columns(len(st.session_state.bal_options))
             for i, opt in enumerate(st.session_state.bal_options):
                 with cols[i]:
                     if st.button(opt, key=f"bal_btn_{i}", use_container_width=True):
                         if opt == st.session_state.bal_target['pl']:
-                            st.session_state.bal_score += 10
+                            # PROSTY SYSTEM PUNKTACJI: +1 pkt
+                            st.session_state.bal_score += 1
                             del st.session_state.bal_target
                             st.rerun()
                         else:
-                            st.session_state.bal_score = max(0, st.session_state.bal_score - 5)
-                            st.toast("Pudło! ❌")
+                            # Kara za błąd
+                            st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
+                            st.toast("Pudło! ❌", icon="💨")
 
-        # PRZYCISK WYJŚCIA
-        if st.button("Wyjdź z gry", use_container_width=True):
+        st.write("")
+        if st.button("Wyjdź z gry", key="exit_btn", use_container_width=True):
             keys_to_del = ["bal_active", "bal_score", "bal_start_time", "bal_target", "bal_options", "bal_lang_ref"]
             for k in keys_to_del:
                 if k in st.session_state: del st.session_state[k]
