@@ -2295,14 +2295,14 @@ elif choice == "📖 Słownik":
                 st.toast("Usunięto! 🗑️")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V306 - Full Restore + Multilang Fix) ---
+# --- 25. STATYSTYKI (V316 - Klasyczny układ tabelaryczny - Multilang) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.header(f"📊 Statystyki: {current_lang_name}")
+    st.header(f"📊 Statystyki Postępu: {current_lang_name}")
     
-    # 1. PRZYGOTOWANIE DANYCH
+    # 1. PRZYGOTOWANIE DANYCH (Tylko dla wybranego języka)
     df_full = pd.DataFrame(st.session_state.flashcards)
     if not df_full.empty:
         df = df_full[df_full.get("lang", "de") == L_CODE].copy()
@@ -2313,110 +2313,92 @@ elif choice == "📊 Statystyki":
     today = date.today()
 
     if df.empty:
-        st.info(f"Brak danych dla języka {current_lang_name}. Dodaj słówka, aby zobaczyć analizę.")
+        st.info(f"Brak danych dla języka {current_lang_name}.")
     else:
         # 2. METRYKI GŁÓWNE
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # Liczenie opanowanych (review > 6 dni)
+        c1, c2, c3, c4 = st.columns(4)
         mastered_count = len([c for _, c in df.iterrows() if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
-        perc_mastered = int((mastered_count / len(df)) * 100)
-
-        col1.metric("Suma słówek", len(df))
-        col2.metric("Opanowane", mastered_count)
-        col3.metric("Wiedza %", f"{perc_mastered}%")
-        col4.metric("Passa (Global)", f"{ud.get('streak', 0)} 🔥")
+        
+        c1.metric(f"Słówek ({L_CODE.upper()})", len(df))
+        c2.metric("Opanowane", mastered_count)
+        c3.metric("Passa (Konto)", f"{ud.get('streak', 0)} dni")
+        c4.metric("Cel dnia", f"{ud.get('settings', {}).get('daily_goal', 20)} min")
 
         st.write("---")
 
-        # 3. WYKRES KOŁOWY (ROZKŁAD MATERIAŁU)
-        st.subheader("📈 Rozkład opanowania materiału")
-        cat_map = {"Nowe (dziś)": 0, "W trakcie": 0, "Opanowane": 0}
-        for _, row in df.iterrows():
-            diff = (pd.to_datetime(row.get('next_review', today)).date() - today).days
-            if diff <= 0: cat_map["Nowe (dziś)"] += 1
-            elif diff <= 6: cat_map["W trakcie"] += 1
-            else: cat_map["Opanowane"] += 1
+        # 3. CZAS NAUKI (TABELA)
+        st.subheader("⏱️ Dzisiejszy czas nauki")
+        current_stats = ud.get("time_stats", {})
+        m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+        labels = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon"}
         
-        fig_pie = px.pie(
-            names=list(cat_map.keys()), 
-            values=list(cat_map.values()),
-            color=list(cat_map.keys()),
-            color_discrete_map={"Nowe (dziś)": "#ff4b4b", "W trakcie": "#ffa500", "Opanowane": "#4CAF50"},
-            hole=0.4
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        t_data = []
+        for code in m_list:
+            m = int(current_stats.get(code, 0) // 60)
+            if m > 0:
+                t_data.append({"Moduł": labels.get(code, code), "Czas (min)": m})
+        
+        if t_data:
+            st.table(pd.DataFrame(t_data))
+        else:
+            st.caption("Brak zarejestrowanej aktywności czasowej na dzisiaj.")
 
         st.write("---")
 
-        # 4. CZAS NAUKI I PROGNOZA
-        col_t1, col_t2 = st.columns(2)
-        
-        with col_t1:
-            st.subheader("⏱️ Czas nauki (min)")
-            current_stats = ud.get("time_stats", {})
-            m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
-            labels = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon"}
-            
-            t_data = []
-            for code in m_list:
-                m = int(current_stats.get(code, 0) // 60)
-                if m > 0: t_data.append({"Moduł": labels.get(code, code), "Minuty": m})
-            
-            if t_data:
-                st.table(pd.DataFrame(t_data))
+        # 4. ROZKŁAD POWTÓREK (TABELA)
+        st.subheader("📅 Prognoza powtórek (Słówek do nauki)")
+        sched = []
+        for i in range(7):
+            target_date = str(today + timedelta(days=i))
+            if i == 0:
+                count = len(df[df['next_review'] <= target_date])
+                lbl = "Dzisiaj (zaległe + nowe)"
             else:
-                st.caption("Brak sesji czasowych dzisiaj.")
-
-        with col_t2:
-            st.subheader("📅 Prognoza powtórek")
-            sched = []
-            for i in range(7):
-                target_date = str(today + timedelta(days=i))
                 count = len(df[df['next_review'] == target_date])
-                if i == 0: count = len(df[df['next_review'] <= target_date])
-                lbl = "Dziś" if i == 0 else (today + timedelta(days=i)).strftime("%d.%m")
-                sched.append({"Dzień": lbl, "Słówka": count})
-            st.table(pd.DataFrame(sched))
+                lbl = (today + timedelta(days=i)).strftime("%d.%m (%A)")
+            
+            sched.append({"Dzień": lbl, "Liczba słówek": count})
+        st.table(pd.DataFrame(sched))
 
         st.write("---")
 
-        # 5. POZIOMY CEFR I ŹRÓDŁA
-        col_b1, col_b2 = st.columns(2)
+        # 5. POZIOMY I ŹRÓDŁA (TABELE)
+        col_st1, col_st2 = st.columns(2)
         
-        with col_b1:
-            st.subheader("📊 Poziomy CEFR")
+        with col_st1:
+            st.subheader("📈 Słówka wg poziomu")
             level_data = []
             for lvl in ["A1", "A2", "B1", "B2", "C1"]:
                 mask = df['category'].str.contains(lvl, case=False, na=False)
                 count = len(df[mask])
-                if count > 0: level_data.append({"Poziom": lvl, "Suma": count})
+                if count > 0:
+                    level_data.append({"Poziom": lvl, "Suma": count})
             if level_data:
-                st.bar_chart(pd.DataFrame(level_data).set_index("Poziom"))
+                st.table(pd.DataFrame(level_data))
             else:
-                st.caption("Brak tagów poziomów (np. A1, B2).")
+                st.caption("Brak słówek z przypisanym poziomem.")
 
-        with col_b2:
-            st.subheader("📌 Źródła")
+        with col_st2:
+            st.subheader("📌 Źródła pozyskania")
             if 'origin' in df.columns:
                 origin_counts = df['origin'].value_counts().reset_index()
-                origin_counts.columns = ['Źródło', 'Suma']
+                origin_counts.columns = ['Źródło', 'Liczba']
                 st.table(origin_counts)
 
         st.write("---")
 
-        # 6. HISTORIA TESTÓW (FILTROWANA)
-        st.subheader(f"📝 Historia testów: {current_lang_name}")
+        # 6. HISTORIA TESTÓW (FILTROWANA POD JĘZYK)
+        st.subheader(f"📝 Ostatnie testy: {current_lang_name}")
         raw_hist = ud.get("test_history", [])
         filtered_hist = [t for t in raw_hist if t.get("lang", "de") == L_CODE]
         
         if filtered_hist:
             df_h = pd.DataFrame(filtered_hist)[::-1]
             df_h = df_h[["date", "score", "total", "perc"]]
-            df_h.columns = ["Data", "Wynik", "Suma", "%"]
-            st.dataframe(df_h, use_container_width=True, hide_index=True)
+            df_h.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
+            st.table(df_h.head(10)) # Wyświetlamy 10 ostatnich jako czystą tabelę
         else:
-            st.info(f"Brak testów dla języka {current_lang_name}.")
+            st.info(f"Brak historii testów dla języka {current_lang_name}.")
 
 # --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
 elif choice == "⚙️ Konto":
