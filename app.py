@@ -2779,113 +2779,93 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V660 - Ultra-Light & Stable Connection) ---
+# --- 28. SPARING AI (V670 - Emergency Stability Update) ---
 elif choice == "🤖 Sparing AI":
-    from openai import OpenAI  # Import na początku sekcji dla stabilności
+    import openai
     
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Szybka i stabilna rozmowa. Jeśli wystąpi błąd, kliknij 'Zakończ' i spróbuj ponownie.")
 
-    # 1. PARSER ODPORNY NA BŁĘDY FORMATOWANIA
-    def parse_stable_response(raw_text):
-        res = {"reply": "", "trans": "", "corr": None}
-        parts = raw_text.split("|||")
-        res["reply"] = parts[0].strip() if len(parts) > 0 else raw_text
-        res["trans"] = parts[1].strip() if len(parts) > 1 else ""
-        if len(parts) > 2:
-            c = parts[2].strip()
-            if c.upper() not in ["OK", "BRAK UWAG", "NONE", "NULL", ""]:
-                res["corr"] = c
+    # Stabilny parser
+    def parse_stable(txt):
+        res = {"r": txt, "t": "", "c": None}
+        if "|||" in txt:
+            p = txt.split("|||")
+            res["r"] = p[0].strip()
+            res["t"] = p[1].strip() if len(p) > 1 else ""
+            if len(p) > 2 and p[2].strip().upper() not in ["OK", "BRAK", "NONE"]:
+                res["c"] = p[2].strip()
         return res
 
     scenarios = {
-        "🍽️ Restauracja": {"de": "Kellner", "cs": "Číšník"},
-        "🏥 U lekarza": {"de": "Arzt", "cs": "Lékař"},
-        "💼 Rozmowa o pracę": {"de": "Chef", "cs": "Šéf"},
-        "🛒 Zakupy": {"de": "Verkäufer", "cs": "Prodavač"},
-        "✈️ Podróż": {"de": "Beamter", "cs": "Úředník"},
-        "☕ Luźna rozmowa": {"de": "Freund", "cs": "Kamarád"}
+        "🍽️ Restauracja": "Kellner", "🏥 U lekarza": "Arzt", 
+        "💼 Praca": "Chef", "🛒 Zakupy": "Verkäufer", 
+        "✈️ Podróż": "Zollbeamter", "☕ Smalltalk": "Freund"
     }
 
     if "chat_history" not in st.session_state: st.session_state.chat_history = []
     if "chat_scenario" not in st.session_state: st.session_state.chat_scenario = None
 
     if not st.session_state.chat_scenario:
-        cols = st.columns(2)
+        st.subheader("Wybierz temat:")
+        cols = st.columns(3)
         for i, name in enumerate(scenarios.keys()):
-            if cols[i % 2].button(name, use_container_width=True):
+            if cols[i % 3].button(name, use_container_width=True):
                 st.session_state.chat_scenario = name
                 st.session_state.chat_history = []
                 st.rerun()
     else:
         # Pasek kontrolny
         c1, c2 = st.columns([4, 1])
-        c1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
-        if c2.button("🏁 Zakończ"):
+        c1.info(f"📍 {st.session_state.chat_scenario}")
+        if c2.button("🏁 Koniec"):
             st.session_state.chat_scenario = None
-            st.session_state.chat_history = []
             st.rerun()
 
-        # Inicjalizacja pierwszej wiadomości (Krótki prompt = szybka odpowiedź)
-        if not st.session_state.chat_history:
-            with st.spinner("Łączenie..."):
-                try:
-                    client = OpenAI(api_key=API_KEY)
-                    role = scenarios[st.session_state.chat_scenario][L_CODE]
-                    prompt = f"Jesteś {role} ({current_lang_name}). Przywitaj się. Format: Reakcja ||| Tłumaczenie_PL"
-                    resp = client.chat.completions.create(
-                        model="gpt-4o-mini", 
-                        messages=[{"role": "user", "content": prompt}],
-                        timeout=10 # Sztywny limit czasu
-                    )
-                    data = parse_stable_response(resp.choices[0].message.content)
-                    st.session_state.chat_history.append({"role": "assistant", "content": data["reply"], "trans": data["trans"]})
-                    st.rerun()
-                except:
-                    st.error("Przekroczono czas oczekiwania API. Spróbuj ponownie.")
-                    st.stop()
-
-        # Renderowanie historii
+        # Renderowanie (zoptymalizowane)
         for i, msg in enumerate(st.session_state.chat_history):
-            role_icon = "🤖" if msg["role"] == "assistant" else "👤"
-            with st.chat_message(msg["role"], avatar=role_icon):
+            with st.chat_message(msg["role"]):
                 st.write(msg["content"])
-                if msg["role"] == "assistant" and msg.get("trans"):
-                    with st.expander("👁️ Tłumaczenie"): st.write(msg["trans"])
-                if msg.get("corr"):
-                    st.warning(f"📝 {msg['corr']}")
+                if msg.get("t"): 
+                    with st.expander("Tłumaczenie"): st.caption(msg["t"])
+                if msg.get("c"): st.warning(f"📝 {msg['c']}")
                 if msg["role"] == "assistant":
-                    if st.button("🔊", key=f"v10_aud_{i}"): play_audio(msg["content"], lang=L_CODE)
+                    if st.button("🔊", key=f"aud_{i}"): play_audio(msg["content"], L_CODE)
 
-        # Obsługa wiadomości użytkownika
-        if user_input := st.chat_input(f"Napisz po {current_lang_name.lower()}..."):
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.spinner("AI odpowiada..."):
+        # Logika API
+        u_input = st.chat_input("Napisz...")
+        
+        # Jeśli historia jest pusta, AI musi zacząć (automatyczny trigger)
+        if not st.session_state.chat_history or u_input:
+            role = scenarios[st.session_state.chat_scenario]
+            
+            if u_input:
+                st.session_state.chat_history.append({"role": "user", "content": u_input})
+                prompt = f"Jesteś {role} ({current_lang_name}). Odpowiedz na: {u_input}. Format: Reakcja ||| Tłumaczenie ||| Korekta(lub OK). Rzeczowniki w DE dużą literą!"
+            else:
+                prompt = f"Jesteś {role} ({current_lang_name}). Przywitaj się. Format: Reakcja ||| Tłumaczenie"
+
+            with st.spinner("AI..."):
                 try:
-                    client = OpenAI(api_key=API_KEY)
-                    # Ograniczamy historię do 3 wiadomości, aby przyspieszyć API
-                    recent_history = st.session_state.chat_history[-3:]
+                    # BEZPOŚREDNIE WYWOŁANIE Z TIMEOUTEM
+                    client = openai.OpenAI(api_key=API_KEY)
+                    resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "system", "content": prompt}],
+                        max_tokens=150,
+                        timeout=15.0
+                    )
+                    data = parse_stable(resp.choices[0].message.content)
                     
-                    sys_p = f"""Jesteś {st.session_state.chat_scenario} ({current_lang_name}). 
-                    Format: Reakcja ||| Tłumaczenie_Twojej_Reakcji_PL ||| Korekta_użytkownika_PL
-                    Zasada: W DE rzeczowniki dużą literą. Jeśli OK, napisz 'OK'."""
+                    if u_input:
+                        st.session_state.chat_history[-1]["c"] = data["c"]
                     
-                    msgs = [{"role": "system", "content": sys_p}]
-                    for m in recent_history:
-                        msgs.append({"role": m["role"], "content": m["content"]})
-
-                    resp = client.chat.completions.create(model="gpt-4o-mini", messages=msgs, timeout=15)
-                    data = parse_stable_response(resp.choices[0].message.content)
-                    
-                    # Przypisanie korekty do ostatniego wpisu usera
-                    st.session_state.chat_history[-1]["corr"] = data["corr"]
-                    # Nowy wpis AI
-                    st.session_state.chat_history.append({"role": "assistant", "content": data["reply"], "trans": data["trans"]})
+                    st.session_state.chat_history.append({
+                        "role": "assistant", "content": data["r"], "t": data["t"]
+                    })
                     st.rerun()
-                except:
-                    st.error("Utracono połączenie. Wyślij wiadomość ponownie.")
-                    if len(st.session_state.chat_history) > 0:
-                        st.session_state.chat_history.pop() # Usuwamy wpis, który nie doczekał się odpowiedzi
+                except Exception as e:
+                    st.error("Przeciążenie serwera. Spróbuj wysłać ponownie za chwilę.")
+                    if u_input: st.session_state.chat_history.pop()
