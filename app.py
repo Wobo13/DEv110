@@ -1284,24 +1284,28 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR SŁÓW (V312 - With Undo Function & Fix UI) ---
+# --- 14. KONSTRUKTOR SŁÓW (V313 - CSS Isolation & Sidebar Fix) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h1>", unsafe_allow_html=True)
 
-    # 1. CSS - Poprawa widoczności i stylistyka
+    # 1. POPRAWIONY CSS - Izolacja stylu (nie dotyka Sidebaru)
     st.markdown("""
         <style>
-            .stButton > button {
+            /* Stylizujemy przyciski TYLKO w głównej sekcji (Main Content) */
+            [data-testid="stMain"] div.stButton > button {
                 border: 1px solid rgba(255, 255, 255, 0.2) !important;
                 background: rgba(255, 255, 255, 0.05) !important;
                 border-radius: 8px !important;
                 height: 50px !important;
                 font-weight: bold !important;
                 font-size: 1.2rem !important;
+                margin-bottom: 0px !important;
             }
+            
+            /* Specyficzny styl dla slotu na odpowiedź */
             .slot-box {
                 font-size: 2.5rem;
                 letter-spacing: 10px;
@@ -1317,6 +1321,15 @@ elif choice == "🏗️ Konstruktor":
                 display: flex;
                 align-items: center;
                 justify-content: center;
+            }
+            
+            /* Resetujemy ewentualne konflikty dla przycisków w sidebarze w tej sekcji */
+            [data-testid="stSidebar"] div.stButton > button {
+                height: auto !important;
+                min-height: 28px !important;
+                font-size: 0.88rem !important;
+                border: none !important;
+                padding: 1px 6px !important;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -1338,7 +1351,7 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_pl = card['pl']
             st.session_state.konstr_pool = letters
             st.session_state.konstr_ans = ""
-            st.session_state.konstr_used_indices = [] # Lista indeksów z pool, które zostały kliknięte
+            st.session_state.konstr_used_indices = []
             st.session_state.konstr_lang_ref = L_CODE
 
         # Panel Zadania
@@ -1349,7 +1362,7 @@ elif choice == "🏗️ Konstruktor":
             </div>
         """, unsafe_allow_html=True)
 
-        # Slot na odpowiedź (wizualizacja progresu)
+        # Slot na odpowiedź
         target_word = st.session_state.konstr_word
         display_ans = ""
         for i in range(len(target_word)):
@@ -1366,7 +1379,6 @@ elif choice == "🏗️ Konstruktor":
             col_idx = idx % 6
             with cols[col_idx]:
                 label = "␣" if char == " " else char
-                # Jeśli indeks jest na liście użytych, przycisk jest nieaktywny
                 is_used = idx in st.session_state.konstr_used_indices
                 if st.button(label, key=f"btn_k_{idx}", disabled=is_used, use_container_width=True):
                     st.session_state.konstr_ans += char
@@ -1375,7 +1387,7 @@ elif choice == "🏗️ Konstruktor":
 
         st.divider()
 
-        # 4. PRZYCISKI FUNKCYJNE (Reset, Cofnij, Pomiń)
+        # 4. PRZYCISKI FUNKCYJNE
         c1, c2, c3 = st.columns(3)
         
         if c1.button("🔄 Reset", use_container_width=True):
@@ -1383,13 +1395,10 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_used_indices = []
             st.rerun()
             
-        # --- NOWA FUNKCJA: COFNIJ ---
         can_undo = len(st.session_state.konstr_used_indices) > 0
         if c2.button("⬅️ Cofnij", use_container_width=True, disabled=not can_undo):
             if st.session_state.konstr_ans:
-                # Usuwamy ostatni znak ze stringa odpowiedzi
                 st.session_state.konstr_ans = st.session_state.konstr_ans[:-1]
-                # Usuwamy ostatni indeks z listy użytych (uwalniamy literę)
                 st.session_state.konstr_used_indices.pop()
                 st.rerun()
             
@@ -1397,15 +1406,13 @@ elif choice == "🏗️ Konstruktor":
             del st.session_state.konstr_word
             st.rerun()
 
-        # 5. WALIDACJA WYNIKU
+        # 5. WALIDACJA
         if st.session_state.konstr_ans == target_word:
             st.balloons()
             st.success(f"Brawo! Poprawnie: **{target_word}**")
             if st.button("Następne ➡️", type="primary", use_container_width=True):
                 del st.session_state.konstr_word
                 st.rerun()
-        elif len(st.session_state.konstr_ans) >= len(target_word):
-            st.error("Coś poszło nie tak. Użyj 'Cofnij' lub 'Reset'.")
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
