@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V440 - Hidden Translations & Better Corrections) ---
+# --- 28. SPARING AI (V445 - Robust JSON & Auto-Fix) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2787,16 +2787,13 @@ elif choice == "🤖 Sparing AI":
     st.header(f"🤖 Sparing AI: {current_lang_name}")
     st.write("Szlifuj język w praktyce. Rozmawiaj, a w razie trudności sprawdź ukryte tłumaczenie.")
 
-    # 1. FUNKCJA NAPRAWCZA DLA JSON
-    def parse_ai_response(raw_text):
+    # 1. FUNKCJA NAPRAWCZA DLA JSON (Ultra-bezpieczna)
+    def robust_json_parse(raw_text):
         try:
-            data = json.loads(raw_text)
-            if isinstance(data, dict):
-                # Priorytet dla klucza 'reply', potem inne
-                return data.get("reply", data.get("de", data.get("cs", next(iter(data.values())))))
-            return str(data)
+            return json.loads(raw_text)
         except:
-            return raw_text
+            # Jeśli AI wysłało tekst zamiast JSON, pakujemy go manualnie
+            return {"reply": raw_text, "translation": "Błąd pobierania tłumaczenia.", "correction": "Brak uwag"}
 
     scenarios = {
         "🍽️ Restauracja": {"de": "Im Restaurant bestellen", "cs": "V restauraci"},
@@ -2820,7 +2817,7 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history = []
                     st.rerun()
     else:
-        # 2. INICJALIZACJA ROZMOWY
+        # 2. INICJALIZACJA ROZMOWY (Zabezpieczona)
         if not st.session_state.chat_history:
             with st.spinner("Łączenie z asystentem..."):
                 details = scenarios[st.session_state.chat_scenario]
@@ -2828,16 +2825,18 @@ elif choice == "🤖 Sparing AI":
                 Przywitaj się i zadaj pytanie. Zwróć JSON: {{"reply": "tekst", "translation": "tłumaczenie PL"}}"""
                 try:
                     raw = get_openai_response(intro_p)
-                    data = json.loads(raw)
+                    data = robust_json_parse(raw)
                     st.session_state.chat_history.append({
                         "role": "assistant", 
                         "content": data.get("reply", raw), 
-                        "trans": data.get("translation", ""),
+                        "trans": data.get("translation", "Nie udało się wygenerować tłumaczenia."),
                         "correction": None
                     })
                     st.rerun()
-                except:
-                    st.error("Błąd startu. Zamknij i spróbuj ponownie.")
+                except Exception as e:
+                    st.error("Wystąpił problem techniczny przy starcie.")
+                    if st.button("🔄 Spróbuj ponownie"):
+                        st.rerun()
                     st.stop()
 
         # Belka kontrolna
@@ -2856,12 +2855,10 @@ elif choice == "🤖 Sparing AI":
             with st.chat_message(msg["role"], avatar=role_icon):
                 st.write(msg["content"])
                 
-                # Ukryte tłumaczenie dla asystenta
                 if msg["role"] == "assistant" and msg.get("trans"):
                     with st.expander("👁️ Pokaż tłumaczenie"):
                         st.caption(msg["trans"])
                 
-                # Poprawka pod wiadomością użytkownika
                 if msg.get("correction"):
                     st.warning(f"📝 **Korekta:** {msg['correction']}")
                 
@@ -2878,26 +2875,20 @@ elif choice == "🤖 Sparing AI":
                 prompt = f"""
                 Jesteś nauczycielem {current_lang_name}. Scenariusz: {st.session_state.chat_scenario}.
                 Użytkownik napisał: "{u_in}".
-                Zadanie:
-                1. Odpowiedz naturalnie (max 2 zdania) po {current_lang_name}.
-                2. Przetłumacz swoją odpowiedź na polski.
-                3. Jeśli w "{u_in}" jest błąd, podaj poprawną formę w {current_lang_name} i krótkie wyjaśnienie po polsku.
-                Zwróć JSON: {{"reply": "odpowiedź", "translation": "tłumaczenie_odpowiedzi_PL", "correction": "poprawna_forma + wyjaśnienie_PL LUB 'Brak uwag'"}}
+                Zwróć JSON: {{"reply": "odpowiedź", "translation": "tłumaczenie_PL", "correction": "poprawna_forma + wyjaśnienie_PL LUB 'Brak uwag'"}}
                 """
                 try:
                     raw_res = get_openai_response(prompt)
-                    data = json.loads(raw_res)
+                    data = robust_json_parse(raw_res)
                     
-                    # Zapisujemy korektę do wiadomości usera
                     corr = data.get("correction")
                     st.session_state.chat_history[-1]["correction"] = corr if corr != "Brak uwag" else None
                     
-                    # Dodajemy nową wiadomość AI
                     st.session_state.chat_history.append({
                         "role": "assistant", 
-                        "content": data.get("reply", "..."),
+                        "content": data.get("reply", "Przepraszam, błąd odpowiedzi."),
                         "trans": data.get("translation", "")
                     })
                     st.rerun()
                 except:
-                    st.error("Problem z połączeniem. Spróbuj wysłać wiadomość jeszcze raz.")
+                    st.error("Problem z przetworzeniem wiadomości. Spróbuj jeszcze raz.")
