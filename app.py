@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V670 - Emergency Stability Update) ---
+# --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
     import openai
     
@@ -2788,15 +2788,24 @@ elif choice == "🤖 Sparing AI":
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
 
-    # Stabilny parser
+    # --- 1. PRECYZYJNY PARSER ---
     def parse_stable(txt):
         res = {"r": txt, "t": "", "c": None}
         if "|||" in txt:
             p = txt.split("|||")
-            res["r"] = p[0].strip()
+            r_part = p[0].strip()
+            # Usuwamy techniczne przedrostki typu "Reakcja:"
+            if r_part.lower().startswith("reakcja:"):
+                r_part = r_part[8:].strip()
+            
+            res["r"] = r_part
             res["t"] = p[1].strip() if len(p) > 1 else ""
-            if len(p) > 2 and p[2].strip().upper() not in ["OK", "BRAK", "NONE"]:
-                res["c"] = p[2].strip()
+            
+            if len(p) > 2:
+                corr = p[2].strip()
+                # Wyświetlamy tylko realne błędy
+                if corr.upper() not in ["OK", "BRAK", "NONE", "NULL", "ZDANIE POPRAWNE", "BRAK BŁĘDÓW"]:
+                    res["c"] = corr
         return res
 
     scenarios = {
@@ -2809,7 +2818,7 @@ elif choice == "🤖 Sparing AI":
     if "chat_scenario" not in st.session_state: st.session_state.chat_scenario = None
 
     if not st.session_state.chat_scenario:
-        st.subheader("Wybierz temat:")
+        st.subheader("Wybierz temat rozmowy:")
         cols = st.columns(3)
         for i, name in enumerate(scenarios.keys()):
             if cols[i % 3].button(name, use_container_width=True):
@@ -2817,44 +2826,54 @@ elif choice == "🤖 Sparing AI":
                 st.session_state.chat_history = []
                 st.rerun()
     else:
-        # Pasek kontrolny
+        # Pasek nawigacji
         c1, c2 = st.columns([4, 1])
-        c1.info(f"📍 {st.session_state.chat_scenario}")
+        c1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
         if c2.button("🏁 Koniec"):
             st.session_state.chat_scenario = None
             st.rerun()
 
-        # Renderowanie (zoptymalizowane)
+        # Renderowanie historii
         for i, msg in enumerate(st.session_state.chat_history):
-            with st.chat_message(msg["role"]):
+            role_icon = "🤖" if msg["role"] == "assistant" else "👤"
+            with st.chat_message(msg["role"], avatar=role_icon):
                 st.write(msg["content"])
                 if msg.get("t"): 
-                    with st.expander("Tłumaczenie"): st.caption(msg["t"])
-                if msg.get("c"): st.warning(f"📝 {msg['c']}")
+                    with st.expander("👁️ Tłumaczenie"): st.caption(msg["t"])
+                if msg.get("c"): 
+                    st.warning(f"📝 **Korekta:** {msg['c']}")
                 if msg["role"] == "assistant":
-                    if st.button("🔊", key=f"aud_{i}"): play_audio(msg["content"], L_CODE)
+                    if st.button("🔊 Słuchaj", key=f"aud_{i}"): play_audio(msg["content"], L_CODE)
 
-        # Logika API
-        u_input = st.chat_input("Napisz...")
+        # Logika inputu i API
+        u_input = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
         
-        # Jeśli historia jest pusta, AI musi zacząć (automatyczny trigger)
+        # Trigger: Brak historii lub nowa wiadomość
         if not st.session_state.chat_history or u_input:
             role = scenarios[st.session_state.chat_scenario]
             
             if u_input:
                 st.session_state.chat_history.append({"role": "user", "content": u_input})
-                prompt = f"Jesteś {role} ({current_lang_name}). Odpowiedz na: {u_input}. Format: Reakcja ||| Tłumaczenie ||| Korekta(lub OK). Rzeczowniki w DE dużą literą!"
-            else:
-                prompt = f"Jesteś {role} ({current_lang_name}). Przywitaj się. Format: Reakcja ||| Tłumaczenie"
+                # WZMOCNIONY PROMPT KOREKTY
+                prompt = f"""Jesteś {role} ({current_lang_name}).
+                Użytkownik napisał: "{u_input}".
+                
+                ZADANIA:
+                1. Reakcja: Odpowiedz naturalnie (krótko!).
+                2. Tłumaczenie: Twoja reakcja na PL.
+                3. Korekta: Sprawdź "{u_input}". W DE rzeczowniki MUSZĄ być dużą literą (np. 'pommes' -> 'Pommes'). Jeśli jest błąd, popraw go. Jeśli OK, napisz 'OK'.
 
-            with st.spinner("AI..."):
+                FORMAT: Reakcja ||| Tłumaczenie ||| Korekta"""
+            else:
+                prompt = f"Jesteś {role} ({current_lang_name}). Przywitaj się krótko. FORMAT: Reakcja ||| Tłumaczenie"
+
+            with st.spinner("AI myśli..."):
                 try:
-                    # BEZPOŚREDNIE WYWOŁANIE Z TIMEOUTEM
                     client = openai.OpenAI(api_key=API_KEY)
                     resp = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[{"role": "system", "content": prompt}],
-                        max_tokens=150,
+                        max_tokens=200,
                         timeout=15.0
                     )
                     data = parse_stable(resp.choices[0].message.content)
@@ -2867,5 +2886,5 @@ elif choice == "🤖 Sparing AI":
                     })
                     st.rerun()
                 except Exception as e:
-                    st.error("Przeciążenie serwera. Spróbuj wysłać ponownie za chwilę.")
+                    st.error("Problem techniczny. Spróbuj wysłać ponownie.")
                     if u_input: st.session_state.chat_history.pop()
