@@ -406,49 +406,29 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V355 - Multilang Support + Sparing AI Integration) ---
+# --- 6. SIDEBAR (V356 - Sparing AI moved to Nauka) ---
 with st.sidebar:
-    # 1. Agresywny CSS dla maksymalnej oszczędności miejsca i estetyki
+    # 1. Agresywny CSS (bez zmian)
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: none;}
             .st-emotion-cache-1avcm0n {padding: 0rem 0.4rem !important;}
             .st-emotion-cache-6q9sum {padding-top: 0rem !important;}
-            
             div.stButton > button {
-                width: 100%;
-                text-align: left;
-                background-color: transparent;
-                border: none;
-                padding: 1px 6px !important;
-                margin: 0px !important;
-                border-radius: 4px;
-                font-size: 0.88rem;
-                height: auto;
-                min-height: 28px;
+                width: 100%; text-align: left; background-color: transparent;
+                border: none; padding: 1px 6px !important; margin: 0px !important;
+                border-radius: 4px; font-size: 0.88rem; height: auto; min-height: 28px;
             }
-            
-            .st-emotion-cache-p5msec {
-                padding: 0rem 0.4rem !important; 
-                font-size: 0.9rem !important;
-            }
-            
+            .st-emotion-cache-p5msec { padding: 0rem 0.4rem !important; font-size: 0.9rem !important; }
             .stProgress > div > div > div > div { height: 6px !important; }
             .stProgress { margin-bottom: 0.3rem !important; }
-            
             [data-testid="stVerticalBlock"] > div { gap: 0rem !important; }
-            
-            .small-text {
-                font-size: 0.75rem;
-                color: #aaa;
-                margin-bottom: -2px;
-            }
-            
+            .small-text { font-size: 0.75rem; color: #aaa; margin-bottom: -2px; }
             hr { margin: 0.4rem 0 !important; opacity: 0.3; }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. Nagłówek profilu (Użytkownik i Streak)
+    # 2. Nagłówek profilu
     ud = st.session_state.user_data
     st.markdown(f"""
         <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
@@ -457,20 +437,11 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 3. Wybór Języka (Dynamiczny)
-    # Inicjalizacja klucza języka jeśli nie istnieje
-    if "current_lang" not in st.session_state:
-        st.session_state.current_lang = "Niemiecki"
+    # 3. Wybór Języka
+    if "current_lang" not in st.session_state: st.session_state.current_lang = "Niemiecki"
+    selected_lang = st.selectbox("Język nauki", options=list(LANG_MAP.keys()), 
+                                 format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
 
-    selected_lang = st.selectbox(
-        "Język nauki", 
-        options=list(LANG_MAP.keys()), 
-        format_func=lambda x: LANG_MAP[x]["label"], 
-        key="lang_sel", 
-        label_visibility="collapsed"
-    )
-
-    # Jeśli użytkownik zmienił język w locie - resetujemy widok na Start
     if selected_lang != st.session_state.current_lang:
         st.session_state.current_lang = selected_lang
         st.session_state.choice = "🏠 Start"
@@ -478,16 +449,14 @@ with st.sidebar:
 
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
 
-    # 4. Paski Postępu (Filtrowane pod aktualny język)
+    # 4. Paski Postępu
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     wiedza = 0
     if all_c:
         today = date.today()
-        # Liczymy słówka "opanowane" (data powtórki za ponad 6 dni)
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
         wiedza = int((strong / len(all_c)) * 100)
 
-    # Obliczanie dzisiejszego czasu nauki
     current_stats = ud.get("time_stats", {})
     m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
@@ -495,39 +464,33 @@ with st.sidebar:
 
     st.markdown(f"<div class='small-text'>🧠 Wiedza ({L_CODE.upper()}): {wiedza}%</div>", unsafe_allow_html=True)
     st.progress(min(wiedza / 100, 1.0))
-    
     st.markdown(f"<div class='small-text'>🎯 Cel dnia: {mins}/{goal}m</div>", unsafe_allow_html=True)
     st.progress(min(mins / goal, 1.0))
-
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # 5. Funkcja pomocnicza do renderowania pozycji menu
-    if "choice" not in st.session_state:
-        st.session_state.choice = "🏠 Start"
-
+    # 5. Funkcja menu
     def menu_item(label, target):
-        is_selected = st.session_state.choice == target
-        # Dodajemy wskaźnik aktywności
+        is_selected = st.session_state.get("choice") == target
         btn_label = f"{'▶ ' if is_selected else ''}{label}"
         if st.button(btn_label, key=f"btn_{target}"):
             st.session_state.choice = target
             st.rerun()
 
-    # 6. Struktura Menu Głównego
+    # 6. Struktura Menu
     menu_item("🏠 Start", "🏠 Start")
+    choice_now = st.session_state.get("choice", "🏠 Start")
 
-    choice_now = st.session_state.choice
-
-    # Grupa: Nauka
-    with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy"])):
+    # GRUPA: NAUKA (Z dodanym Sparing AI)
+    with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"])):
         menu_item("📅 Powtórki", "📅 Powtórki")
         menu_item("🚀 Trening", "🚀 Trening")
         menu_item("🕹️ Quiz", "🕹️ Quiz")
         menu_item("🎴 Fiszki", "🎴 Fiszki")
         menu_item("🛠️ Warsztat", "🛠️ Warsztat")
         menu_item("📝 Testy", "📝 Testy")
+        menu_item("🤖 Sparing AI", "🤖 Sparing AI") # <-- TUTAJ JEST TERAZ
 
-    # Grupa: Gry
+    # GRUPA: GRY
     with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
         menu_item("🧠 Memory", "🧠 Memory")
         menu_item("🏗️ Konstruktor", "🏗️ Konstruktor")
@@ -535,22 +498,18 @@ with st.sidebar:
         menu_item("🎈 Balonowy Wyścig", "🎈 Balonowy Wyścig")
         menu_item("🏆 Arena Wyzwań", "🏆 Arena Wyzwań")
 
-    # Narzędzia dodatkowe (w tym nowy SPARING AI)
-    for opt in ["📦 Generator", "📸 Skaner AI", "🤖 Sparing AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
+    # Narzędzia
+    for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
-    # Panel Admina (tylko dla uprawnionych)
     if u == ADMIN_USER:
         menu_item("👑 Admin", "👑 Admin")
 
     st.markdown("<hr>", unsafe_allow_html=True)
-    
-    # Przycisk wylogowania
     if st.button("🚪 Wyloguj", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
-# Synchronizacja globalnej zmiennej choice
 choice = st.session_state.get("choice", "🏠 Start")
 
 # --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
