@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V470 - Ultra Stable Connection & Fail-Safe) ---
+# --- 28. SPARING AI (V480 - Armor-Plated JSON Parser) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2787,28 +2787,44 @@ elif choice == "🤖 Sparing AI":
     st.header(f"🤖 Sparing AI: {current_lang_name}")
     st.write("Rozmawiaj swobodnie. System zadba o poprawną strukturę i poprawi błędy.")
 
-    # 1. FUNKCJA PARSOWANIA (Zabezpieczona)
-    def extract_ai_data(raw_text):
-        data = {"reply": "Błąd odpowiedzi AI.", "translation": "", "correction": None}
-        if not raw_text: return data
+    # 1. FUNKCJA PARSOWANIA (Wersja Pancerna)
+    def mega_parse(raw_text):
+        """Wyciąga dane z JSON-a nawet jeśli AI dodało komentarze lub błędy formatowania."""
+        res = {"reply": str(raw_text), "translation": "", "correction": None}
+        if not raw_text: return res
+        
         try:
-            # Próba wyciągnięcia JSON-a z tekstu, jeśli AI dodało coś poza nim
-            clean_json = raw_text[raw_text.find("{"):raw_text.rfind("}")+1]
-            cleaned = json.loads(clean_json)
-            data["reply"] = cleaned.get("reply", raw_text)
-            data["translation"] = cleaned.get("translation", "")
-            corr = cleaned.get("correction", "Brak uwag")
-            data["correction"] = corr if corr not in ["Brak uwag", "", "null"] else None
+            # Próba 1: Znalezienie bloku JSON między klamrami
+            start = raw_text.find("{")
+            end = raw_text.rfind("}") + 1
+            if start != -1 and end > 0:
+                json_part = raw_text[start:end]
+                data = json.loads(json_part)
+                res["reply"] = data.get("reply", res["reply"])
+                res["translation"] = data.get("translation", "")
+                c = data.get("correction", "")
+                if c and str(c).lower() not in ["brak uwag", "none", "null", "ok"]:
+                    res["correction"] = c
+                return res
         except:
-            # Regex jako plan ratunkowy
-            import re
-            r = re.search(r'"reply":\s*"(.*?)"', raw_text)
-            t = re.search(r'"translation":\s*"(.*?)"', raw_text)
-            c = re.search(r'"correction":\s*"(.*?)"', raw_text)
-            data["reply"] = r.group(1) if r else raw_text
-            data["translation"] = t.group(1) if t else ""
-            data["correction"] = c.group(1) if c and c.group(1) not in ["Brak uwag", ""] else None
-        return data
+            pass
+
+        # Próba 2: Regex (Plan ratunkowy dla kluczy)
+        import re
+        for key in ["reply", "translation", "correction"]:
+            match = re.search(rf'"{key}"\s*:\s*"(.*?)"', raw_text, re.DOTALL)
+            if match:
+                val = match.group(1)
+                if key == "correction" and val.lower() in ["brak uwag", "none", "null"]:
+                    res[key] = None
+                else:
+                    res[key] = val
+        
+        # Jeśli Regex nic nie znalazł w 'reply', a tekst nie jest JSONem, traktujemy go jako surową odpowiedź
+        if len(res["reply"]) < 5 and not raw_text.startswith("{"):
+            res["reply"] = raw_text
+
+        return res
 
     scenarios = {
         "🍽️ Restauracja": {"de": "Im Restaurant bestellen", "cs": "V restauraci"},
@@ -2816,7 +2832,7 @@ elif choice == "🤖 Sparing AI":
         "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovní pohovor"},
         "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nákup v obchodě"},
         "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letišti / nádraží"},
-        "☕ Luźna rozmowa": {"de": "Smalltalk über das Wetter i Hobbys", "cs": "Pokec o počasí a hobby"}
+        "☕ Luźna rozmowa": {"de": "Smalltalk über das Wetter", "cs": "Pokec o počasí"}
     }
 
     if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -2832,28 +2848,23 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history = []
                     st.rerun()
     else:
-        # 2. INICJALIZACJA (Fail-safe)
+        # INICJALIZACJA
         if not st.session_state.chat_history:
-            with st.spinner("Budowanie scenariusza..."):
+            with st.spinner("Łączenie..."):
                 details = scenarios[st.session_state.chat_scenario]
-                # Maksymalnie uproszczony prompt startowy
-                intro_p = f"Rozpocznij rozmowę jako asystent ({current_lang_name}). Scenariusz: {details[L_CODE]}. Przywitaj się krótko. Zwróć JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
+                intro_p = f"Jesteś asystentem w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Przywitaj się krótko. Zwróć WYŁĄCZNIE JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
                 try:
                     raw = get_openai_response(intro_p)
-                    data = extract_ai_data(raw)
+                    data = mega_parse(raw)
                     st.session_state.chat_history.append({
                         "role": "assistant", "content": data["reply"], "trans": data["translation"], "correction": None
                     })
                     st.rerun()
                 except:
-                    st.error("Błąd połączenia z API OpenAI.")
-                    if st.button("🔄 Spróbuj ponownie"): st.rerun()
-                    if st.button("⬅️ Wróć do wyboru"):
-                        st.session_state.chat_scenario = None
-                        st.rerun()
+                    st.error("Błąd połączenia. Kliknij Koniec i spróbuj ponownie.")
                     st.stop()
 
-        # Belka kontrolna
+        # UI
         c_top1, c_top2 = st.columns([4, 1])
         c_top1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
         if c_top2.button("🏁 Koniec"):
@@ -2863,7 +2874,7 @@ elif choice == "🤖 Sparing AI":
 
         st.divider()
 
-        # 3. CZAT
+        # CZAT
         for i, msg in enumerate(st.session_state.chat_history):
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
@@ -2877,24 +2888,26 @@ elif choice == "🤖 Sparing AI":
                     if st.button("🔊 Słuchaj", key=f"sp_aud_{i}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        # 4. OBSŁUGA INPUTU
+        # INPUT
         u_in = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
         if u_in:
             st.session_state.chat_history.append({"role": "user", "content": u_in})
             with st.spinner("Analizuję..."):
                 prompt = f"""
                 Jesteś nauczycielem {current_lang_name}. Scenariusz: {st.session_state.chat_scenario}.
-                Użytkownik napisał: "{u_in}". Odpowiedz naturalnie (max 2 zdania).
-                Zasady: 1. W de rzeczowniki dużą literą. 2. Toleruj brak umlautów. 
-                Zwróć JSON: {{"reply": "...", "translation": "...", "correction": "Poprawna forma + wyjaśnienie PL LUB 'Brak uwag'"}}
+                Użytkownik napisał: "{u_in}". Odpowiedz naturalnie i popraw błędy.
+                Zasady: 1. Rzeczowniki w DE dużą literą. 2. Toleruj brak umlautów.
+                Zwróć JSON: {{"reply": "Twoja odpowiedź", "translation": "tłumaczenie PL", "correction": "Poprawa + wyjaśnienie PL"}}
                 """
                 try:
                     raw_res = get_openai_response(prompt)
-                    data = extract_ai_data(raw_res)
+                    data = mega_parse(raw_res)
                     st.session_state.chat_history[-1]["correction"] = data["correction"]
                     st.session_state.chat_history.append({
                         "role": "assistant", "content": data["reply"], "trans": data["translation"]
                     })
                     st.rerun()
-                except:
-                    st.error("Problem z odpowiedzią AI. Spróbuj wysłać ponownie.")
+                except Exception as e:
+                    st.error(f"Problem z odpowiedzią AI. Spróbuj wysłać ponownie.")
+                    # Usuwamy ostatnią wiadomość użytkownika, aby mógł spróbować jeszcze raz
+                    st.session_state.chat_history.pop()
