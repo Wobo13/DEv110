@@ -989,7 +989,7 @@ elif choice == "📝 Testy":
 
             test_engine()
 
-# --- 12. GRA MEMORY (V285 - Pełna mechanika + Multilang) ---
+# --- 12. GRA MEMORY (V286 - Pełna mechanika + Multilang - Bez Audio) ---
 elif choice == "🧠 Memory":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -1019,7 +1019,7 @@ elif choice == "🧠 Memory":
         st.session_state.mem_pairs = 0
         st.session_state.mem_start_time = None
         st.session_state.mem_final_time = None
-        st.session_state.mem_lang_ref = L_CODE # Referencja, żeby zresetować grę przy zmianie języka
+        st.session_state.mem_lang_ref = L_CODE # Referencja do resetu przy zmianie języka
 
     # 3. SILNIK GRY (FRAGMENT)
     @st.fragment
@@ -1060,7 +1060,7 @@ elif choice == "🧠 Memory":
                     db.table("user_data").update({mem_key: current_scores}).eq("username", u).execute()
                     st.session_state.user_data[mem_key] = current_scores
                 except Exception as e:
-                    st.warning("⚠️ Błąd zapisu rekordu.")
+                    pass
 
             st.balloons()
             st.success(f"Brawo! Twój czas w języku {current_lang_name}: {st.session_state.mem_final_time}s")
@@ -1072,7 +1072,7 @@ elif choice == "🧠 Memory":
 
         st.write("---")
 
-        # RENDEROWANIE PRZYCISKÓW (3 wiersze x 4 kolumny)
+        # RENDEROWANIE PRZYCISKÓW
         for row in range(3):
             cols = st.columns(4)
             for col in range(4):
@@ -1101,19 +1101,16 @@ elif choice == "🧠 Memory":
                         status[idx] = "flipped"
                         st.rerun(scope="fragment") 
 
-        # SPRAWDZANIE PAR (z opóźnieniem widoczności)
+        # SPRAWDZANIE PAR
         flipped = [i for i, s in enumerate(status) if s == "flipped"]
         if len(flipped) == 2:
             idx1, idx2 = flipped
-            time.sleep(0.8) # Czekamy, żeby użytkownik zobaczył obie karty
+            time.sleep(0.6) # Skrócone opóźnienie dla lepszej dynamiki
             
             if grid[idx1]["id"] == grid[idx2]["id"]:
                 status[idx1] = "matched"
                 status[idx2] = "matched"
                 st.session_state.mem_pairs += 1
-                # Audio dla słowa w języku obcym
-                foreign_word = grid[idx1]["text"] if grid[idx1]["type"] == "foreign" else grid[idx2]["text"]
-                play_audio(foreign_word, lang=L_CODE)
             else:
                 status[idx1] = "hidden"
                 status[idx2] = "hidden"
