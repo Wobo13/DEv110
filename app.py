@@ -1207,7 +1207,7 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V1.9 - Pancerny Zapis) ---
+# --- 16. BALONOWY WYŚCIG (V2.0 - Pełna obsługa tablic SQL) ---
 elif choice == "🎈 Balonowy Wyścig":
     st.header("🎈 Balonowy Wyścig")
     
@@ -1244,30 +1244,26 @@ elif choice == "🎈 Balonowy Wyścig":
             if final_score > 0:
                 try:
                     db = get_db()
-                    # A. Pobieramy aktualne rekordy bezpośrednio z tabeli
+                    # A. Pobieramy rekordy (dla typu array int4[] Supabase zwraca listę Pythona)
                     res = db.table("user_data").select("baloon_scores").eq("username", u).execute()
                     
                     old_scores = []
-                    if res.data and res.data[0].get("baloon_scores"):
-                        raw_scores = res.data[0]["baloon_scores"]
-                        # Obsługa formatu JSONB (lista lub string)
-                        if isinstance(raw_scores, str):
-                            old_scores = json.loads(raw_scores)
-                        elif isinstance(raw_scores, list):
-                            old_scores = raw_scores
+                    if res.data:
+                        raw = res.data[0].get("baloon_scores")
+                        # Sprawdzamy czy to lista, jeśli None lub coś innego - dajemy pustą listę
+                        old_scores = raw if isinstance(raw, list) else []
                     
-                    # B. Wyznaczamy nowe Top 10
+                    # B. Wyznaczamy nowe Top 10 (unikalne wyniki, posortowane malejąco)
                     new_scores = sorted(list(set(old_scores + [final_score])), reverse=True)[:10]
                     
-                    # C. Wysyłamy update do bazy
+                    # C. Wysyłamy update (Pythonowa lista idzie prosto do SQL Array)
                     db.table("user_data").update({"baloon_scores": new_scores}).eq("username", u).execute()
                     
-                    # D. Synchronizacja lokalna dla Areny i Statystyk
+                    # D. Synchronizacja lokalna
                     st.session_state.user_data["baloon_scores"] = new_scores
-                    st.toast(f"Nowy rekord: {final_score} pkt! Zapisano.", icon="🏆")
+                    st.toast(f"Rekord zapisany: {final_score} pkt!", icon="🏆")
                 except Exception as e:
-                    st.error(f"Problem z bazą danych: {e}")
-                    st.info("Wynik zachowany w tej sesji, ale nie trafił do chmury.")
+                    st.error(f"Błąd zapisu do tablicy baloon_scores: {e}")
             
             st.rerun()
 
@@ -1278,12 +1274,11 @@ elif choice == "🎈 Balonowy Wyścig":
     if not is_active:
         if is_over:
             st.balloons()
-            st.success(f"### Koniec czasu! Twój wynik: {st.session_state.bal_score} pkt 🏆")
+            st.success(f"### Koniec! Wynik: {st.session_state.bal_score} pkt 🏆")
             
-            # Pokazujemy najlepsze wyniki pobrane z session_state
             tops = st.session_state.user_data.get("baloon_scores", [])
             if tops:
-                st.markdown(f"**Twoje rekordy:** {', '.join(map(str, tops))}")
+                st.info(f"Twoje najlepsze wyniki: {', '.join(map(str, tops))}")
             
             if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
                 st.session_state.update({
@@ -1293,7 +1288,7 @@ elif choice == "🎈 Balonowy Wyścig":
                 next_bal_round()
                 st.rerun()
         else:
-            st.info("Masz 30 sekund. Wybierz poprawne tłumaczenie słowa w ramce.")
+            st.info("30 sekund na poprawne tłumaczenia. Powodzenia!")
             if st.button("🚀 START", use_container_width=True, type="primary"):
                 if next_bal_round():
                     st.session_state.update({
@@ -1302,7 +1297,7 @@ elif choice == "🎈 Balonowy Wyścig":
                     })
                     st.rerun()
     else:
-        # SILNIK GRY (FRAGMENT DLA WYDAJNOŚCI)
+        # SILNIK GRY
         @st.fragment(run_every=1.0)
         def balloon_engine():
             current_elapsed = time.time() - st.session_state.get("bal_start_ts", 0)
@@ -1329,21 +1324,17 @@ elif choice == "🎈 Balonowy Wyścig":
 
                 cols = st.columns(3)
                 for i, opt in enumerate(st.session_state.bal_opts):
-                    if cols[i].button(opt, key=f"bal_b_{i}", use_container_width=True):
+                    if cols[i].button(opt, key=f"bal_btn_v2_{i}", use_container_width=True):
                         if opt == st.session_state.bal_word['pl']:
                             st.session_state.bal_score += 1
                             next_bal_round()
                             st.rerun(scope="fragment")
                         else:
-                            st.toast("Pudło! 💨")
+                            st.toast("Pudło!")
                             next_bal_round()
                             st.rerun(scope="fragment")
         
         balloon_engine()
-        
-        if st.button("❌ Przerwij", type="secondary", use_container_width=True):
-            st.session_state.bal_active = False
-            st.rerun()
             
 # --- 20. ARENA WYZWAŃ (V300 - Pełny Ranking z nowymi grami) ---
 elif choice == "🏆 Arena Wyzwań":
