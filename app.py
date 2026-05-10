@@ -1111,7 +1111,7 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR (V1.1 - Obsługa spacji i fraz) ---
+# --- 14. KONSTRUKTOR (V1.2 - Stabilne przyciski i spacje) ---
 elif choice == "🏗️ Konstruktor":
     st.header("🏗️ Konstruktor Słów")
     st.write("Ułóż niemieckie słowo lub frazę. Pamiętaj o spacjach!")
@@ -1127,7 +1127,6 @@ elif choice == "🏗️ Konstruktor":
         target = random.choice(pool if pool else st.session_state.flashcards)
         
         de_word = target['de'].strip()
-        # Przygotowanie liter: ZACHOWUJEMY spacje w puli
         letters = [l for l in de_word]
         random.shuffle(letters)
         
@@ -1136,20 +1135,23 @@ elif choice == "🏗️ Konstruktor":
             "kon_pl": target['pl'],
             "kon_shuffled": letters,
             "kon_user": [],
-            "kon_done": False
+            "kon_done": False,
+            "kon_seed": random.randint(1000, 9999) # Stabilny klucz dla tej rundy
         })
 
     # 2. SILNIK GRY (FRAGMENT)
     @st.fragment
     def constructor_engine():
+        # Pobieramy dane z sesji
         kon_w = st.session_state.kon_word
         kon_pl = st.session_state.kon_pl
         shuffled = st.session_state.kon_shuffled
         user_build = st.session_state.kon_user
+        k_seed = st.session_state.kon_seed
         
         st.info(f"### 🇵🇱 {kon_pl}")
         
-        # Widok ułożonego słowa (zamieniamy spacje na widoczne luki/znaki dla czytelności)
+        # Widok ułożonego słowa
         current_str = "".join(user_build)
         remaining = len(kon_w) - len(user_build)
         display_str = current_str.replace(" ", "•") + "_" * remaining
@@ -1159,24 +1161,25 @@ elif choice == "🏗️ Konstruktor":
             padding: 20px; background: #0e1117; border: 2px dashed #444; border-radius: 10px; color: #00ff00; font-family: monospace;">
                 {display_str}
             </div>
-            <div style="text-align: center; font-size: 0.8em; color: gray;">(• = spacja)</div>
+            <div style="text-align: center; font-size: 0.8em; color: gray; margin-top: 5px;">(• = spacja)</div>
         """, unsafe_allow_html=True)
         
         st.write("")
 
         # Przycisk cofania
         if user_build and not st.session_state.kon_done:
-            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True):
+            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True, key=f"kon_back_{k_seed}"):
                 last_l = st.session_state.kon_user.pop()
                 st.session_state.kon_shuffled.append(last_l)
                 st.rerun(scope="fragment")
 
-        # Kafelki z dostępnymi znakami (w tym spacje)
+        # Kafelki z dostępnymi znakami
+        # Używamy stałego seeda rundy i indeksu, aby klucze były unikalne ale niezmienne podczas klikania
         cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
         for i, letter in enumerate(shuffled):
-            # Wyświetlamy napis "Spacja" zamiast pustego przycisku
             label = "␣" if letter == " " else letter
-            if cols[i % 8].button(label, key=f"let_{i}_{letter}_{random.randint(0,999)}", use_container_width=True):
+            # KLUCZ: Stały prefiks + seed rundy + indeks litery
+            if cols[i % 8].button(label, key=f"kbtn_{k_seed}_{i}", use_container_width=True):
                 st.session_state.kon_user.append(letter)
                 st.session_state.kon_shuffled.pop(i)
                 
@@ -1194,15 +1197,15 @@ elif choice == "🏗️ Konstruktor":
             else:
                 st.error(f"❌ Prawie! Poprawny zapis: **{kon_w}**")
             
-            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary"):
-                for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
+            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary", key=f"kon_next_{k_seed}"):
+                for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
     constructor_engine()
 
-    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True):
-        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done"]:
+    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="kon_reset_global"):
+        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
