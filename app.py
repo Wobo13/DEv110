@@ -359,13 +359,12 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V305 - Obsługa Wielu Języków: DE/CS) ---
+# --- 6. SIDEBAR (V310 - Fix Menu Navigation Reset) ---
 with st.sidebar:
     # 1. Inicjalizacja i Wybór Języka
     if "current_lang" not in st.session_state:
         st.session_state.current_lang = "Niemiecki"
 
-    # Definicja obsługiwanych języków
     LANG_MAP = {
         "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki", "emoji": "🚀"},
         "Czeski": {"code": "cs", "label": "🇨🇿 Czeski", "emoji": "🦁"}
@@ -393,84 +392,72 @@ with st.sidebar:
         key="lang_selector"
     )
 
-    # Reakcja na zmianę języka
+    # --- KLUCZOWA ZMIANA: Logika resetu menu ---
+    # Jeśli język się zmienił, ustawiamy flagę resetu menu
+    menu_index = 0 # Domyślnie Start
     if selected_lang_name != st.session_state.current_lang:
         st.session_state.current_lang = selected_lang_name
-        # Wymuszamy odświeżenie danych przy zmianie języka
+        st.session_state.force_start_page = True # Flaga wymuszająca powrót do startu
         st.rerun()
 
-    # Pobieramy kod aktualnego języka (np. 'de' lub 'cs')
+    # Sprawdzamy czy musimy zresetować pozycję menu
+    if st.session_state.get("force_start_page", False):
+        menu_index = 0
+        # Usuwamy flagę po jednorazowym użyciu
+        del st.session_state.force_start_page
+    else:
+        # Jeśli nie ma resetu, próbujemy odczytać gdzie był użytkownik (opcjonalne)
+        # Ale najprościej pozwolić radio działać naturalnie
+        menu_index = None 
+
+    # Pobieramy kody języka
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
-    L_EMOJI = LANG_MAP[st.session_state.current_lang]["emoji"]
 
     st.write("---")
 
-    # 2. Filtrowanie słówek pod wybrany język (do statystyk w sidebarze)
-    # Zakładamy, że słówka bez przypisanego języka są Niemieckie (default 'de')
-    all_c_full = st.session_state.flashcards
-    all_c = [c for c in all_c_full if c.get("lang", "de") == L_CODE]
-
-    # 3. Obliczanie Wiedzy dla wybranego języka
+    # 2. Filtrowanie i paski postępu (Wiedza/Cel)
+    all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
     wiedza_perc = 0
     if all_c:
         today_dt = date.today()
-        strong = len([
-            c for c in all_c 
-            if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6
-        ])
+        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # 4. Obliczanie Celu Dziennego
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     current_stats = ud.get("time_stats", {})
-    
-    study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
-    study_minutes = int(study_seconds // 60)
+    study_minutes = int(sum(current_stats.get(code, 0) for code in study_modules) // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
     
-    # 5. Wyświetlanie pasków postępu
     st.caption(f"🧠 Wiedza ({st.session_state.current_lang}): {wiedza_perc}%")
     st.progress(min(wiedza_perc / 100, 1.0))
-    
     st.caption(f"🎯 Cel dnia: {study_minutes}/{daily_goal}m")
-    goal_progress = min(study_minutes / daily_goal, 1.0)
-    st.progress(goal_progress)
+    st.progress(min(study_minutes / daily_goal, 1.0))
     
-    if study_minutes >= daily_goal:
-        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
-
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 6. MENU NAWIGACYJNE
+    # 6. MENU NAWIGACYJNE z wymuszonym indeksem
     menu_options = [
-        "🏠 Start", 
-        "📅 Powtórki", 
-        "🚀 Trening", 
-        "🕹️ Quiz", 
-        "🎴 Fiszki", 
-        "📝 Testy", 
-        "🧠 Memory", 
-        "🛠️ Warsztat",
-        "🏗️ Konstruktor", 
-        "🐍 Lingwistyczny Wąż",
-        "🎈 Balonowy Wyścig",
-        "🏆 Arena Wyzwań",
-        "📦 Generator słów", 
-        "📸 Skaner AI", 
-        "➕ Dodaj", 
-        "📖 Słownik", 
-        "📊 Statystyki", 
-        "⚙️ Moje Konto"
+        "🏠 Start", "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
+        "📝 Testy", "🧠 Memory", "🛠️ Warsztat", "🏗️ Konstruktor", 
+        "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań",
+        "📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", 
+        "📊 Statystyki", "⚙️ Moje Konto"
     ]
     
     if u == ADMIN_USER:
         menu_options.append("👑 Admin")
 
-    choice = st.radio("Menu", menu_options, label_visibility="collapsed")
+    # Używamy parametru 'index', aby sterować podświetleniem menu
+    choice = st.radio(
+        "Menu", 
+        menu_options, 
+        index=menu_index, # <--- To wymusza podświetlenie na "Start" (index 0) po zmianie języka
+        label_visibility="collapsed"
+    )
     
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # 7. Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.query_params.clear()
