@@ -939,28 +939,66 @@ elif choice == "🎴 Fiszki":
         # Uruchomienie interfejsu
         flashcards_ui()
 
-# --- 11. TESTY (V295 - Pełne podsumowanie odpowiedzi) ---
+# --- 11. TESTY (V300 - Full Multilang + Lang-Specific History) ---
 elif choice == "📝 Testy":
-    st.header("📝 Test")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    if len(st.session_state.flashcards) < 5:
-        st.warning("Dodaj min. 5 słówek, aby wygenerować test.")
+    st.header(f"📝 Test: {current_lang_name}")
+    
+    # 1. FILTROWANIE SŁÓWEK POD JĘZYK
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
+    if len(lang_cards) < 5:
+        st.warning(f"Masz za mało słówek w języku {current_lang_name} (min. 5), aby wygenerować test. Dodaj nowe słówka lub użyj Skanera AI!")
     else:
+        # 2. EKRAN KONFIGURACJI TESTU
         if "test_q" not in st.session_state:
-            n_q = st.slider("Liczba pytań", 5, 20, 5)
-            if st.button("🚀 GENERUJ TEST", use_container_width=True, type="primary"):
-                with st.spinner("AI przygotowuje zadania..."):
+            # Pobieramy preferencje z ustawień użytkownika
+            user_prefs = st.session_state.user_data.get("settings", {})
+            default_q_count = user_prefs.get("test_questions", 10)
+            
+            # Slider ograniczony do faktycznej liczby słówek w bazie
+            max_possible = min(len(lang_cards), 30)
+            n_q = st.slider("Liczba pytań w teście:", 5, max_possible, min(default_q_count, max_possible))
+            
+            if st.button(f"🚀 GENERUJ TEST ({current_lang_name})", use_container_width=True, type="primary"):
+                with st.spinner(f"Sztuczna inteligencja przygotowuje zadania w języku {current_lang_name}..."):
                     try:
-                        sample = random.sample(st.session_state.flashcards, n_q)
-                        prompt = f"Generuj test dla: {[w['de'] for w in sample]}. JSON: {{ \"questions\": [{{ \"hint\":\"PL context\", \"sentence\":\"German sentence with target word replaced by _______\", \"correct\":\"DE word\", \"distractors\":[\"...\"], \"type\":\"QUIZ\" }}] }}"
-                        data = json.loads(get_openai_response(prompt))
+                        # Losujemy słówka do testu
+                        sample = random.sample(lang_cards, n_q)
+                        words_for_ai = [w['de'] for w in sample]
+                        
+                        # Dynamiczny prompt uwzględniający język
+                        lang_instruction = "Każdy rzeczownik musi mieć rodzajnik (der/die/das)." if L_CODE == "de" else "Zwróć szczególną uwagę na czeską diakrytykę."
+                        
+                        prompt = f"""Jesteś nauczycielem języka {current_lang_name}. 
+                        Stwórz test luk dla następujących słów: {words_for_ai}.
+                        {lang_instruction}
+                        
+                        Dla każdego słowa przygotuj:
+                        1. hint: krótkie naprowadzenie po polsku.
+                        2. sentence: zdanie w języku {current_lang_name} z luką "_______" w miejscu słowa kluczowego.
+                        3. correct: poprawne słowo (dokładnie w takiej formie, jak ma być w zdaniu).
+                        4. distractors: 3 błędne ale gramatycznie podobne odpowiedzi w języku {current_lang_name}.
+                        
+                        Zwróć TYLKO czysty JSON:
+                        {{ "questions": [
+                            {{ "hint": "...", "sentence": "...", "correct": "...", "distractors": ["...", "...", "..."], "type": "QUIZ" }}
+                        ] }}"""
+                        
+                        res_raw = get_openai_response(prompt)
+                        data = json.loads(res_raw)
+                        
+                        # Inicjalizacja sesji testu
                         st.session_state.test_q = data["questions"]
                         st.session_state.test_idx = 0
                         st.session_state.test_score = 0
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Błąd AI: {e}. Spróbuj ponownie.")
+                        st.error(f"Wystąpił błąd podczas generowania testu: {e}")
         
+        # 3. SILNIK TESTU (EKRAN PYTAŃ)
         else:
             @st.fragment
             def test_engine():
@@ -969,80 +1007,85 @@ elif choice == "📝 Testy":
                 
                 if t_idx < len(qs):
                     q = qs[t_idx]
+                    
+                    # Pasek postępu i licznik
                     st.progress(t_idx / len(qs))
                     st.caption(f"Pytanie {t_idx + 1} z {len(qs)}")
                     
-                    st.info(f"💡 Podpowiedź (PL): {q.get('hint','brak')}")
-                    st.markdown(f"### {q.get('sentence','?')}")
+                    # Wizualizacja pytania
+                    st.markdown(f"### {q.get('sentence', '???')}")
+                    st.info(f"💡 Podpowiedź: {q.get('hint', '')}")
                     
-                    correct = str(q.get('correct',''))
+                    # Przygotowanie opcji (Correct + Distractors)
+                    correct_ans = q.get('correct')
+                    options = list(set(q.get('distractors', []) + [correct_ans]))
+                    random.shuffle(options)
                     
-                    if q.get('type') == "QUIZ":
-                        opts = list(set(q.get('distractors', []) + [correct]))
-                        random.shuffle(opts)
-                        cols = st.columns(2)
-                        for i, o in enumerate(opts):
-                            if cols[i%2].button(o, key=f"t_btn_{t_idx}_{o}", use_container_width=True):
-                                st.session_state.test_q[t_idx]['user_ans'] = o
-                                if o == correct:
-                                    st.session_state.test_score += 1
-                                    st.toast("Dobrze! ✅")
-                                else:
-                                    st.toast("Źle ❌")
-                                st.session_state.test_idx += 1
-                                st.rerun(scope="fragment")
-                    else:
-                        with st.form(key=f"test_form_{t_idx}", clear_on_submit=True):
-                            ans = st.text_input("Twoja odpowiedź:")
-                            if st.form_submit_button("Zatwierdź"):
-                                st.session_state.test_q[t_idx]['user_ans'] = ans
-                                if normalize_text(ans) == normalize_text(correct):
-                                    st.session_state.test_score += 1
-                                    st.toast("Dobrze! ✅")
-                                else:
-                                    st.toast("Źle ❌")
-                                st.session_state.test_idx += 1
-                                st.rerun(scope="fragment")
-                
-                else:
-                    # --- PANEL PODSUMOWANIA ---
-                    score, total = st.session_state.test_score, len(qs)
-                    perc = round((score/total)*100) if total > 0 else 0
-                    
-                    st.markdown(f'''
-                        <div style="text-align:center; padding:30px; border-radius:20px; 
-                        background:#111; border:3px solid #1E88E5; margin-bottom:20px;">
-                            <h1 style="margin:0; color:white;">Wynik: {score}/{total}</h1>
-                            <h2 style="color:#1E88E5; margin:0;">{perc}%</h2>
-                        </div>
-                    ''', unsafe_allow_html=True)
-                    
-                    # --- KLUCZOWA ZMIANA: Zawsze pokazuj odpowiedzi ---
-                    with st.expander("📝 Zobacz szczegóły odpowiedzi", expanded=True):
-                        for i, q_res in enumerate(qs):
-                            u_a = q_res.get('user_ans', 'Brak')
-                            c_a = q_res.get('correct', '')
-                            is_ok = normalize_text(u_a) == normalize_text(c_a)
+                    # Grid przycisków odpowiedzi
+                    cols = st.columns(2)
+                    for i, opt in enumerate(options):
+                        if cols[i % 2].button(opt, key=f"t_opt_{t_idx}_{i}", use_container_width=True):
+                            # Walidacja
+                            st.session_state.test_q[t_idx]['user_ans'] = opt
+                            if opt == correct_ans:
+                                st.session_state.test_score += 1
+                                st.toast("Świetnie! ✅", icon="🎉")
+                            else:
+                                st.toast(f"Błąd! Poprawnie: {correct_ans} ❌", icon="⚠️")
                             
+                            st.session_state.test_idx += 1
+                            st.rerun(scope="fragment")
+                
+                # 4. PODSUMOWANIE TESTU
+                else:
+                    score = st.session_state.test_score
+                    total = len(qs)
+                    perc = round((score / total) * 100) if total > 0 else 0
+                    
+                    st.markdown(f"""
+                        <div style="text-align:center; padding:30px; border-radius:20px; background:rgba(255,255,255,0.05); border:2px solid #ff4b4b;">
+                            <h1 style="margin:0; color:white;">Koniec Testu!</h1>
+                            <h2 style="color:#ff4b4b; font-size:3rem;">{score} / {total}</h2>
+                            <p style="font-size:1.5rem;">Twój wynik to <b>{perc}%</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Szczegółowa lista odpowiedzi
+                    with st.expander("🔍 Przeglądaj swoje odpowiedzi", expanded=True):
+                        for i, res in enumerate(qs):
+                            u_a = res.get('user_ans', 'Brak')
+                            c_a = res.get('correct', '')
+                            is_ok = (u_a == c_a)
                             icon = "✅" if is_ok else "❌"
                             color = "#4CAF50" if is_ok else "#FF5252"
                             
-                            st.markdown(f"**{i+1}.** {q_res.get('sentence')}")
-                            # Wyświetlanie obu odpowiedzi w jednej linii z kolorowaniem
+                            st.markdown(f"**{i+1}.** {res.get('sentence')}")
                             st.markdown(f"""
-                                <div style="margin-left: 25px; margin-bottom: 15px; font-size: 0.9em;">
-                                    {icon} Twoja: <span style="color:{color}; font-weight:bold;">{u_a}</span><br>
-                                    🎯 Poprawna: <span style="color:#1E88E5; font-weight:bold;">{c_a}</span>
+                                <div style="margin-left: 20px; font-size: 0.9em; margin-bottom: 10px;">
+                                    {icon} Twoja: <span style="color:{color};">{u_a}</span><br>
+                                    🎯 Poprawna: <span style="color:#4CAF50;">{c_a}</span>
                                 </div>
                             """, unsafe_allow_html=True)
 
-                    if st.button("Zakończ i zapisz do statystyk", use_container_width=True, type="primary"):
-                        st.session_state.user_data["test_history"].append({
-                            "date": datetime.now().strftime("%d.%m %H:%M"), 
-                            "score": score, "total": total, "perc": perc
-                        })
-                        save_user_data(u, st.session_state.user_data)
-                        del st.session_state.test_q 
+                    # ZAPIS DO BAZY (Z uwzględnieniem L_CODE)
+                    if st.button("💾 Zapisz wynik i wyjdź", use_container_width=True, type="primary"):
+                        new_result = {
+                            "date": datetime.now().strftime("%d.%m %H:%M"),
+                            "score": score,
+                            "total": total,
+                            "perc": perc,
+                            "lang": L_CODE # Kluczowe do filtrowania w statystykach
+                        }
+                        
+                        # Dodajemy do lokalnej listy i synchronizujemy z bazą
+                        if "test_history" not in st.session_state.user_data:
+                            st.session_state.user_data["test_history"] = []
+                        
+                        st.session_state.user_data["test_history"].append(new_result)
+                        save_user_data(st.session_state.user, st.session_state.user_data)
+                        
+                        # Czyścimy stan testu
+                        del st.session_state.test_q
                         st.rerun()
 
             test_engine()
@@ -2216,178 +2259,120 @@ elif choice == "📖 Słownik":
                 st.toast("Usunięto! 🗑️")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V240 - Multilang: Pełna separacja rekordów i nauki) ---
+# --- 25. STATYSTYKI (V305 - Full Multilang & History Filtering) ---
 elif choice == "📊 Statystyki":
-    # Pobieramy aktualny język i kod z sesji (DE/CS)
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.header(f"📊 Statystyki: {current_lang_name}")
+    st.header(f"📊 Statystyki Postępu: {current_lang_name}")
     
-    # 1. FILTROWANIE DANYCH POD JĘZYK (Słówka)
-    df_full = pd.DataFrame(st.session_state.flashcards)
-    if not df_full.empty:
-        df = df_full[df_full.get("lang", "de") == L_CODE].copy()
-    else:
-        df = pd.DataFrame()
-
     ud = st.session_state.user_data
+    # Filtrujemy fiszki tylko dla aktualnego języka
+    my_lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
-    # 2. METRYKI GŁÓWNE
-    c1, c2 = st.columns(2)
-    c1.metric(f"Słówek ({current_lang_name})", len(df))
-    # Passa pozostaje globalna jako ogólna motywacja konta
-    c2.metric("Passa Nauki (Global)", f"{ud.get('streak', 0)} dni")
-    
-    st.write("---")
-
-    # --- 3. REKORDY GIER (Zależne od języka DE/CS) ---
-    st.subheader(f"🏆 Moje Rekordy ({current_lang_name})")
-    t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balonowy Wyścig", "🐍 Lingwistyczny Wąż"])
-    
-    # Dynamiczne klucze do bazy (np. memory_scores_de lub memory_scores_cs)
-    mem_key = f"memory_scores_{L_CODE}"
-    bal_key = f"top_balloons_{L_CODE}"
-    # Zabezpieczenie dla starej nazwy kolumny balonu, jeśli istniała
-    bal_legacy_key = f"baloon_scores_{L_CODE}"
-
-    with t_mem:
-        # Odczytujemy wyniki tylko dla wybranego języka
-        mem_scores = ud.get(mem_key, [])
-        if mem_scores and isinstance(mem_scores, list):
-            top3_mem = sorted([float(s) for s in mem_scores])[:3]
-            m_cols = st.columns(3)
-            icons = ["🥇", "🥈", "🥉"]
-            for i, score in enumerate(top3_mem):
-                if i < len(m_cols):
-                    m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
-        else:
-            st.info(f"Zagraj w Memory ({current_lang_name}), aby ustanowić rekord!")
-
-    with t_bal:
-        # Próba odczytu z nowej kolumny, a jeśli pusta - ze starej wersji językowej
-        bal_scores = ud.get(bal_key, ud.get(bal_legacy_key, []))
-        if bal_scores and isinstance(bal_scores, list):
-            top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
-            b_cols = st.columns(3)
-            icons = ["🥇", "🥈", "🥉"]
-            for i, score in enumerate(top3_bal):
-                if i < len(b_cols):
-                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
-        else:
-            st.info(f"Zagraj w Balonowy Wyścig ({current_lang_name}), aby zdobyć punkty!")
-
-    with t_snake:
-        # Wąż na ten moment przechowuje rekord w user_data w sposób globalny, 
-        # ale wyświetlamy go tutaj dla spójności
-        s_max = ud.get("snake_best_chain", 0)
-        s_wins = ud.get("snake_wins", 0)
-        s_loss = ud.get("snake_losses", 0)
-        s_c1, s_c2, s_c3 = st.columns(3)
-        s_c1.metric("Najdłuższa seria", f"{s_max} słów")
-        s_c2.metric("Wygrane", f"{s_wins}")
-        s_c3.metric("Przegrane", f"{s_loss}")
-        if s_wins + s_loss > 0:
-            win_rate = int((s_wins / (s_wins + s_loss)) * 100)
-            st.caption(f"Skuteczność w walce z systemem: {win_rate}%")
-
-    st.write("---")
-    
-    # 4. CZAS NAUKI I FAZY (Zależne od języka)
-    col_top1, col_top2 = st.columns(2)
-    
-    with col_top1:
-        st.subheader("⏱️ Czas nauki (minuty)")
-        time_stats = ud.get("time_stats", {})
-        display_names = {
-            "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
-            "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory",
-            "War": "Warsztat", "Sta": "Statystyki", "Kon": "Konstruktor",
-            "Wan": "Wąż", "Bal": "Balon"
-        }
-        nav_order = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Warsztat", "Konstruktor", "Wąż", "Bal", "Statystyki", "Inne"]
+    if not my_lang_cards:
+        st.info(f"Nie masz jeszcze żadnych słówek w języku {current_lang_name}. Dodaj je, aby zobaczyć statystyki!")
+    else:
+        # 1. KPI - GŁÓWNE WSKAŹNIKI
+        col1, col2, col3, col4 = st.columns(4)
         
-        aggregated_mins = {name: 0 for name in nav_order}
-        for code, sec in time_stats.items():
-            name = display_names.get(code, "Inne")
-            if name in aggregated_mins: aggregated_mins[name] += sec
-            else: aggregated_mins["Inne"] += sec
-        
-        t_data = []
-        for name in nav_order:
-            mins = int(aggregated_mins[name] // 60)
-            if mins > 0 or name in ["Powtórki", "Trening"]:
-                t_data.append({"Moduł": name, "Minuty": mins})
-        st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
-
-    with col_top2:
-        st.subheader(f"🧠 Fazy: {current_lang_name}")
-        if not df.empty:
-            today = date.today()
-            phase_counts = {"Słaba (1-2 dni)": 0, "Średnia (3-6 dni)": 0, "Silna (7+ dni)": 0}
-            for _, row in df.iterrows():
-                try:
-                    rev_str = str(row.get('next_review', today))
-                    rev_date = datetime.strptime(rev_str, "%Y-%m-%d").date()
-                    diff = (rev_date - today).days
-                    if diff <= 1: phase_counts["Słaba (1-2 dni)"] += 1
-                    elif 2 <= diff <= 6: phase_counts["Średnia (3-6 dni)"] += 1
-                    else: phase_counts["Silna (7+ dni)"] += 1
-                except:
-                    phase_counts["Słaba (1-2 dni)"] += 1
-            p_list = [{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]
-            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
-        else:
-            st.info("Brak danych.")
-
-    st.write("---")
-    
-    # 5. PROGNOZA POWTÓREK
-    st.subheader(f"📅 Prognoza: {current_lang_name}")
-    if not df.empty:
-        sched = []
+        # Liczenie "mocnych" słówek (tych z datą powtórki > 6 dni od dziś)
         today_dt = date.today()
-        for i in range(10):
-            target_date = str(today_dt + timedelta(days=i))
-            count = len(df[df['next_review'] <= target_date]) if i == 0 else len(df[df['next_review'] == target_date])
-            label = "Dzisiaj" if i == 0 else (today_dt + timedelta(days=i)).strftime("%d.%m")
-            sched.append({"Dzień": label, "Liczba słówek": count})
-        st.dataframe(pd.DataFrame(sched), use_container_width=True, hide_index=True)
-
-    st.write("---")
-    
-    # 6. POZIOMY I ŹRÓDŁA
-    col_stats1, col_stats2 = st.columns(2)
-    with col_stats1:
-        st.subheader("📈 Słówka wg poziomu")
-        if not df.empty:
-            levels = ["A1", "A2", "B1", "B2", "C1"]
-            level_data = []
-            today_str = str(date.today())
-            for lvl in levels:
-                mask = df['category'].str.contains(lvl, case=False, na=False)
-                u_lvl = df[mask]
-                total = len(u_lvl)
-                mastered = len(u_lvl[u_lvl['next_review'] > today_str])
-                perc = int(round((mastered / total) * 100)) if total > 0 else 0
-                level_data.append({"Poziom": lvl, "Słówek": total, "Opanowane": f"{perc}%"})
-            st.dataframe(pd.DataFrame(level_data), use_container_width=True, hide_index=True)
-            
-    with col_stats2:
-        st.subheader("📌 Źródła pozyskania")
-        if not df.empty and 'origin' in df.columns:
-            origin_counts = df['origin'].value_counts().reset_index()
-            origin_counts.columns = ['Źródło', 'Liczba słówek']
-            st.dataframe(origin_counts, use_container_width=True, hide_index=True)
+        strong_words = [c for c in my_lang_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6]
         
-    st.write("---")
-    st.subheader("📝 Historia rozwiązanych testów")
-    t_hist = ud.get("test_history", [])
-    if t_hist:
-        hist_df = pd.DataFrame(t_hist)[::-1]
-        hist_df = hist_df[["date", "score", "total", "perc"]]
-        hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
-        st.dataframe(hist_df, use_container_width=True, hide_index=True)
+        with col1:
+            st.metric("Suma słówek", len(my_lang_cards))
+        with col2:
+            st.metric("Opanowane", len(strong_words))
+        with col3:
+            perc_mastered = round((len(strong_words) / len(my_lang_cards)) * 100) if my_lang_cards else 0
+            st.metric("Procent wiedzy", f"{perc_mastered}%")
+        with col4:
+            st.metric("Aktualna passa", f"{ud.get('streak', 0)} 🔥")
+
+        st.write("---")
+
+        # 2. WYKRES ROZKŁADU NAUKI (SRM)
+        st.subheader("📈 Rozkład opanowania materiału")
+        
+        # Przygotowanie danych do wykresu kołowego
+        categories = {"Nowe": 0, "W trakcie": 0, "Opanowane": 0}
+        for c in my_lang_cards:
+            diff = (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days
+            if diff <= 0: categories["Nowe"] += 1
+            elif diff <= 6: categories["W trakcie"] += 1
+            else: categories["Opanowane"] += 1
+            
+        fig_pie = px.pie(
+            names=list(categories.keys()), 
+            values=list(categories.values()),
+            color=list(categories.keys()),
+            color_discrete_map={'Nowe':'#ff4b4b', 'W trakcie':'#ffa500', 'Opanowane':'#4CAF50'},
+            hole=0.4
+        )
+        fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+        st.write("---")
+
+        # 3. HISTORIA TESTÓW (Z FILTROWANIEM JĘZYKA)
+        st.subheader(f"📝 Ostatnie testy: {current_lang_name}")
+        
+        raw_history = ud.get("test_history", [])
+        
+        # FILTR: Pokazujemy tylko testy z aktualnym L_CODE. 
+        # Dla bardzo starych testów, które nie miały tagu lang, domyślnie przyjmujemy 'de'.
+        filtered_history = [t for t in raw_history if t.get("lang", "de") == L_CODE]
+
+        if filtered_history:
+            # Tworzymy DataFrame i odwracamy kolejność (najnowsze na górze)
+            df_hist = pd.DataFrame(filtered_history)[::-1]
+            
+            # Formułujemy czytelną tabelę
+            display_df = df_hist[["date", "score", "total", "perc"]].copy()
+            display_df.columns = ["Data", "Punkty", "Z pytań", "Wynik %"]
+            
+            # Wykres liniowy ostatnich 10 wyników
+            st.markdown("**Trend ostatnich wyników:**")
+            trend_data = df_hist.head(10)[::-1] # 10 ostatnich w kolejności chronologicznej
+            fig_trend = px.line(trend_data, x="date", y="perc", markers=True)
+            fig_trend.update_layout(yaxis_range=[0,105], height=250, margin=dict(t=20, b=20, l=0, r=0))
+            fig_trend.update_traces(line_color='#ff4b4b', line_width=3)
+            st.plotly_chart(fig_trend, use_container_width=True)
+            
+            # Tabela pod wykresem
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"Brak zapisanych wyników testów dla języka {current_lang_name}. Rozwiąż swój pierwszy test w sekcji 📝 Testy!")
+
+        st.write("---")
+
+        # 4. REKORDY GIER (Specific for Language)
+        st.subheader("🎮 Twoje rekordy")
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            st.markdown("**🎈 Balonowy Wyścig**")
+            best_bal = ud.get(f"top_balloons_{L_CODE}", [0])
+            st.write(f"Najlepszy wynik: **{max(best_bal) if best_bal else 0} pkt**")
+            
+        with c2:
+            st.markdown("**⏱️ Memory**")
+            best_mem = ud.get(f"memory_scores_{L_CODE}", [])
+            if best_mem:
+                st.write(f"Najlepszy czas: **{min(best_mem)}s**")
+            else:
+                st.write("Brak rekordów")
+
+        # Przycisk czyszczenia statystyk (opcjonalnie)
+        with st.expander("⚙️ Zarządzanie danymi"):
+            if st.button(f"Wyczyść historię testów ({current_lang_name})"):
+                # Usuwamy tylko te testy, które pasują do obecnego języka
+                new_history = [t for t in raw_history if t.get("lang", "de") != L_CODE]
+                st.session_state.user_data["test_history"] = new_history
+                save_user_data(st.session_state.user, st.session_state.user_data)
+                st.success(f"Historia {current_lang_name} wyczyszczona!")
+                st.rerun()
 
 # --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
 elif choice == "⚙️ Konto":
