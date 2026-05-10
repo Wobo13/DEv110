@@ -266,11 +266,11 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V251 - Fix NameError 'u') ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V252 - Fix AttributeError NoneType) ---
 
 # Najpierw sprawdzamy, czy użytkownik jest w sesji
 if "user" in st.session_state:
-    u = st.session_state.user  # <--- DEFINIUJEMY 'u' TUTAJ, ABY SIDEBAR GO WIDZIAŁ
+    u = st.session_state.user
 else:
     u = None
 
@@ -292,7 +292,7 @@ def load_user_data(username):
                 if key not in data or data[key] is None:
                     data[key] = [] if any(x in key for x in ["scores", "top", "history"]) else {}
 
-            # Migracja starych rekordów do wersji _de (jeśli istnieją stare klucze)
+            # Migracja starych rekordów do wersji _de
             if "memory_scores" in data and not data["memory_scores_de"]:
                 data["memory_scores_de"] = data["memory_scores"]
             if "top_balloons" in data and not data["top_balloons_de"]:
@@ -307,7 +307,6 @@ def save_user_data(username, data):
     """Zapisuje dane do Supabase, usuwając klucze techniczne."""
     if not username: return
     try:
-        # Usuwamy id, created_at i inne pola, których Supabase nie pozwoli nadpisać
         clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username", "last_ts"]}
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
     except Exception as e:
@@ -315,28 +314,26 @@ def save_user_data(username, data):
 
 def update_activity(current_choice):
     """Nalicza czas nauki i zapisuje postęp."""
-    if "user_data" not in st.session_state or not st.session_state.user_data or not u:
+    # --- DODANO ZABEZPIECZENIE PRZED None ---
+    if not current_choice or "user_data" not in st.session_state or not st.session_state.user_data or not u:
         return
 
     now = time.time()
-    # Inicjalizacja last_ts, jeśli nie istnieje
     if "last_ts_activity" not in st.session_state:
         st.session_state.last_ts_activity = now
         return
 
     delta = now - st.session_state.last_ts_activity
     
-    # Tylko jeśli aktywność trwała krócej niż 10 min (zapobiega błędnym naliczeniom przy otwartej karcie)
     if 0 < delta < 600:
-        # Mapowanie nazw menu na kody (Poprawione o Memory i Balony)
         mapping = {
             "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
             "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
             "wąż": "Wan", "wyścig": "Bal", "statystyki": "Sta"
         }
         
-        # Oczyszczamy wybór menu, aby dopasować do klucza
-        clean_choice = "".join(filter(str.isalpha, current_choice.lower()))
+        # Bezpieczne przetwarzanie tekstu
+        clean_choice = "".join(filter(str.isalpha, str(current_choice).lower()))
         label = "Inn"
         for k, v in mapping.items():
             if k in clean_choice:
@@ -348,7 +345,6 @@ def update_activity(current_choice):
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
         
-        # Zapisujemy postęp
         save_user_data(u, st.session_state.user_data)
 
     st.session_state.last_ts_activity = now
