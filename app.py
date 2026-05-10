@@ -369,7 +369,7 @@ with st.sidebar:
 
     st.caption(f"{APP_VERSION}")
 
-# --- 7. START (V1.2 - Centrum Dowodzenia) ---
+# --- 7. START (V1.3 - Dashboard z synchronizacją celu) ---
 update_activity(choice)
 
 if choice == "🏠 Start":
@@ -377,9 +377,18 @@ if choice == "🏠 Start":
     
     # 1. ANALIZA DANYCH BIEŻĄCYCH
     all_c = st.session_state.flashcards
+    ud = st.session_state.user_data
     today_str = str(date.today())
     
-    # Statystyki do podsumowania
+    # --- SYNCHRONIZACJA CZASU NA DASHBOARDZIE ---
+    # Pobieramy statystyki czasu (które po poprawkach w Sekcji 3 powinny być czyste)
+    current_stats = ud.get("time_stats", {})
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+    study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
+    study_minutes = int(study_seconds // 60)
+    daily_goal = ud.get("settings", {}).get("daily_goal", 20)
+
+    # Statystyki słówek
     total_words = len(all_c)
     to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
     
@@ -389,61 +398,65 @@ if choice == "🏠 Start":
     with col1:
         st.metric("Słówek w bazie", total_words)
     with col2:
-        st.metric("Powtórki na dziś", to_review, delta=-to_review if to_review > 0 else None, delta_color="inverse")
+        # Pokazuje ile słówek do powtórki
+        st.metric("Powtórki na dziś", to_review, delta=-to_review if to_review > 0 else "Gotowe!", delta_color="inverse")
     with col3:
-        goal_min = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
-        st.metric("Twój cel", f"{goal_min} min")
+        # TUTAJ: Pokazuje czas z dzisiaj (study_minutes) zamiast stałej wartości celu
+        st.metric("Dzisiejsza nauka", f"{study_minutes} / {daily_goal} m")
 
     st.write("---")
 
-    # 3. BRIEFING PORANNY
+    # 3. BRIEFING I ZADANIA
     c1, c2 = st.columns(2)
     
     with c1:
         st.markdown("### 📊 Twój status")
-        if to_review > 0:
-            st.warning(f"Masz **{to_review}** słówek do powtórzenia. System SRS czeka!")
+        if study_minutes >= daily_goal:
+            st.success(f"🌟 Cel dzienny osiągnięty! ({study_minutes} min)")
+        elif study_minutes > 0:
+            st.info(f"📈 Jesteś w trakcie nauki. Jeszcze {daily_goal - study_minutes} min do celu.")
         else:
-            st.success("Wszystkie powtórki na dziś wykonane. Możesz dodać nowe słówka!")
-        
-        # Prosta motywacja oparta na wielkości bazy
-        if total_words < 50:
-            st.info("🌱 Twoja baza rośnie! Dodaj jeszcze kilka słówek, aby odblokować pełny potencjał Quizów.")
-        elif total_words > 200:
-            st.info("🌳 Imponująca kolekcja! Pamiętaj o regularnych powtórkach, by nie zapomnieć starszych słów.")
+            st.warning("🆕 Zaczynamy! Wybierz moduł z menu, aby nabić dzisiejsze minuty.")
+
+        if to_review > 0:
+            st.error(f"⚠️ Masz {to_review} słówek do powtórzenia!")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
-        st.write(f"✅ Osiągnij cel czasowy (**{goal_min} min**)")
+        # Dynamiczne sprawdzanie zadań
+        t_done = "✅" if study_minutes >= daily_goal else "❌"
+        st.write(f"{t_done} Osiągnij cel czasowy (**{daily_goal} min**)")
         st.write("✅ Przejrzyj sekcję **Warsztat**")
         st.write("✅ Wykonaj min. jeden **Quiz** lub **Test**")
 
     st.divider()
 
-    # 4. MOTYWACJA I OSTATNIE SŁÓWKA
-    quotes = [
-        "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
-        "„Każdy nowy język jest jak otwarte okno, które ukazuje nowy widok na świat.”",
-        "„Wer fremde Sprachen nie kennt, weiß nichts von seiner eigenen.” – J.W. Goethe"
-    ]
-    
+    # 4. SEKRETY I OSTATNIE SŁÓWKA
     col_q, col_w = st.columns([2, 1])
     
     with col_q:
+        quotes = [
+            "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
+            "„Każdy nowy język jest jak otwarte okno.”",
+            "„Übung macht den Meister!” – Praktyka czyni mistrza."
+        ]
         st.info(random.choice(quotes))
-        st.caption("💡 Porada: Najlepiej uczyć się rano, gdy mózg jest najbardziej chłonny.")
+        
+        # PRZYCISK RATUNKOWY (Tylko jeśli dane są ewidentnie błędne)
+        if study_minutes > 500: # Jeśli system zwariuje i pokaże np. 8 godzin nauki w sekundę
+            if st.button("🔄 Resetuj błędny licznik czasu"):
+                st.session_state.user_data["time_stats"] = {}
+                save_user_data(u, st.session_state.user_data)
+                st.rerun()
 
     with col_w:
         with st.expander("🆕 Ostatnio dodane", expanded=True):
             if all_c:
-                # Pokazujemy 3 ostatnio dodane słówka
                 recent = all_c[-3:]
                 for r in reversed(recent):
                     st.write(f"**{r['de']}**")
             else:
-                st.write("Brak słówek.")
-
-# --- KONIEC SEKCJI 7 ---
+                st.write("Baza jest pusta.")
 
 # --- 8. POWTÓRKI & TRENING (V259 - Inteligentne synonimy) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
