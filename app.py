@@ -266,70 +266,81 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. START SESJI (V5 - Tu naliczamy passę za cel) ---
-u = st.session_state.user
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V250 - Multilang Data Init) ---
+def load_user_data(username):
+    """Pobiera dane profilu użytkownika i inicjalizuje strukturę wielu języków."""
+    try:
+        res = get_db().table("user_data").select("*").eq("username", username).execute()
+        if res.data:
+            data = res.data[0]
+            
+            # 1. INICJALIZACJA STRUKTURY DLA REKORDÓW (Zabezpieczenie przed brakującymi kluczami)
+            # Lista kluczy, które muszą istnieć w obiekcie sesji
+            required_keys = [
+                "memory_scores_de", "memory_scores_cs",
+                "top_balloons_de", "top_balloons_cs",
+                "time_stats", "settings", "test_history"
+            ]
+            
+            for key in required_keys:
+                if key not in data or data[key] is None:
+                    data[key] = [] if "scores" in key or "top" in key or "history" in key else {}
 
-# Inicjalizacja danych w sesji (jeśli nie istnieją)
-if "user_data" not in st.session_state:
-    st.session_state.user_data = load_user_data(u)
+            # 2. MIGRACJA "W LOCIE" (Jeśli w sesji są stare klucze bez końcówek)
+            # Jeśli jakimś cudem w obiekcie są stare nazwy, przepisujemy je do _de
+            if "memory_scores" in data and not data["memory_scores_de"]:
+                data["memory_scores_de"] = data["memory_scores"]
+            if "top_balloons" in data and not data["top_balloons_de"]:
+                data["top_balloons_de"] = data["top_balloons"]
 
-if "flashcards" not in st.session_state:
-    st.session_state.flashcards = load_flashcards(u)
+            return data
+    except Exception as e:
+        st.error(f"Błąd podczas ładowania danych użytkownika: {e}")
+    return None
 
-def update_activity(m):
-    curr = time.time()
-    ud = st.session_state.user_data
-    last_ts = ud.get("last_ts", curr)
-    delta = curr - last_ts
-    
-    # Przygotowanie dat do porównania logiki passy
-    today_str = date.today().isoformat()
-    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
-    
-    needs_save = False
-
-    # Sprawdzamy czy aktywność mieści się w progu 10 minut (ciągłość nauki)
-    if 0 < delta < 600:
-        # 1. Normalizacja nazwy sekcji i dopisanie czasu
-        clean = re.sub(r'[^\w\s]', '', m).lower().strip()
-        pl_map = str.maketrans("ąćęłńóśźż", "acelnoszz")
-        label = CLEAN_TIME_LABELS.get(clean.translate(pl_map), "Inn")
+def save_user_data(username, data):
+    """Zapisuje cały obiekt user_data do bazy Supabase."""
+    try:
+        # Usuwamy klucze systemowe, których Supabase nie przyjmie (jeśli istnieją)
+        clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
         
-        stats = dict(ud.get("time_stats", {}))
-        stats[label] = stats.get(label, 0.0) + delta
+        get_db().table("user_data").update(clean_data).eq("username", username).execute()
+    except Exception as e:
+        # To tutaj pojawiał się błąd ze screena - teraz clean_data będzie zgodne z bazą
+        st.error(f"Błąd zapisu danych: {e}")
+
+def update_activity(current_choice):
+    """Aktualizuje czas spędzony w danej sekcji i zapisuje stan."""
+    if "user_data" not in st.session_state or not st.session_state.user_data:
+        return
+
+    now = time.time()
+    if "last_time" in st.session_state:
+        elapsed = now - st.session_state.last_time
+        # Mapowanie wyboru menu na krótki kod statystyk
+        mapping = {
+            "🏠 Start": "Sta", "📅 Powtórki": "Pow", "🚀 Trening": "Trn",
+            "🕹️ Quiz": "Qiz", "🎴 Fiszki": "Fis", "📝 Testy": "Tst",
+            "🧠 Memory": "Mem", "🛠️ Warsztat": "War", "🏗️ Konstruktor": "Kon",
+            "🐍 Lingwistyczny Wąż": "Wan", "🎈 Balonowy Wyścig": "Bal", "📊 Statystyki": "Stt"
+        }
+        
+        # Wyciągamy kod sekcji (np. 'Qiz')
+        code = "Inne"
+        for k, v in mapping.items():
+            if k in current_choice:
+                code = v
+                break
+        
+        # Zapisujemy czas
+        stats = st.session_state.user_data.get("time_stats", {})
+        stats[code] = stats.get(code, 0) + elapsed
         st.session_state.user_data["time_stats"] = stats
-        needs_save = True
-
-        # 2. LOGIKA PASSY (STREAK) - Sprawdzamy czy cel został właśnie osiągnięty
-        # Lista modułów wliczanych do realnej nauki
-        study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
-        total_sec = sum(stats.get(code, 0) for code in study_modules)
-        goal_min = ud.get("settings", {}).get("daily_goal", 20)
         
-        # WARUNEK: Jeśli suma sekund >= cel w minutach * 60 
-        # ORAZ użytkownik nie dostał jeszcze passy za dzisiejszy dzień
-        if total_sec >= (goal_min * 60) and ud.get("last_date") != today_str:
-            current_streak = ud.get("streak", 0)
-            
-            # Jeśli ostatni cel był wczoraj - kontynuujemy passę
-            if ud.get("last_date") == yesterday_str:
-                st.session_state.user_data["streak"] = current_streak + 1
-            else:
-                # Jeśli była przerwa (lub pierwszy raz) - ustawiamy na 1
-                st.session_state.user_data["streak"] = 1
-            
-            # Zapisujemy datę dzisiejszą jako datę ostatniego sukcesu (last_date)
-            st.session_state.user_data["last_date"] = today_str
-            st.toast(f"🔥 Gratulacje! Cel osiągnięty. Passa: {st.session_state.user_data['streak']} dni!")
-            needs_save = True
+        # Próba zapisu do bazy
+        save_user_data(st.session_state.user, st.session_state.user_data)
 
-    # Aktualizacja timestampów aktywności
-    st.session_state.user_data["last_ts"] = curr
-    st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M")
-    
-    # Zapis do bazy danych (Supabase) tylko jeśli nastąpiła zmiana
-    if needs_save:
-        save_user_data(u, st.session_state.user_data)
+    st.session_state.last_time = now
 
 # --- 6. SIDEBAR (V305 - Obsługa Wielu Języków: DE/CS) ---
 with st.sidebar:
