@@ -2367,7 +2367,7 @@ elif choice == "📊 Statystyki":
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
 
-# --- 26. KONTO (V270 - Full Restore + Multilang Safety Zone) ---
+# --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
 elif choice == "⚙️ Konto":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2390,14 +2390,13 @@ elif choice == "⚙️ Konto":
             s["show_hints"] = st.toggle("Podpowiedzi PL w Quizie", s.get("show_hints", True))
         with col_pref2:
             s["daily_goal"] = st.slider("Cel dnia (min)", 5, 120, s.get("daily_goal", 20))
-            # PRZYWRÓCONA OPCJA: Domyślna ilość pytań w teście
             s["test_questions"] = st.number_input("Domyślna ilość pytań w teście", 5, 50, s.get("test_questions", 10))
         
         if st.button("💾 Zapisz preferencje", use_container_width=True):
             save_user_data(u, st.session_state.user_data)
             st.toast("Zapisano ustawienia! 💾")
 
-    # --- 2. ZMIANA HASŁA (Bez zmian) ---
+    # --- 2. ZMIANA HASŁA ---
     with st.expander("🔑 Zmień hasło"):
         with st.form("pw_change_form"):
             old_p = st.text_input("Stare hasło", type="password")
@@ -2435,39 +2434,43 @@ elif choice == "⚙️ Konto":
                 st.success(f"Zaimportowano {len(new_cards)} słówek!")
             except Exception as e: st.error(f"Błąd: {e}")
 
-    # --- 4. NIEBEZPIECZNA STREFA (NAPRAWIONA I ROZBUDOWANA) ---
+    # --- 4. NIEBEZPIECZNA STREFA ---
     with st.expander("🗑️ Niebezpieczna strefa"):
-        st.error(f"Tryb zarządzania dla języka: **{current_lang_name.upper()}**")
-        safety_lock = st.checkbox("Potwierdzam operacje kasowania")
+        st.error(f"Tryb zarządzania bazą: **{current_lang_name.upper()}**")
+        safety_lock = st.checkbox("Potwierdzam chęć skasowania danych")
         
-        # PRZYWRÓCONA OPCJA: Kasowanie poziomów
-        st.subheader("Kasowanie poziomów")
+        # --- KASOWANIE POZIOMÓW (CEFR) ---
+        st.subheader("Usuwanie wg poziomów")
+        st.caption(f"Usuwa słówka z tagiem poziomu TYLKO dla języka {current_lang_name}.")
         col_lvl1, col_lvl2 = st.columns([2, 1])
-        lvl_to_del = col_lvl1.selectbox("Wybierz poziom do wyczyszczenia:", [0, 1, 2, 3, 4, 5], key="lvl_del_sel")
+        lvl_to_del = col_lvl1.selectbox("Wybierz poziom:", ["A1", "A2", "B1", "B2", "C1"], key="lvl_del_sel")
         
-        if col_lvl2.button(f"Skasuj Lvl {lvl_to_del}", disabled=not safety_lock, use_container_width=True):
-            res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).eq("level", lvl_to_del).execute()
+        if col_lvl2.button(f"Skasuj {lvl_to_del}", disabled=not safety_lock, use_container_width=True):
+            # Używamy operatora 'ilike', aby znaleźć poziom wewnątrz ciągu kategorii
+            res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).ilike("category", f"%{lvl_to_del}%").execute()
+            # Liczba skasowanych rekordów (Supabase zwraca je w .data przy delete)
             count = len(res.data) if res.data else 0
             st.session_state.flashcards = load_flashcards(u)
-            st.session_state.acc_msg = f"Skasowano {count} słówek z Poziomu {lvl_to_del} ({current_lang_name})."
+            st.session_state.acc_msg = f"Skasowano {count} słówek z poziomu {lvl_to_del} ({current_lang_name})."
             st.rerun()
 
         st.divider()
         st.subheader("Resety całkowite")
         
-        # Reset tylko wybranego języka
+        # Reset bazy dla wybranego języka
         if st.button(f"💣 USUŃ WSZYSTKIE SŁÓWKA ({current_lang_name.upper()})", type="primary", disabled=not safety_lock, use_container_width=True):
             res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).execute()
             count = len(res.data) if res.data else 0
             st.session_state.flashcards = load_flashcards(u)
-            st.session_state.acc_msg = f"Usunięto całą bazę ({current_lang_name}) - łącznie {count} słówek."
+            st.session_state.acc_msg = f"Usunięto całą bazę słówek języka {current_lang_name} ({count} sztuk)."
             st.rerun()
 
-        if st.button("🔥 Wyzeruj Streak (Globalnie)", disabled=not safety_lock, use_container_width=True):
+        # Globalny reset passy
+        if st.button("🔥 Wyzeruj Streak (Konto globalne)", disabled=not safety_lock, use_container_width=True):
             st.session_state.user_data["streak"] = 0
             st.session_state.user_data["last_date"] = "2000-01-01"
             save_user_data(u, st.session_state.user_data)
-            st.session_state.acc_msg = "Passa została wyzerowana."
+            st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
 # --- 27. ADMIN PRO (V300 - Pełny rozkład z Wężem i Balonem) ---
