@@ -1284,63 +1284,59 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 18. KONSTRUKTOR SŁÓW (V300 - Stylized & Multilang) ---
+# --- 14. KONSTRUKTOR SŁÓW (V310 - Clean Multilang & Fixed Grid) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor Słów: {current_lang_name}</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align: center; color: gray;'>Ułóż słowo z dostępnych liter. Pamiętaj o znakach specjalnych!</p>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h1>", unsafe_allow_html=True)
 
-    # 1. CSS DLA KLIENTA (STYLISTYKA PRZYCISKÓW)
+    # 1. CSS DLA KLIENTA (STYLISTYKA)
     st.markdown("""
         <style>
-            .letter-btn {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
-                color: white;
-                font-size: 1.5rem;
-                font-weight: bold;
-                height: 60px;
-                transition: all 0.2s ease;
-                cursor: pointer;
-            }
-            .letter-btn:hover {
-                background: rgba(255, 75, 75, 0.2);
-                border-color: #ff4b4b;
-                transform: translateY(-2px);
+            div.stButton > button.letter-btn-style {
+                background: rgba(255, 255, 255, 0.05) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                border-radius: 10px !important;
+                color: white !important;
+                font-size: 1.4rem !important;
+                font-weight: bold !important;
+                height: 55px !important;
+                transition: all 0.2s ease !important;
             }
             .slot-box {
-                font-size: 2.5rem;
-                letter-spacing: 8px;
+                font-size: 2.2rem;
+                letter-spacing: 6px;
                 text-align: center;
                 color: #ff4b4b;
-                font-family: monospace;
-                padding: 20px;
-                background: rgba(0,0,0,0.2);
-                border-radius: 15px;
-                margin: 20px 0;
+                font-family: 'Courier New', monospace;
+                padding: 15px;
+                background: rgba(255, 75, 75, 0.05);
+                border: 1px dashed rgba(255, 75, 75, 0.3);
+                border-radius: 12px;
+                margin: 15px 0;
+            }
+            .small-label {
+                font-size: 0.8rem;
+                color: #888;
+                text-transform: uppercase;
+                margin-bottom: 5px;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. LOGIKA GRY
+    # 2. LOGIKA INICJALIZACJI
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     if not lang_cards:
-        st.warning(f"Brak słówek dla języka {current_lang_name}. Dodaj coś do bazy!")
+        st.warning(f"Baza {current_lang_name} jest pusta. Dodaj słówka, aby grać!")
     else:
         if "konstr_word" not in st.session_state:
             card = random.choice(lang_cards)
             word = card['de'].strip()
-            # Przygotowanie liter: litery ze słowa + 3 losowe
+            
+            # Pula zawiera TYLKO litery ze słowa (bez zmyłek)
             letters = list(word)
-            extra = "abcde" if L_CODE == "de" else "pqrst"
-            letters += random.sample(extra, 3)
             random.shuffle(letters)
             
             st.session_state.konstr_word = word
@@ -1351,15 +1347,15 @@ elif choice == "🏗️ Konstruktor":
 
         # Panel Zadania
         st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; text-align: center; border-left: 5px solid #ff4b4b;">
-                <span style="font-size: 1.2rem; color: #aaa;">PRZETŁUMACZ:</span><br>
-                <span style="font-size: 2rem; font-weight: bold;">{st.session_state.konstr_pl}</span>
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; text-align: center;">
+                <div class="small-label">Przetłumacz na {current_lang_name}:</div>
+                <div style="font-size: 1.8rem; font-weight: bold; color: white;">{st.session_state.konstr_pl}</div>
             </div>
         """, unsafe_allow_html=True)
 
         # Wyświetlanie postępu (Sloty)
-        display_ans = ""
         target_word = st.session_state.konstr_word
+        display_ans = ""
         for i in range(len(target_word)):
             if i < len(st.session_state.konstr_ans):
                 display_ans += st.session_state.konstr_ans[i]
@@ -1368,19 +1364,21 @@ elif choice == "🏗️ Konstruktor":
         
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # 3. SIATKA LITER (Stały układ)
-        cols = st.columns(6) # Stałe 6 kolumn, aby litery nie skakały
+        # 3. SIATKA LITER (Stały układ 6-kolumnowy)
+        st.write("<div class='small-label' style='text-align:center;'>Dostępne litery:</div>", unsafe_allow_html=True)
+        cols = st.columns(6)
         for idx, char in enumerate(st.session_state.konstr_pool):
             col_idx = idx % 6
             with cols[col_idx]:
-                # Wyświetlamy ikonę dla spacji, ale technicznie to spacja
                 label = "␣" if char == " " else char
                 
-                # Przycisk staje się nieaktywny po użyciu (zachowuje miejsce w gridzie)
+                # Przycisk wyszarzony po użyciu, ale zachowuje miejsce
                 if idx in st.session_state.konstr_used_indices:
-                    st.button(label, key=f"key_{idx}", disabled=True, use_container_width=True)
+                    st.button(label, key=f"k_{idx}", disabled=True, use_container_width=True)
                 else:
-                    if st.button(label, key=f"key_{idx}", use_container_width=True):
+                    # Używamy custom_class przez markdown nie jest możliwe bezpośrednio w st.button, 
+                    # więc stylizujemy ogólnie wszystkie buttony w sidebarze/mainie
+                    if st.button(label, key=f"k_{idx}", use_container_width=True):
                         st.session_state.konstr_ans += char
                         st.session_state.konstr_used_indices.append(idx)
                         st.rerun()
@@ -1388,26 +1386,26 @@ elif choice == "🏗️ Konstruktor":
         st.write("")
         c1, c2 = st.columns(2)
         
-        if c1.button("🔄 Resetuj próbę", use_container_width=True):
+        if c1.button("🔄 Resetuj", use_container_width=True):
             st.session_state.konstr_ans = ""
             st.session_state.konstr_used_indices = []
             st.rerun()
             
-        if c2.button("⏭️ Inne słowo", use_container_width=True):
+        if c2.button("⏭️ Pomiń", use_container_width=True):
             for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
 
-        # 4. SPRAWDZANIE WYNIKU
+        # 4. WALIDACJA
         if st.session_state.konstr_ans == target_word:
             st.balloons()
-            st.success(f"Brawo! Poprawna odpowiedź to: {target_word}")
-            if st.button("Następne słowo ➡️", type="primary", use_container_width=True):
+            st.success(f"Świetnie! Poprawnie ułożone: **{target_word}**")
+            if st.button("Następne wyzwanie ➡️", type="primary", use_container_width=True):
                 for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
         elif len(st.session_state.konstr_ans) >= len(target_word):
-            st.error("Coś poszło nie tak... spróbuj zresetować.")
+            st.warning("Ułożone słowo różni się od wzorca. Spróbuj zresetować!")
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
@@ -1525,218 +1523,217 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V3.0 - Ostateczne Rozwiązanie) ---
+# --- 16. BALONOWY WYŚCIG (V300 - Stylized & Multilang) ---
 elif choice == "🎈 Balonowy Wyścig":
-    st.header("🎈 Balonowy Wyścig")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    if "bal_active" not in st.session_state:
-        st.session_state.update({
-            "bal_active": False, "bal_score": 0, "bal_word": None,
-            "bal_opts": [], "bal_start_ts": 0, "bal_game_over": False
-        })
+    st.markdown(f"<h2 style='text-align: center;'>🎈 Balonowy Wyścig: {current_lang_name}</h2>", unsafe_allow_html=True)
 
-    def next_bal_round():
-        all_c = st.session_state.flashcards
-        if len(all_c) < 4: return False
-        target = random.choice(all_c)
-        others = random.sample([c['pl'] for c in list(all_c) if c['id'] != target['id']], 2)
-        opts = others + [target['pl']]
-        random.shuffle(opts)
-        st.session_state.bal_word = target
-        st.session_state.bal_opts = opts
-        return True
+    # 1. CSS DLA WIZUALNEGO UPGRADE'U (Przyciski-Balony)
+    st.markdown("""
+        <style>
+            .balloon-btn {
+                display: inline-block;
+                padding: 15px 25px;
+                margin: 10px;
+                font-size: 1.2rem;
+                font-weight: bold;
+                text-align: center;
+                background: linear-gradient(145deg, #ff4b4b, #ff7676);
+                border-radius: 50px; /* Wygląd balonu/pigułki */
+                box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3);
+                color: white !important;
+                border: none;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            .balloon-btn:hover {
+                transform: scale(1.05) translateY(-5px);
+                box-shadow: 0 8px 25px rgba(255, 75, 75, 0.5);
+                filter: brightness(1.1);
+            }
+            .target-card {
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid #ff4b4b;
+                border-radius: 20px;
+                padding: 40px;
+                text-align: center;
+                font-size: 2.5rem;
+                font-weight: bold;
+                margin-bottom: 30px;
+                box-shadow: inset 0 0 20px rgba(255,75,75,0.1);
+            }
+            .stats-box {
+                display: flex;
+                justify-content: space-around;
+                margin-bottom: 20px;
+                font-family: monospace;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    if st.session_state.get("bal_active", False):
-        if time.time() - st.session_state.bal_start_ts >= 30:
-            f_score = st.session_state.bal_score
+    # 2. LOGIKA GRY
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
+    if len(lang_cards) < 4:
+        st.warning(f"Potrzebujesz minimum 4 słówek w języku {current_lang_name}, aby zacząć wyścig!")
+    else:
+        # Inicjalizacja stanu gry
+        if "bal_active" not in st.session_state:
+            st.session_state.bal_active = True
+            st.session_state.bal_score = 0
+            st.session_state.bal_start_time = time.time()
+            st.session_state.bal_duration = 30 # 30 sekund na rundę
+            
+        # Sprawdzenie czasu
+        elapsed = time.time() - st.session_state.bal_start_time
+        time_left = max(0, int(st.session_state.bal_duration - elapsed))
+
+        if time_left <= 0:
             st.session_state.bal_active = False
-            st.session_state.bal_game_over = True
-            
-            if f_score > 0:
-                try:
-                    db = get_db()
-                    # Pobieramy świeże dane
-                    curr = db.table("user_data").select("top_balloons").eq("username", u).execute()
-                    # Wyciągamy listę rekordów
-                    old_list = []
-                    if curr.data and isinstance(curr.data[0].get("top_balloons"), list):
-                        old_list = curr.data[0]["top_balloons"]
-                    
-                    # Tworzymy nową listę Top 10
-                    new_list = sorted(list(set(old_list + [f_score])), reverse=True)[:10]
-                    
-                    # ZAPIS
-                    db.table("user_data").update({"top_balloons": new_list}).eq("username", u).execute()
-                    
-                    # Synchronizacja sesji
-                    st.session_state.user_data["top_balloons"] = new_list
-                    st.toast(f"Zapisano: {f_score} pkt!")
-                except Exception as e:
-                    st.error(f"Błąd krytyczny zapisu: {e}")
-            st.rerun()
-
-    if not st.session_state.bal_active:
-        if st.session_state.bal_game_over:
             st.balloons()
-            st.success(f"### Wynik: {st.session_state.bal_score} pkt")
-            # Wyświetlamy z nowej kolumny
-            rec = st.session_state.user_data.get("top_balloons", [])
-            if rec: st.info(f"Twoje rekordy: {', '.join(map(str, rec))}")
-            
-            if st.button("Zagraj jeszcze raz", use_container_width=True):
-                st.session_state.update({"bal_score": 0, "bal_active": True, "bal_game_over": False, "bal_start_ts": time.time()})
-                next_bal_round(); st.rerun()
+            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Twój wynik: {st.session_state.bal_score}</h2></div>", unsafe_allow_html=True)
+            if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
+                del st.session_state.bal_active
+                st.rerun()
         else:
-            if st.button("🚀 START", use_container_width=True, type="primary"):
-                if next_bal_round():
-                    st.session_state.update({"bal_active": True, "bal_score": 0, "bal_start_ts": time.time()})
-                    st.rerun()
-    else:
-        @st.fragment(run_every=1.0)
-        def engine():
-            rem = max(0, int(30 - (time.time() - st.session_state.bal_start_ts)))
-            if rem <= 0:
-                st.session_state.bal_active = False; st.session_state.bal_game_over = True; st.rerun()
-            
-            c1, c2 = st.columns(2)
-            c1.metric("⏱️ Czas", f"{rem}s")
-            c2.metric("⭐ Punkty", st.session_state.bal_score)
-            
-            if st.session_state.bal_word:
-                st.markdown(f'<div style="text-align:center; padding:20px; background:#111; border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;"><h2 style="color:white; margin:0;">{st.session_state.bal_word["de"]}</h2></div>', unsafe_allow_html=True)
-                cols = st.columns(3)
-                for i, o in enumerate(st.session_state.bal_opts):
-                    if cols[i].button(o, key=f"b_{i}", use_container_width=True):
-                        if o == st.session_state.bal_word['pl']:
-                            st.session_state.bal_score += 1
-                            next_bal_round(); st.rerun(scope="fragment")
+            # Losowanie nowej rundy jeśli nie ma aktywnego słowa
+            if "bal_target" not in st.session_state:
+                target = random.choice(lang_cards)
+                # Losujemy 3 błędne odpowiedzi
+                wrong = random.sample([c['pl'] for c in lang_cards if c['id'] != target['id']], 2)
+                options = [target['pl']] + wrong
+                random.shuffle(options)
+                
+                st.session_state.bal_target = target
+                st.session_state.bal_options = options
+
+            # 3. INTERFEJS GRY
+            st.markdown(f"""
+                <div class="stats-box">
+                    <div style="font-size: 1.5rem;">⏱️ {time_left}s</div>
+                    <div style="font-size: 1.5rem; color: #ffbc00;">⭐ {st.session_state.bal_score} pkt</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Słowo do odgadnięcia (DE/CS)
+            st.markdown(f"""
+                <div class="target-card">
+                    {st.session_state.bal_target['de']}
+                </div>
+            """, unsafe_allow_html=True)
+
+            # Przyciski-Balony (Opcje PL)
+            cols = st.columns(3)
+            for i, opt in enumerate(st.session_state.bal_options):
+                with cols[i]:
+                    # Używamy standardowego buttona Streamlit, ale stylizowanego przez CSS
+                    if st.button(opt, key=f"bal_opt_{i}", use_container_width=True):
+                        if opt == st.session_state.bal_target['pl']:
+                            st.session_state.bal_score += 10
+                            # Czyścimy cel, aby wylosować nowy przy następnym rerun
+                            del st.session_state.bal_target
+                            st.rerun()
                         else:
-                            st.toast("Pudło!"); next_bal_round(); st.rerun(scope="fragment")
-        engine()
-            
-# --- 20. ARENA WYZWAŃ (V304 - Przywrócony klasyczny wygląd) ---
-elif choice == "🏆 Arena Wyzwań":
-    st.header("🏆 Arena Wyzwań")
-    st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
-
-    db = get_db()
-    
-    # 1. BEZPIECZNE POBIERANIE DANYCH
-    try:
-        all_users_res = db.table("user_data").select("*").execute().data
-        all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
-    except Exception as e:
-        st.error(f"Błąd bazy danych: {e}")
-        st.stop()
-
-    if not all_users_res:
-        st.info("Ranking jest obecnie pusty. Bądź pierwszym, który go zapełni!")
-    else:
-        df_users = pd.DataFrame(all_users_res)
-        df_cards = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
-        
-        today = date.today()
-        ranking_data = []
-
-        # 2. OBLICZANIE STATYSTYK DLA KAŻDEGO UŻYTKOWNIKA
-        for _, user in df_users.iterrows():
-            uname = user.get("username", "Anonim")
-            u_cards = df_cards[df_cards["username"] == uname]
-            
-            # Obliczanie wiedzy %
-            wiedza_val = 0
-            if not u_cards.empty:
-                try:
-                    strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
-                    wiedza_val = int((strong / len(u_cards)) * 100)
-                except:
-                    wiedza_val = 0
-            
-            # Najlepsze Memory (najniższy czas)
-            m_scores = user.get("memory_scores", [])
-            best_mem = min([float(s) for s in m_scores]) if isinstance(m_scores, list) and m_scores else None
-
-            # Najlepszy Balon (NOWA KOLUMNA top_balloons)
-            b_scores = user.get("top_balloons", [])
-            best_bal = max([int(s) for s in b_scores]) if isinstance(b_scores, list) and b_scores else 0
-
-            # Najlepszy Wąż (najdłuższa seria)
-            best_snake = user.get("snake_best_chain", 0)
-
-            ranking_data.append({
-                "Użytkownik": uname.capitalize(),
-                "Ogień 🔥": user.get("streak", 0),
-                "Wiedza 🧠": wiedza_val,
-                "Najlepsze Memory ⏱️": best_mem,
-                "Rekord Balony 🎈": best_bal,
-                "Seria Węża 🐍": best_snake,
-                "Ostatnio aktywny": user.get("last_seen", "Brak")
-            })
-
-        df_final = pd.DataFrame(ranking_data)
-
-        # 3. WYŚWIETLANIE TABEL (Klasyczny układ: 2 kolumny)
-        
-        # --- Rząd 1: Passa i Wiedza ---
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🔥 Najdłuższa Passa")
-            top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5).reset_index(drop=True)
-            top_streak.index += 1
-            st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
-
-        with col2:
-            st.subheader("🧠 Mistrzowie Wiedzy")
-            top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5).reset_index(drop=True)
-            top_knowledge.index += 1
-            display_knowledge = top_knowledge[["Użytkownik", "Wiedza 🧠"]].copy()
-            display_knowledge["Wiedza 🧠"] = display_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
-            st.table(display_knowledge)
-
-        st.write("---")
-
-        # --- Rząd 2: Rankingi Gier (3 Zakładki) ---
-        st.subheader("🧩 Mistrzowie Gier (Top 10)")
-        t_m, t_b, t_s = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
-
-        with t_m:
-            df_mem = df_final.dropna(subset=["Najlepsze Memory ⏱️"])
-            if not df_mem.empty:
-                df_mem_sorted = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10).reset_index(drop=True)
-                df_mem_sorted.index += 1
-                display_mem = df_mem_sorted[["Użytkownik", "Najlepsze Memory ⏱️"]].copy()
-                display_mem["Najlepsze Memory ⏱️"] = display_mem["Najlepsze Memory ⏱️"].apply(lambda x: f"{x}s")
-                st.table(display_mem)
-            else:
-                st.info("Brak rekordów w Memory.")
-
-        with t_b:
-            df_bal = df_final[df_final["Rekord Balony 🎈"] > 0]
-            if not df_bal.empty:
-                df_bal_sorted = df_bal.sort_values(by="Rekord Balony 🎈", ascending=False).head(10).reset_index(drop=True)
-                df_bal_sorted.index += 1
-                st.table(df_bal_sorted[["Użytkownik", "Rekord Balony 🎈"]])
-            else:
-                st.info("Brak rekordów w Balonach.")
-
-        with t_s:
-            df_snake = df_final[df_final["Seria Węża 🐍"] > 0]
-            if not df_snake.empty:
-                df_snake_sorted = df_snake.sort_values(by="Seria Węża 🐍", ascending=False).head(10).reset_index(drop=True)
-                df_snake_sorted.index += 1
-                st.table(df_snake_sorted[["Użytkownik", "Seria Węża 🐍"]])
-            else:
-                st.info("Brak rekordów w Wężu.")
+                            st.session_state.bal_score = max(0, st.session_state.bal_score - 5)
+                            st.toast("Pudło! 💨", icon="❌")
 
         st.divider()
+        if st.button("Wyjdź z gry", use_container_width=True):
+            for k in ["bal_active", "bal_score", "bal_start_time", "bal_target", "bal_options"]:
+                if k in st.session_state: del st.session_state[k]
+            st.rerun()
+            
+# --- 20. ARENA WYZWAŃ (V280 - Multilang Ranking System) ---
+elif choice == "🏆 Arena Wyzwań":
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header("🏆 Arena Wyzwań")
+    st.write(f"Sprawdź, jak wypadasz na tle innych użytkowników w języku {current_lang_name}!")
+
+    # 1. POBIERANIE DANYCH WSZYSTKICH UŻYTKOWNIKÓW
+    db = get_db()
+    all_users_res = db.table("users_auth").select("username, user_data").execute()
+    
+    leaderboard_data = []
+    
+    for user_row in all_users_res.data:
+        uname = user_row["username"]
+        u_data = user_row.get("user_data", {})
+        if not u_data: continue
         
-        # 4. TWOJA POZYCJA
-        try:
-            df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
-            my_rank = df_pos[df_pos["Użytkownik"] == u.capitalize()].index[0] + 1
-            st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank}** na **{len(df_final)}** użytkowników.")
-        except:
-            pass
+        # Statystyki globalne (Ogień)
+        streak = u_data.get("streak", 0)
+        
+        # Statystyki specyficzne dla języka (Wiedza)
+        # Musimy załadować słówka tego użytkownika, aby obliczyć jego wiedzę w danym języku
+        user_cards_res = db.table("flashcards").select("*").eq("username", uname).eq("lang", L_CODE).execute()
+        user_cards = user_cards_res.data if user_cards_res.data else []
+        
+        wiedza_perc = 0
+        if user_cards:
+            today_dt = date.today()
+            # Liczymy "mocne" słówka (termin powtórki > 6 dni)
+            strong = len([c for c in user_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
+            wiedza_perc = int((strong / len(user_cards)) * 100)
+        
+        leaderboard_data.append({
+            "Użytkownik": uname,
+            "Ogień 🔥": streak,
+            "Wiedza 🧠": f"{wiedza_perc}%",
+            "wiedza_raw": wiedza_perc,
+            "game_scores": u_data.get("game_scores", {})
+        })
+
+    # 2. WYŚWIETLANIE RANKINGÓW GŁÓWNYCH
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🔥 Najdłuższa Passa")
+        df_streak = pd.DataFrame(leaderboard_data).sort_values(by="Ogień 🔥", ascending=False)
+        st.table(df_streak[["Użytkownik", "Ogień 🔥"]].head(10))
+        
+    with col2:
+        st.subheader(f"🧠 Mistrzowie Wiedzy ({current_lang_name})")
+        df_knowledge = pd.DataFrame(leaderboard_data).sort_values(by="wiedza_raw", ascending=False)
+        st.table(df_knowledge[["Użytkownik", "Wiedza 🧠"]].head(10))
+
+    st.divider()
+
+    # 3. MISTRZOWIE GIER (TOP 10)
+    st.subheader("🧩 Mistrzowie Gier (Top 10)")
+    
+    game_tab = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
+    
+    games_map = {
+        "Memory": "memory_best",
+        "Balony": "balloons_best",
+        "Wąż": "snake_best"
+    }
+
+    for tab, (g_name, g_key) in zip(game_tab, games_map.items()):
+        with tab:
+            game_rank = []
+            for entry in leaderboard_data:
+                score = entry["game_scores"].get(g_key, 0)
+                if score > 0:
+                    game_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": score})
+            
+            if game_rank:
+                df_game = pd.DataFrame(game_rank).sort_values(by="Rekord", ascending=(g_name == "Memory")) # W Memory mniej = lepiej
+                st.table(df_game.head(10))
+            else:
+                st.info(f"Brak rekordów w {g_name} dla tego języka.")
+
+    # 4. TWOJA POZYCJA
+    my_entry = next((item for item in leaderboard_data if item["Użytkownik"] == u), None)
+    if my_entry:
+        my_rank_streak = df_streak["Ogień 🔥"].tolist().index(my_entry["Ogień 🔥"]) + 1
+        total_u = len(leaderboard_data)
+        st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank_streak} na {total_u}** użytkowników.")
 
 # --- 21. GENERATOR SŁÓW (V251 - Multilang + Sidebar Slim Match) ---
 elif choice == "📦 Generator":
