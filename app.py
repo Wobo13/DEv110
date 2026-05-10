@@ -1957,9 +1957,8 @@ elif choice == "📸 Skaner AI":
 
         review_scanned_items()
         
-# --- 23. DODAJ (V265 - Wsparcie dla wielu języków DE/CS) ---
+# --- 23. DODAJ (V266 - Multilang + Obsługa Przykładów w obu trybach) ---
 elif choice == "➕ Dodaj":
-    # Pobieramy aktualny język z sesji (ustawiony w Sidebarze)
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
@@ -1972,16 +1971,27 @@ elif choice == "➕ Dodaj":
         def manual_add_ui():
             with st.form("manual_add_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
-                # Dynamiczna etykieta w zależności od języka
-                label_lang = "Słowo (DE):" if L_CODE == "de" else "Słowo (CS):"
+                label_lang = f"Słowo ({L_CODE.upper()}):"
                 placeholder_lang = "np. der Hund" if L_CODE == "de" else "np. jablko"
                 
                 f_de = col1.text_input(label_lang, placeholder=placeholder_lang)
                 f_pl = col2.text_input("Tłumaczenie (PL):", placeholder="np. pies / jabłko")
+                
                 f_cat = st.text_input("Kategorie / Tagi:", placeholder="rzeczownik, jedzenie, A1")
+                
+                st.write("---")
+                st.caption("📖 Dodaj opcjonalne zdanie przykładowe:")
+                c_ex1, c_ex2 = st.columns(2)
+                f_ex_de = c_ex1.text_input(f"Przykład ({L_CODE.upper()}):", placeholder="Zastosowanie słowa w zdaniu")
+                f_ex_pl = c_ex2.text_input("Tłumaczenie przykładu (PL):", placeholder="Tłumaczenie zdania")
                 
                 if st.form_submit_button("💾 Zapisz do bazy", use_container_width=True, type="primary"):
                     if f_de.strip() and f_pl.strip():
+                        # Budujemy listę przykładów, jeśli nie są puste
+                        examples_list = []
+                        if f_ex_de.strip():
+                            examples_list.append({"de": f_ex_de.strip(), "pl": f_ex_pl.strip()})
+
                         new_word = {
                             "username": u,
                             "de": f_de.strip(),
@@ -1990,39 +2000,37 @@ elif choice == "➕ Dodaj":
                             "next_review": str(date.today()),
                             "level": 0,
                             "origin": "Dodaj",
-                            "lang": L_CODE, # KLUCZOWE: Zapisujemy kod języka
-                            "examples": []
+                            "lang": L_CODE,
+                            "examples": examples_list
                         }
                         save_word(u, new_word)
                         st.session_state.flashcards = load_flashcards(u)
                         st.success(f"Pomyślnie dodano ({current_lang_name}): **{f_de}**")
                     else:
-                        st.error("Wypełnij wszystkie pola!")
+                        st.error("Wypełnij przynajmniej słowo i jego tłumaczenie!")
         manual_add_ui()
 
     with tab2:
-        st.info(f"Wpisz słowo, a AI przygotuje resztę dla języka **{current_lang_name}**.")
+        st.info(f"Wpisz słowo, a AI automatycznie przetłumaczy je i stworzy zdanie przykładowe ({current_lang_name}).")
         ai_word = st.text_input(f"Jakie słowo ({L_CODE.upper()}) przygotować?", placeholder="np. Rozhodnutí", key="ai_input_field")
         
         if st.button("Przygotuj dane przez AI ✨", use_container_width=True):
             if ai_word:
-                with st.spinner(f"AI analizuje słowo w języku {current_lang_name}..."):
-                    # Dynamiczny PROMPT uwzględniający język
+                with st.spinner(f"AI analizuje słowo i tworzy przykłady..."):
                     lang_instruction = ""
                     if L_CODE == "de":
                         lang_instruction = "Jeśli słowo jest rzeczownikiem, MUSISZ dodać rodzajnik (der, die, das)."
-                    elif L_CODE == "cs":
-                        lang_instruction = "Podaj słowo w poprawnej formie czeskiej."
-
+                    
                     prompt = f"""Przygotuj dane dla słowa/frazy w języku {current_lang_name}: '{ai_word}'.
                     {lang_instruction}
+                    Stwórz jedno naturalne zdanie przykładowe.
                     Zwróć WYŁĄCZNIE JSON w formacie:
                     {{
-                      "de": "słowo w języku {current_lang_name}",
-                      "pl": "tłumaczenie na polski",
+                      "de": "słowo",
+                      "pl": "tłumaczenie",
                       "tags": "Poziom, Część mowy, Temat",
-                      "ex_de": "przykład użycia w języku {current_lang_name}",
-                      "ex_pl": "tłumaczenie przykładu na polski"
+                      "ex_de": "zdanie przykładowe",
+                      "ex_pl": "tłumaczenie zdania"
                     }}"""
                     
                     try:
@@ -2037,52 +2045,50 @@ elif choice == "➕ Dodaj":
         # --- SEKCJA EDYCJI AI ---
         if "single_temp" in st.session_state and st.session_state.single_temp:
             st.divider()
-            st.subheader("📝 Sprawdź i popraw przed zapisem")
+            st.subheader("📝 Sprawdź przykłady przed zapisem")
             
             item = st.session_state.single_temp[0]
-            # Nagłówki w edytorze dopasowane do języka
-            de_col_name = "Niemiecki" if L_CODE == "de" else "Czeski"
+            de_col_name = "Oryginał"
             
             df_init = [{
                 "Dodaj": True,
                 de_col_name: item.get("de", ""),
                 "Polski": item.get("pl", ""),
-                "Kategorie (Tagi)": item.get("tags", ""),
-                "Przykład (Oryginał)": item.get("ex_de", ""),
-                "Przykład PL": item.get("ex_pl", "")
+                "Tagi": item.get("tags", ""),
+                "Przykład (Oryg.)": item.get("ex_de", ""),
+                "Przykład (PL)": item.get("ex_pl", "")
             }]
 
             edited_df = st.data_editor(
                 df_init,
                 use_container_width=True,
                 num_rows="fixed",
-                key="single_word_editor_multilang"
+                key="single_word_editor_v2"
             )
 
             c_save, c_cancel = st.columns(2)
             
-            if c_save.button("✅ Wszystko gra, dodaj!", use_container_width=True, type="primary"):
+            if c_save.button("✅ Dodaj to słówko", use_container_width=True, type="primary"):
                 row = edited_df[0]
                 if row.get("Dodaj", False):
                     new_word = {
                         "de": row[de_col_name],
                         "pl": row["Polski"],
-                        "category": row["Kategorie (Tagi)"],
+                        "category": row["Tagi"],
                         "next_review": str(date.today()),
                         "level": 0,
                         "origin": "Dodaj (AI)",
-                        "lang": L_CODE, # Zapisujemy wybrany język
-                        "examples": [{"de": row["Przykład (Oryginał)"], "pl": row["Przykład PL"]}]
+                        "lang": L_CODE,
+                        "examples": [{"de": row["Przykład (Oryg.)"], "pl": row["Przykład (PL)"]}]
                     }
                     save_word(u, new_word)
-                    st.success(f"Słówko ({current_lang_name}) dodane do bazy!")
+                    st.success(f"Słówko dodane z przykładem!")
                     st.session_state.flashcards = load_flashcards(u)
                     del st.session_state.single_temp
                     st.rerun()
 
             if c_cancel.button("🗑️ Odrzuć", use_container_width=True):
-                if "single_temp" in st.session_state:
-                    del st.session_state.single_temp
+                del st.session_state.single_temp
                 st.rerun()
 
 # --- 24. SŁOWNIK (V270 - Multilang: Filtrowanie po Języku) ---
