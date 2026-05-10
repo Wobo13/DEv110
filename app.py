@@ -72,45 +72,89 @@ def play_audio(txt, ex_txt=None):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- 3. FUNKCJE DANYCH (SUPABASE) (V232 - Pancerna aktualizacja słów) ---
+# --- 3. FUNKCJE DANYCH (Zaktualizowana V233 - System Passy) ---
 def load_user_data(username):
-    db = get_db(); res = db.table("user_data").select("*").eq("username", username).execute()
-    if res.data: return res.data[0]
-    init = {"username": username, "streak":0, "historical_cost":0.0, "time_stats":{}, "last_ts":time.time(), "last_seen":"Nigdy", "test_history": []}
+    db = get_db()
+    res = db.table("user_data").select("*").eq("username", username).execute()
+    today = date.today()
+    today_str = str(today)
+    yesterday = today - timedelta(days=1)
+    yesterday_str = str(yesterday)
+
+    if res.data:
+        data = res.data[0]
+        last_date = data.get("last_date") # Pobieramy datę ostatniej nauki z bazy
+        current_streak = data.get("streak", 0)
+
+        # LOGIKA NALICZANIA PASSY
+        if last_date == today_str:
+            # Użytkownik już tu dzisiaj był, nic nie zmieniaj
+            pass
+        elif last_date == yesterday_str:
+            # Był wczoraj, dziś jest pierwszy raz -> zwiększamy passę
+            current_streak += 1
+            data["streak"] = current_streak
+            data["last_date"] = today_str
+            save_user_data(username, data)
+        else:
+            # Nie było go wczoraj ani dzisiaj -> reset lub start od 1
+            data["streak"] = 1
+            data["last_date"] = today_str
+            save_user_data(username, data)
+            
+        return data
+
+    # Jeśli użytkownik loguje się pierwszy raz w życiu
+    init = {
+        "username": username, 
+        "streak": 1, 
+        "historical_cost": 0.0, 
+        "time_stats": {}, 
+        "last_ts": time.time(), 
+        "last_seen": datetime.now().strftime("%d.%m %H:%M"),
+        "last_date": today_str, # Przechowuje samą datę YYYY-MM-DD
+        "test_history": [],
+        "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
+    }
     db.table("user_data").insert(init).execute()
     return init
 
 def save_user_data(username, data):
-    d = data.copy(); d.pop("username", None)
+    # Tworzymy kopię, by nie modyfikować oryginału w sesji
+    d = data.copy()
+    d.pop("username", None)
+    # Zabezpieczamy typy danych przed wysyłką do Postgresa
+    if "time_stats" in d and isinstance(d["time_stats"], dict):
+        # Konwersja kluczy na stringi (na wypadek gdyby AI tam coś namieszało)
+        d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
+    
     get_db().table("user_data").update(d).eq("username", username).execute()
 
 def load_flashcards(username):
-    db = get_db(); res = db.table("flashcards").select("*").eq("username", username).order("id").execute()
+    db = get_db()
+    res = db.table("flashcards").select("*").eq("username", username).order("id").execute()
     cards = res.data if res.data else []
     for c in cards:
         if not c.get("origin"): c["origin"] = "Dodaj"
     return cards
 
 def save_word(username, word_obj):
-    db = get_db(); word_obj["username"] = username
+    db = get_db()
+    word_obj["username"] = username
     if "examples" not in word_obj: word_obj["examples"] = []
     db.table("flashcards").insert(word_obj).execute()
 
-# --- POPRAWIONA FUNKCJA UPDATE_WORD ---
 def update_word(word_id, fields):
     try:
-        # Zabezpieczenie typów danych dla bazy (BigInt/Integer)
+        # Zabezpieczenie typów danych dla bazy
         if "level" in fields and fields["level"] is not None:
             fields["level"] = int(fields["level"])
-        
         if "interval" in fields and fields["interval"] is not None:
             fields["interval"] = int(fields["interval"])
 
-        # Wykonanie aktualizacji
         get_db().table("flashcards").update(fields).eq("id", word_id).execute()
     except Exception as e:
-        # Logujemy błąd do konsoli Streamlit, ale nie przerywamy działania aplikacji
-        st.error(f"⚠️ Błąd krytyczny bazy danych (update_word): {e}")
+        st.error(f"⚠️ Błąd bazy danych (update_word): {e}")
 
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
@@ -189,34 +233,47 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. START SESJI ---
+# --- 5. START SESJI (V292 - Zoptymalizowana synchronizacja) ---
 u = st.session_state.user
-st.session_state.user_data = load_user_data(u)
-st.session_state.flashcards = load_flashcards(u)
+
+# Ładowanie danych (tu wyzwalana jest logika passy z Sekcji 3)
+if "user_data" not in st.session_state:
+    st.session_state.user_data = load_user_data(u)
+
+if "flashcards" not in st.session_state:
+    st.session_state.flashcards = load_flashcards(u)
 
 def update_activity(m):
     curr = time.time()
-    # Pobieramy dane bezpośrednio z session_state, by uniknąć opóźnień bazy
     user_data = st.session_state.user_data
     last_ts = user_data.get("last_ts", curr)
     delta = curr - last_ts
     
+    # Flagujemy, czy dane wymagają zapisu do bazy
+    needs_save = False
+
+    # Jeśli przerwa między akcjami jest mniejsza niż 10 minut (nauka ciągła)
     if 0 < delta < 600:
+        # Normalizacja nazwy sekcji do krótkiego kodu bazy
         clean = re.sub(r'[^\w\s]', '', m).lower().strip()
         pl_map = str.maketrans("ąćęłńóśźż", "acelnoszz")
         clean = clean.translate(pl_map)
         label = CLEAN_TIME_LABELS.get(clean, "Inn")
         
-        # Aktualizacja lokalna
+        # Aktualizacja lokalna w sesji
         stats = dict(user_data.get("time_stats", {}))
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
-    
+        needs_save = True
+
+    # Aktualizacja timestampu i formatu czytelnego dla człowieka
     st.session_state.user_data["last_ts"] = curr
     st.session_state.user_data["last_seen"] = datetime.now().strftime("%d.%m %H:%M")
     
-    # Zapis do bazy (asynchronicznie w tle dla systemu)
-    save_user_data(u, st.session_state.user_data)
+    # Zapisujemy do Supabase tylko jeśli faktycznie naliczyliśmy czas nauki
+    # Zapobiega to spamowaniu bazy przy każdym kliknięciu w menu
+    if needs_save:
+        save_user_data(u, st.session_state.user_data)
 
 # --- 6. SIDEBAR (V300 - Pełny kod z kompletem 3 gier) ---
 with st.sidebar:
