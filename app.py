@@ -2779,120 +2779,118 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V500 - Ultra-Stable Text Protocol) ---
+# --- 28. SPARING AI (V600 - Direct API Connection) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Stabilna rozmowa z asystentem. System pociągnie dialog i sprawdzi Twoje błędy.")
+    st.write("Bezpośrednia rozmowa z AI. System poprawia błędy i tłumaczy odpowiedzi.")
 
-    # 1. FUNKCJA PARSOWANIA TEKSTU (Zamiast JSONa - odporna na błędy)
-    def parse_stable_response(raw_text):
-        """Dzieli odpowiedź AI na: Odpowiedź | Tłumaczenie | Korekta"""
-        res = {"reply": "", "trans": "", "corr": None}
-        parts = raw_text.split("|||")
-        
-        res["reply"] = parts[0].strip() if len(parts) > 0 else raw_text
-        res["trans"] = parts[1].strip() if len(parts) > 1 else ""
-        
-        if len(parts) > 2:
-            c = parts[2].strip()
-            if c.lower() not in ["ok", "brak uwag", "zdanie poprawne", "none", ""]:
-                res["corr"] = c
-        return res
-
+    # Szybka konfiguracja scenariuszy
     scenarios = {
-        "🍽️ Restauracja": {"de": "Kellner im Restaurant", "cs": "Číšník v restauraci"},
-        "🏥 U lekarza": {"de": "Arzt in der Klinik", "cs": "Lékař w klinice"},
-        "💼 Rozmowa o pracę": {"de": "Chef bei einem Vorstellungsgespräch", "cs": "Šéf u pohovoru"},
-        "🛒 Zakupy": {"de": "Verkäufer im Supermarkt", "cs": "Prodavač v obchodě"},
-        "✈️ Podróż": {"de": "Beamter am Flughafen", "cs": "Úředník na letišti"},
-        "☕ Luźna rozmowa": {"de": "Ein alter Freund", "cs": "Starý kamarád"}
+        "🍽️ Restauracja": {"de": "Im Restaurant", "cs": "V restauraci"},
+        "🏥 U lekarza": {"de": "Beim Arzt", "cs": "U lékaře"},
+        "💼 Rozmowa o pracę": {"de": "Job-Interview", "cs": "Pracovní pohovor"},
+        "🛒 Zakupy": {"de": "Einkaufen", "cs": "Nákup"},
+        "✈️ Podróż": {"de": "Reisen", "cs": "Cestování"},
+        "☕ Luźna rozmowa": {"de": "Smalltalk", "cs": "Pokec"}
     }
 
     if "chat_history" not in st.session_state: st.session_state.chat_history = []
     if "chat_scenario" not in st.session_state: st.session_state.chat_scenario = None
 
+    # 1. WYBÓR SCENARIUSZA
     if not st.session_state.chat_scenario:
-        st.subheader("Wybierz temat rozmowy:")
         cols = st.columns(2)
-        for i, (name, details) in enumerate(scenarios.items()):
-            with cols[i % 2]:
-                if st.button(name, use_container_width=True):
-                    st.session_state.chat_scenario = name
-                    st.session_state.chat_history = []
-                    st.rerun()
+        for i, name in enumerate(scenarios.keys()):
+            if cols[i % 2].button(name, use_container_width=True):
+                st.session_state.chat_scenario = name
+                st.rerun()
+    
+    # 2. DIALOG
     else:
-        # INICJALIZACJA (Pierwsza wiadomość)
-        if not st.session_state.chat_history:
-            with st.spinner("Łączenie z asystentem..."):
-                details = scenarios[st.session_state.chat_scenario]
-                # Uproszczony prompt - prosimy o tekst z separatorami |||
-                intro_p = f"""Jesteś w roli: {details[L_CODE]}. Przywitaj się krótko i zadaj pytanie. 
-                Język: {current_lang_name}. 
-                Format odpowiedzi: Twoja_odpowiedź ||| Twoje_tłumaczenie_PL"""
-                try:
-                    raw = get_openai_response(intro_p)
-                    data = parse_stable_response(raw)
-                    st.session_state.chat_history.append({
-                        "role": "assistant", "content": data["reply"], "trans": data["trans"], "correction": None
-                    })
-                    st.rerun()
-                except:
-                    st.error("Błąd połączenia. Spróbuj kliknąć 'Koniec' i wybrać scenariusz jeszcze raz.")
-                    st.stop()
-
-        # UI i Kontrola
-        c_top1, c_top2 = st.columns([4, 1])
-        c_top1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
-        if c_top2.button("🏁 Koniec"):
+        # Belka nawigacyjna
+        c1, c2 = st.columns([4, 1])
+        c1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
+        if c2.button("🏁 Koniec"):
             st.session_state.chat_scenario = None
             st.session_state.chat_history = []
             st.rerun()
 
-        st.divider()
-
-        # WYŚWIETLANIE HISTORII
-        for i, msg in enumerate(st.session_state.chat_history):
-            role_icon = "🤖" if msg["role"] == "assistant" else "👤"
-            with st.chat_message(msg["role"], avatar=role_icon):
-                st.write(msg["content"])
-                if msg["role"] == "assistant" and msg.get("trans"):
-                    with st.expander("👁️ Pokaż tłumaczenie"):
-                        st.caption(msg["trans"])
-                if msg.get("correction"):
-                    st.warning(f"📝 **Korekta:** {msg['correction']}")
-                if msg["role"] == "assistant":
-                    if st.button("🔊 Słuchaj", key=f"v5_aud_{i}"):
-                        play_audio(msg["content"], lang=L_CODE)
-
-        # INPUT UŻYTKOWNIKA
-        u_in = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
-        if u_in:
-            st.session_state.chat_history.append({"role": "user", "content": u_in})
-            with st.spinner("AI odpowiada..."):
-                # Kluczowa zmiana: AI nie musi generować JSONa, co jest dla niego łatwiejsze i stabilniejsze
-                prompt = f"""
-                SCENARIUSZ: {st.session_state.chat_scenario}. Jesteś ROZMÓWCĄ w języku {current_lang_name}.
-                Użytkownik napisał: "{u_in}".
-                ZADANIE: 
-                1. Odpowiedz naturalnie, krótko (1 zdanie). Nie powtarzaj słów użytkownika.
-                2. Przetłumacz swoją odpowiedź na PL.
-                3. Jeśli użytkownik zrobił błąd, popraw go krótko (Poprawna forma + dlaczego). Jeśli OK, wpisz 'OK'.
-                
-                FORMAT ODPOWIEDZI (bezwzględny):
-                Twoja_reakcja ||| Twoje_tłumaczenie_PL ||| Twoja_korekta_PL
-                """
+        # Inicjalizacja pierwszej wiadomości przez AI
+        if not st.session_state.chat_history:
+            with st.spinner("Budzenie asystenta..."):
                 try:
-                    raw_res = get_openai_response(prompt)
-                    data = parse_stable_response(raw_res)
+                    client = OpenAI(api_key=API_KEY)
+                    context = scenarios[st.session_state.chat_scenario][L_CODE]
                     
-                    st.session_state.chat_history[-1]["correction"] = data["corr"]
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Sytuacja: {context}. Zacznij rozmowę krótkim pytaniem."},
+                            {"role": "user", "content": "Zacznijmy. Odpowiedz TYLKO tekstem: Twoja_odpowiedź ||| Twoje_tłumaczenie_PL"}
+                        ]
+                    )
+                    raw_content = response.choices[0].message.content
+                    parts = raw_content.split("|||")
                     st.session_state.chat_history.append({
-                        "role": "assistant", "content": data["reply"], "trans": data["trans"]
+                        "role": "assistant", 
+                        "content": parts[0].strip(), 
+                        "trans": parts[1].strip() if len(parts) > 1 else ""
                     })
                     st.rerun()
-                except:
-                    st.error("Problem z generowaniem odpowiedzi. Spróbuj wysłać wiadomość ponownie.")
-                    st.session_state.chat_history.pop()
+                except Exception as e:
+                    st.error(f"Błąd inicjalizacji: {e}")
+                    if st.button("Spróbuj ponownie"): st.rerun()
+                    st.stop()
+
+        # Wyświetlanie rozmowy
+        for i, msg in enumerate(st.session_state.chat_history):
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+                if msg.get("trans"):
+                    with st.expander("👁️ Tłumaczenie"): st.write(msg["trans"])
+                if msg.get("corr"):
+                    st.warning(f"📝 {msg['corr']}")
+                if msg["role"] == "assistant":
+                    if st.button("🔊", key=f"aud_{i}"): play_audio(msg["content"], lang=L_CODE)
+
+        # Obsługa wiadomości użytkownika
+        if user_input := st.chat_input(f"Napisz po {current_lang_name.lower()}..."):
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            
+            with st.spinner("AI pisze..."):
+                try:
+                    client = OpenAI(api_key=API_KEY)
+                    # Budujemy historię dla AI
+                    messages_for_ai = [
+                        {"role": "system", "content": f"Jesteś rozmówcą w sytuacji: {st.session_state.chat_scenario}. Język: {current_lang_name}. Odpowiadaj w formacie: Reakcja ||| Tłumaczenie_PL ||| Korekta_PL_użytkownika (jeśli brak błędów wpisz OK)"}
+                    ]
+                    for m in st.session_state.chat_history[-5:]: # Ostatnie 5 wiadomości dla kontekstu
+                        messages_for_ai.append({"role": m["role"], "content": m["content"]})
+
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=messages_for_ai
+                    )
+                    
+                    ans_raw = response.choices[0].message.content
+                    parts = ans_raw.split("|||")
+                    
+                    # Parsowanie wyników
+                    reply = parts[0].strip()
+                    trans = parts[1].strip() if len(parts) > 1 else ""
+                    corr = parts[2].strip() if len(parts) > 2 else "OK"
+                    
+                    if corr.upper() != "OK":
+                        st.session_state.chat_history[-1]["corr"] = corr
+                    
+                    st.session_state.chat_history.append({
+                        "role": "assistant", 
+                        "content": reply, 
+                        "trans": trans
+                    })
+                    st.rerun()
+                except Exception as e:
+                    st.error("Błąd połączenia. Spróbuj wysłać wiadomość jeszcze raz.")
