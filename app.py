@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V402 - Fixed Intro & Formatting) ---
+# --- 28. SPARING AI (V405 - Fixed Intro JSON & Button size) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2801,6 +2801,7 @@ elif choice == "🤖 Sparing AI":
     if "chat_scenario" not in st.session_state:
         st.session_state.chat_scenario = None
 
+    # EKRAN WYBORU SCENARIUSZA
     if not st.session_state.chat_scenario:
         st.subheader("Wybierz scenariusz rozmowy:")
         cols = st.columns(2)
@@ -2808,60 +2809,82 @@ elif choice == "🤖 Sparing AI":
             with cols[i % 2]:
                 if st.button(name, use_container_width=True):
                     st.session_state.chat_scenario = name
-                    # POPRAWKA: Wymuszamy na AI czysty tekst w powitaniu, nie JSON
-                    intro_prompt = f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Przywitaj się krótko i zadaj jedno pytanie startowe. Odpowiedz TYLKO tekstem, nie JSONem."
+                    # Budujemy prompt tak, aby AI zwróciło JSON (zgodnie z Twoją funkcją bazową), 
+                    # ale my wyciągniemy z niego tylko tekst.
+                    intro_prompt = f"""
+                    Jesteś partnerem do rozmowy w języku {current_lang_name}. 
+                    Scenariusz: {details[L_CODE]}. 
+                    Zadanie: Przywitaj się i zadaj jedno pytanie startowe. 
+                    Zwróć JSON: {{"reply": "treść powitania"}}
+                    """
                     try:
-                        ai_intro = get_openai_response(intro_prompt)
-                        # Jeśli AI mimo wszystko wysłało JSON (bo funkcja bazowa go wymusza), próbujemy go wyczyścić
-                        if ai_intro.startswith("{"):
-                             try:
-                                 d = json.loads(ai_intro)
-                                 ai_intro = d.get("reply", list(d.values())[0])
-                             except: pass
+                        ai_intro_raw = get_openai_response(intro_prompt)
+                        data = json.loads(ai_intro_raw)
+                        # Wyciągamy sam tekst z klucza 'reply'
+                        ai_intro_text = data.get("reply", ai_intro_raw)
                         
-                        st.session_state.chat_history.append({"role": "assistant", "content": ai_intro, "correction": None})
+                        st.session_state.chat_history.append({"role": "assistant", "content": ai_intro_text, "correction": None})
                         st.rerun()
-                    except: st.error("Błąd połączenia z AI.")
+                    except: 
+                        st.error("Błąd połączenia z AI. Spróbuj ponownie.")
+    
+    # EKRAN ROZMOWY
     else:
         st.info(f"📍 Aktywny scenariusz: **{st.session_state.chat_scenario}**")
-        if st.button("🏁 Zakończ rozmowę i zmień scenariusz", type="secondary"):
+        
+        # Poprawka przycisku (usunięto size="small", co generowało błąd TypeError)
+        if st.button("🏁 Zakończ rozmowę i zmień scenariusz", type="secondary", use_container_width=False):
             st.session_state.chat_history = []
             st.session_state.chat_scenario = None
             st.rerun()
 
         st.divider()
 
-        # Renderowanie czatu
-        for msg in st.session_state.chat_history:
+        # Wyświetlanie czatu
+        for i, msg in enumerate(st.session_state.chat_history):
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
                 st.write(msg["content"])
-                if msg.get("correction"):
-                    st.warning(f"📝 **Poprawka:** {msg['correction']}")
                 
+                # Poprawki błędów wyświetlamy tylko przy wiadomościach użytkownika
+                if msg.get("correction"):
+                    st.info(f"📝 **Poprawka:** {msg['correction']}")
+                
+                # Audio tylko dla AI
                 if msg["role"] == "assistant":
-                    m_hash = hashlib.md5(msg["content"].encode()).hexdigest()
-                    if st.button("🔊 Słuchaj", key=f"sparing_aud_{m_hash}"):
+                    if st.button("🔊 Słuchaj", key=f"aud_{i}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        user_input = st.chat_input(f"Napisz coś po {current_lang_name.lower()}...")
+        # Obsługa nowej wiadomości
+        user_input = st.chat_input(f"Napisz do AI po {current_lang_name.lower()}...")
 
         if user_input:
             st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.spinner("AI analizuje..."):
+            
+            with st.spinner("AI myśli..."):
                 prompt = f"""
                 Jesteś nauczycielem języka {current_lang_name}. 
-                Aktualny scenariusz: {st.session_state.chat_scenario}.
-                Użytkownik powiedział: "{user_input}".
+                Scenariusz: {st.session_state.chat_scenario}.
+                Użytkownik napisał: "{user_input}".
                 Zadanie:
                 1. Odpowiedz krótko i naturalnie po {current_lang_name}.
-                2. Jeśli użytkownik zrobił błąd, popraw go po polsku.
-                Zwróć JSON: {{"reply": "tekst", "correction": "poprawka lub 'Brak uwag'"}}
+                2. Jeśli użytkownik popełnił błąd gramatyczny lub słowny, popraw go krótko po polsku.
+                
+                Zwróć JSON:
+                {{
+                  "reply": "Twoja odpowiedź",
+                  "correction": "Twoja uwaga po polsku lub 'Brak uwag'"
+                }}
                 """
                 try:
                     res_raw = get_openai_response(prompt)
                     data = json.loads(res_raw)
+                    
+                    # Zapisujemy poprawkę do ostatniej wiadomości użytkownika
                     st.session_state.chat_history[-1]["correction"] = data["correction"] if data["correction"] != "Brak uwag" else None
+                    
+                    # Dodajemy odpowiedź AI
                     st.session_state.chat_history.append({"role": "assistant", "content": data["reply"]})
                     st.rerun()
-                except: st.error("AI miało problem z przetworzeniem wiadomości.")
+                except:
+                    st.error("AI nie mogło przetworzyć tej wiadomości.")
