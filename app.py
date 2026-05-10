@@ -406,9 +406,9 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V356 - Sparing AI moved to Nauka) ---
+# --- 6. SIDEBAR (V360 - Laboratorium added to Nauka) ---
 with st.sidebar:
-    # 1. Agresywny CSS (bez zmian)
+    # 1. Stylizacja CSS dla minimalistycznego i spójnego menu
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: none;}
@@ -428,7 +428,7 @@ with st.sidebar:
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. Nagłówek profilu
+    # 2. Nagłówek profilu użytkownika
     ud = st.session_state.user_data
     st.markdown(f"""
         <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
@@ -437,10 +437,10 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 3. Wybór Języka
+    # 3. Wybór Języka Nauki
     if "current_lang" not in st.session_state: st.session_state.current_lang = "Niemiecki"
     selected_lang = st.selectbox("Język nauki", options=list(LANG_MAP.keys()), 
-                                 format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
+                                   format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
 
     if selected_lang != st.session_state.current_lang:
         st.session_state.current_lang = selected_lang
@@ -449,7 +449,7 @@ with st.sidebar:
 
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
 
-    # 4. Paski Postępu
+    # 4. Wizualne Paski Postępu (Wiedza i Cel Dnia)
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     wiedza = 0
     if all_c:
@@ -458,7 +458,7 @@ with st.sidebar:
         wiedza = int((strong / len(all_c)) * 100)
 
     current_stats = ud.get("time_stats", {})
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
 
@@ -468,7 +468,7 @@ with st.sidebar:
     st.progress(min(mins / goal, 1.0))
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # 5. Funkcja menu
+    # 5. Funkcja pomocnicza do generowania elementów menu
     def menu_item(label, target):
         is_selected = st.session_state.get("choice") == target
         btn_label = f"{'▶ ' if is_selected else ''}{label}"
@@ -476,29 +476,24 @@ with st.sidebar:
             st.session_state.choice = target
             st.rerun()
 
-    # 6. Struktura Menu
+    # 6. Struktura Menu Głównego
     menu_item("🏠 Start", "🏠 Start")
     choice_now = st.session_state.get("choice", "🏠 Start")
 
-    # GRUPA: NAUKA (Z dodanym Sparing AI)
-    with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"])):
-        menu_item("📅 Powtórki", "📅 Powtórki")
-        menu_item("🚀 Trening", "🚀 Trening")
-        menu_item("🕹️ Quiz", "🕹️ Quiz")
-        menu_item("🎴 Fiszki", "🎴 Fiszki")
-        menu_item("🛠️ Warsztat", "🛠️ Warsztat")
-        menu_item("📝 Testy", "📝 Testy")
-        menu_item("🤖 Sparing AI", "🤖 Sparing AI") # <-- TUTAJ JEST TERAZ
+    # GRUPA: NAUKA (Z Laboratorium i Sparing AI)
+    nauka_options = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]
+    with st.expander("📚 Nauka", expanded=(choice_now in nauka_options)):
+        for item in nauka_options:
+            menu_item(item, item)
 
     # GRUPA: GRY
-    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
-        menu_item("🧠 Memory", "🧠 Memory")
-        menu_item("🏗️ Konstruktor", "🏗️ Konstruktor")
-        menu_item("🐍 Lingwistyczny Wąż", "🐍 Lingwistyczny Wąż")
-        menu_item("🎈 Balonowy Wyścig", "🎈 Balonowy Wyścig")
-        menu_item("🏆 Arena Wyzwań", "🏆 Arena Wyzwań")
+    gry_options = ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"]
+    with st.expander("🎮 Gry", expanded=(choice_now in gry_options)):
+        for item in gry_options:
+            menu_item(item, item)
 
-    # Narzędzia
+    # Narzędzia i Administracja
+    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
     for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
@@ -509,8 +504,6 @@ with st.sidebar:
     if st.button("🚪 Wyloguj", use_container_width=True):
         st.session_state.clear()
         st.rerun()
-
-choice = st.session_state.get("choice", "🏠 Start")
 
 # --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
 
@@ -2888,3 +2881,131 @@ elif choice == "🤖 Sparing AI":
                 except Exception as e:
                     st.error("Problem techniczny. Spróbuj wysłać ponownie.")
                     if u_input: st.session_state.chat_history.pop()
+
+# --- 29. LABORATORIUM RODZAJNIKÓW (V1.0 - Ending Rules & Color Feedback) ---
+elif choice == "🧪 Laboratorium":
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🧪 Laboratorium Rodzajników: {current_lang_name}")
+    st.write("Trenuj rozpoznawanie rodzaju rzeczownika na podstawie jego końcówki.")
+
+    # 1. REGUŁY KOŃCÓWEK (Logika pedagogiczna)
+    RULES = {
+        "de": {
+            "die": ["ung", "heit", "keit", "schaft", "in", "ion", "ei", "ität"],
+            "der": ["ismus", "or", "ig", "ling", "er"],
+            "das": ["chen", "lein", "ment", "um", "ma"]
+        },
+        "cs": {
+            "ta": ["ost", "a", "ice", "ba"],
+            "ten": ["r", "l", "n", "t", "d", "m", "s", "z"], # spółgłoski
+            "to": ["o", "í", "e", "um"]
+        }
+    }
+
+    # 2. PRZYGOTOWANIE DANYCH
+    # Wyciągamy tylko rzeczowniki, które mają w bazie rodzajnik lub zaimek
+    def get_gender(word, lang):
+        w = word.lower().strip()
+        if lang == "de":
+            if w.startswith("der "): return "der", word[4:]
+            if w.startswith("die "): return "die", word[4:]
+            if w.startswith("das "): return "das", word[4:]
+        else: # czeski - szukamy zaimków lub zakładamy na podstawie tagów, 
+              # tutaj najbezpieczniej sprawdzić czy user dodał słowo z "Ten/Ta/To" 
+              # lub po prostu filtrować po końcówce w bazie
+            if w.startswith("ten "): return "ten", word[4:]
+            if w.startswith("ta "): return "ta", word[4:]
+            if w.startswith("to "): return "to", word[4:]
+        return None, word
+
+    all_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    nouns = []
+    for c in all_cards:
+        gender, clean_word = get_gender(c["de"], L_CODE)
+        if gender:
+            nouns.append({"full": c["de"], "clean": clean_word, "gender": gender, "pl": c["pl"]})
+
+    if len(nouns) < 3:
+        st.warning(f"Dodaj więcej rzeczowników z rodzajnikami (np. 'der Hund' lub 'ten dům'), aby odblokować ten moduł.")
+    else:
+        # Inicjalizacja stanu gry
+        if "lab_idx" not in st.session_state:
+            st.session_state.lab_idx = random.randint(0, len(nouns)-1)
+            st.session_state.lab_feedback = None
+            st.session_state.lab_score = 0
+
+        curr = nouns[st.session_state.lab_idx]
+        
+        # UI: Licznik punktów
+        st.caption(f"Punkty: {st.session_state.lab_score}")
+
+        # GŁÓWNA KARTA
+        # Kolory dynamiczne zależne od feedbacku
+        border_color = "#333"
+        if st.session_state.lab_feedback:
+            if st.session_state.lab_feedback["is_correct"]:
+                border_color = "#28a745" # Zielony (Dobrze)
+            else:
+                border_color = "#dc3545" # Czerwony (Źle)
+
+        st.markdown(f"""
+            <div style="text-align:center; padding:50px; border:5px solid {border_color}; 
+            border-radius:20px; background:#111; margin-bottom:20px;">
+                <div style="font-size:1.2rem; color:#aaa; margin-bottom:10px;">{curr['pl']}</div>
+                <div style="font-size:3.5rem; font-weight:bold; color:white;">{curr['clean']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # PRZYCISKI
+        options = ["DER", "DIE", "DAS"] if L_CODE == "de" else ["TEN", "TA", "TO"]
+        cols = st.columns(3)
+        
+        for i, opt in enumerate(options):
+            if cols[i].button(opt, use_container_width=True, type="primary" if opt.lower() == curr['gender'] and st.session_state.lab_feedback else "secondary"):
+                if not st.session_state.lab_feedback:
+                    is_correct = opt.lower() == curr['gender']
+                    
+                    # Szukanie reguły końcówki
+                    rule_found = None
+                    for g, endings in RULES[L_CODE].items():
+                        for e in endings:
+                            if curr['clean'].lower().endswith(e):
+                                rule_found = f"Zasada końcówki: -{e} zazwyczaj oznacza rodzaj {g.upper()}."
+                                break
+                    
+                    st.session_state.lab_feedback = {
+                        "is_correct": is_correct,
+                        "rule": rule_found or "To słowo może być wyjątkiem lub rzadszą formą."
+                    }
+                    if is_correct: st.session_state.lab_score += 1
+                    st.rerun()
+
+        # FEEDBACK
+        if st.session_state.lab_feedback:
+            st.divider()
+            if st.session_state.lab_feedback["is_correct"]:
+                st.success(f"✨ Doskonale! To jest **{curr['gender'].upper()} {curr['clean']}**")
+            else:
+                st.error(f"❌ Błąd. Poprawna forma to **{curr['gender'].upper()} {curr['clean']}**")
+            
+            st.info(st.session_state.lab_feedback["rule"])
+            
+            if st.button("Następne słowo ➡️", use_container_width=True):
+                st.session_state.lab_idx = random.randint(0, len(nouns)-1)
+                st.session_state.lab_feedback = None
+                st.rerun()
+
+    # Sidebar info
+    with st.sidebar:
+        st.divider()
+        st.subheader("💡 Ściąga końcówek")
+        if L_CODE == "de":
+            st.write("🔴 **DIE:** -ung, -heit, -keit, -schaft")
+            st.write("🔵 **DER:** -ismus, -or, -er, -ig")
+            st.write("🟢 **DAS:** -chen, -lein, -um, -ment")
+        else:
+            st.write("🔴 **TA:** -ost, -a, -ice")
+            st.write("🔵 **TEN:** spółgłoski (h, k, r...)")
+            st.write("🟢 **TO:** -o, -í, -e")
