@@ -1207,20 +1207,18 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V2.0 - Pełna obsługa tablic SQL) ---
+# --- 16. BALONOWY WYŚCIG (V2.1 - Synchronizacja identyczna z Memory) ---
 elif choice == "🎈 Balonowy Wyścig":
     st.header("🎈 Balonowy Wyścig")
     
     # 1. INICJALIZACJA STANU
     if "bal_active" not in st.session_state:
-        st.session_state.update({
-            "bal_active": False,
-            "bal_score": 0,
-            "bal_word": None,
-            "bal_opts": [],
-            "bal_start_ts": 0,
-            "bal_game_over": False
-        })
+        st.session_state.bal_active = False
+        st.session_state.bal_score = 0
+        st.session_state.bal_word = None
+        st.session_state.bal_opts = []
+        st.session_state.bal_start_ts = 0
+        st.session_state.bal_game_over = False
 
     def next_bal_round():
         all_c = st.session_state.flashcards
@@ -1233,7 +1231,7 @@ elif choice == "🎈 Balonowy Wyścig":
         st.session_state.bal_opts = opts
         return True
 
-    # --- LOGIKA KOŃCA GRY ---
+    # --- LOGIKA KOŃCA GRY (WZOROWANA NA MEMORY) ---
     if st.session_state.get("bal_active", False):
         elapsed = time.time() - st.session_state.get("bal_start_ts", 0)
         if elapsed >= 30:
@@ -1244,65 +1242,57 @@ elif choice == "🎈 Balonowy Wyścig":
             if final_score > 0:
                 try:
                     db = get_db()
-                    # A. Pobieramy rekordy (dla typu array int4[] Supabase zwraca listę Pythona)
-                    res = db.table("user_data").select("baloon_scores").eq("username", u).execute()
-                    
-                    old_scores = []
+                    # Pobieramy profil użytkownika (tak jak w Memory)
+                    res = db.table("user_data").select("*").eq("username", u).execute()
                     if res.data:
-                        raw = res.data[0].get("baloon_scores")
-                        # Sprawdzamy czy to lista, jeśli None lub coś innego - dajemy pustą listę
-                        old_scores = raw if isinstance(raw, list) else []
-                    
-                    # B. Wyznaczamy nowe Top 10 (unikalne wyniki, posortowane malejąco)
-                    new_scores = sorted(list(set(old_scores + [final_score])), reverse=True)[:10]
-                    
-                    # C. Wysyłamy update (Pythonowa lista idzie prosto do SQL Array)
-                    db.table("user_data").update({"baloon_scores": new_scores}).eq("username", u).execute()
-                    
-                    # D. Synchronizacja lokalna
-                    st.session_state.user_data["baloon_scores"] = new_scores
-                    st.toast(f"Rekord zapisany: {final_score} pkt!", icon="🏆")
+                        u_prof = res.data[0]
+                        # Pobieramy listę (obsługa typu Array int4[])
+                        old_scores = u_prof.get("baloon_scores")
+                        if not isinstance(old_scores, list): old_scores = []
+                        
+                        # Dodajemy wynik i sortujemy (Top 10)
+                        new_scores = sorted(list(set(old_scores + [final_score])), reverse=True)[:10]
+                        
+                        # ZAPIS DO BAZY
+                        db.table("user_data").update({"baloon_scores": new_scores}).eq("username", u).execute()
+                        
+                        # KLUCZOWE: Aktualizacja lokalnego profilu w sesji (to naprawia Arenę!)
+                        st.session_state.user_data["baloon_scores"] = new_scores
+                        st.toast(f"Zapisano wynik: {final_score} pkt!", icon="🏆")
                 except Exception as e:
-                    st.error(f"Błąd zapisu do tablicy baloon_scores: {e}")
+                    st.error(f"Błąd zapisu: {e}")
             
             st.rerun()
 
-    # --- INTERFEJS UŻYTKOWNIKA ---
+    # --- INTERFEJS ---
     is_over = st.session_state.get("bal_game_over", False)
     is_active = st.session_state.get("bal_active", False)
 
     if not is_active:
         if is_over:
             st.balloons()
-            st.success(f"### Koniec! Wynik: {st.session_state.bal_score} pkt 🏆")
+            st.success(f"### Koniec! Wynik: {st.session_state.bal_score} pkt")
             
-            tops = st.session_state.user_data.get("baloon_scores", [])
-            if tops:
-                st.info(f"Twoje najlepsze wyniki: {', '.join(map(str, tops))}")
+            # Wyświetlanie z lokalnego state (jak w Memory)
+            my_scores = st.session_state.user_data.get("baloon_scores", [])
+            if my_scores:
+                st.info(f"Twoje rekordy: {', '.join(map(str, my_scores))}")
             
-            if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
-                st.session_state.update({
-                    "bal_score": 0, "bal_active": True, "bal_game_over": False,
-                    "bal_start_ts": time.time()
-                })
+            if st.button("Zagraj ponownie", use_container_width=True, type="primary"):
+                st.session_state.update({"bal_score": 0, "bal_active": True, "bal_game_over": False, "bal_start_ts": time.time()})
                 next_bal_round()
                 st.rerun()
         else:
-            st.info("30 sekund na poprawne tłumaczenia. Powodzenia!")
+            st.info("Zdobądź jak najwięcej punktów w 30 sekund!")
             if st.button("🚀 START", use_container_width=True, type="primary"):
                 if next_bal_round():
-                    st.session_state.update({
-                        "bal_active": True, "bal_score": 0, "bal_game_over": False,
-                        "bal_start_ts": time.time()
-                    })
+                    st.session_state.update({"bal_active": True, "bal_score": 0, "bal_game_over": False, "bal_start_ts": time.time()})
                     st.rerun()
     else:
         # SILNIK GRY
         @st.fragment(run_every=1.0)
         def balloon_engine():
-            current_elapsed = time.time() - st.session_state.get("bal_start_ts", 0)
-            rem = max(0, int(30 - current_elapsed))
-            
+            rem = max(0, int(30 - (time.time() - st.session_state.get("bal_start_ts", 0))))
             if rem <= 0:
                 st.session_state.bal_active = False
                 st.session_state.bal_game_over = True
@@ -1315,16 +1305,10 @@ elif choice == "🎈 Balonowy Wyścig":
 
             word = st.session_state.bal_word
             if word:
-                st.markdown(f"""
-                    <div style="text-align:center; padding:20px; background:#111; 
-                    border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;">
-                        <h2 style="color:white; margin:0;">{word['de']}</h2>
-                    </div>
-                """, unsafe_allow_html=True)
-
+                st.markdown(f'<div style="text-align:center; padding:20px; background:#111; border:2px solid #FF4B4B; border-radius:15px; margin-bottom:15px;"><h2 style="color:white; margin:0;">{word["de"]}</h2></div>', unsafe_allow_html=True)
                 cols = st.columns(3)
                 for i, opt in enumerate(st.session_state.bal_opts):
-                    if cols[i].button(opt, key=f"bal_btn_v2_{i}", use_container_width=True):
+                    if cols[i].button(opt, key=f"bal_btn_{i}", use_container_width=True):
                         if opt == st.session_state.bal_word['pl']:
                             st.session_state.bal_score += 1
                             next_bal_round()
@@ -1333,17 +1317,16 @@ elif choice == "🎈 Balonowy Wyścig":
                             st.toast("Pudło!")
                             next_bal_round()
                             st.rerun(scope="fragment")
-        
         balloon_engine()
             
-# --- 20. ARENA WYZWAŃ (V301 - Pełna kompatybilność z nowymi typami danych) ---
+# --- 20. ARENA WYZWAŃ (V302 - Synchronizacja Balonów na wzór Memory) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
 
     db = get_db()
     
-    # 1. BEZPIECZNE POBIERANIE DANYCH
+    # 1. POBIERANIE DANYCH
     try:
         all_users_res = db.table("user_data").select("*").execute().data
         all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
@@ -1360,7 +1343,7 @@ elif choice == "🏆 Arena Wyzwań":
         today = date.today()
         ranking_data = []
 
-        # 2. OBLICZANIE STATYSTYK DLA KAŻDEGO UŻYTKOWNIKA
+        # 2. OBLICZANIE STATYSTYK (Logika identyczna dla wszystkich gier)
         for _, user in df_users.iterrows():
             uname = user.get("username", "Anonim")
             u_cards = df_cards[df_cards["username"] == uname]
@@ -1374,30 +1357,17 @@ elif choice == "🏆 Arena Wyzwań":
                 except:
                     wiedza_val = 0
             
-            # --- POPRAWKA DLA GIER (Obsługa list/tablic SQL) ---
+            # --- POBIERANIE REKORDÓW Z GIER ---
             
-            # Memory (najniższy czas)
-            m_scores = user.get("memory_scores")
-            best_mem = None
-            if isinstance(m_scores, list) and len(m_scores) > 0:
-                try:
-                    best_mem = min([float(s) for s in m_scores if s is not None])
-                except:
-                    best_mem = None
+            # MEMORY (Twój działający wzór)
+            m_scores = user.get("memory_scores", [])
+            best_mem = min([float(s) for s in m_scores]) if isinstance(m_scores, list) and m_scores else None
 
-            # Balony (najwyższy wynik) - tutaj była główna blokada
-            b_scores = user.get("baloon_scores")
-            best_bal = 0
-            if isinstance(b_scores, list) and len(b_scores) > 0:
-                try:
-                    # Filtrujemy tylko wartości liczbowe
-                    valid_scores = [int(s) for s in b_scores if str(s).isdigit()]
-                    if valid_scores:
-                        best_bal = max(valid_scores)
-                except:
-                    best_bal = 0
+            # BALONY (Teraz identycznie jak Memory)
+            b_scores = user.get("baloon_scores", [])
+            best_bal = max([int(s) for s in b_scores]) if isinstance(b_scores, list) and b_scores else 0
 
-            # Wąż (najdłuższa seria)
+            # WĄŻ (Najdłuższa seria)
             best_snake = user.get("snake_best_chain", 0)
             if pd.isna(best_snake): best_snake = 0
 
@@ -1407,13 +1377,12 @@ elif choice == "🏆 Arena Wyzwań":
                 "Wiedza 🧠": wiedza_val,
                 "Najlepsze Memory ⏱️": best_mem,
                 "Rekord Balony 🎈": best_bal,
-                "Seria Węża 🐍": best_snake,
-                "Ostatnio aktywny": user.get("last_seen", "Brak")
+                "Seria Węża 🐍": best_snake
             })
 
         df_final = pd.DataFrame(ranking_data)
 
-        # 3. WYŚWIETLANIE TABEL
+        # 3. WYŚWIETLANIE RANKINGÓW
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🔥 Najdłuższa Passa")
@@ -1430,37 +1399,36 @@ elif choice == "🏆 Arena Wyzwań":
             st.table(display_knowledge)
 
         st.write("---")
-
         st.subheader("🧩 Mistrzowie Gier (Top 10)")
         t_m, t_b, t_s = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
 
         with t_m:
             df_mem = df_final.dropna(subset=["Najlepsze Memory ⏱️"])
             if not df_mem.empty:
-                df_mem_sorted = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10).reset_index(drop=True)
-                df_mem_sorted.index += 1
-                display_mem = df_mem_sorted[["Użytkownik", "Najlepsze Memory ⏱️"]].copy()
+                df_mem_s = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10).reset_index(drop=True)
+                df_mem_s.index += 1
+                display_mem = df_mem_s[["Użytkownik", "Najlepsze Memory ⏱️"]].copy()
                 display_mem["Najlepsze Memory ⏱️"] = display_mem["Najlepsze Memory ⏱️"].apply(lambda x: f"{x}s")
                 st.table(display_mem)
             else:
                 st.info("Brak rekordów w Memory.")
 
         with t_b:
-            # Filtrujemy tylko te rekordy, które faktycznie mają punkty
+            # Filtrujemy wyniki > 0
             df_bal = df_final[df_final["Rekord Balony 🎈"] > 0]
             if not df_bal.empty:
-                df_bal_sorted = df_bal.sort_values(by="Rekord Balony 🎈", ascending=False).head(10).reset_index(drop=True)
-                df_bal_sorted.index += 1
-                st.table(df_bal_sorted[["Użytkownik", "Rekord Balony 🎈"]])
+                df_bal_s = df_bal.sort_values(by="Rekord Balony 🎈", ascending=False).head(10).reset_index(drop=True)
+                df_bal_s.index += 1
+                st.table(df_bal_s[["Użytkownik", "Rekord Balony 🎈"]])
             else:
                 st.info("Brak rekordów w Balonach.")
 
         with t_s:
             df_snake = df_final[df_final["Seria Węża 🐍"] > 0]
             if not df_snake.empty:
-                df_snake_sorted = df_snake.sort_values(by="Seria Węża 🐍", ascending=False).head(10).reset_index(drop=True)
-                df_snake_sorted.index += 1
-                st.table(df_snake_sorted[["Użytkownik", "Seria Węża 🐍"]])
+                df_snake_s = df_snake.sort_values(by="Seria Węża 🐍", ascending=False).head(10).reset_index(drop=True)
+                df_snake_s.index += 1
+                st.table(df_snake_s[["Użytkownik", "Seria Węża 🐍"]])
             else:
                 st.info("Brak rekordów w Wężu.")
 
@@ -1469,10 +1437,10 @@ elif choice == "🏆 Arena Wyzwań":
         # 4. TWOJA POZYCJA
         try:
             df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
-            my_rank_list = df_pos[df_pos["Użytkownik"] == u.capitalize()].index
-            if not my_rank_list.empty:
-                my_rank = my_rank_list[0] + 1
-                st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank}** na **{len(df_final)}** użytkowników.")
+            my_row = df_pos[df_pos["Użytkownik"] == u.capitalize()]
+            if not my_row.empty:
+                my_rank = my_row.index[0] + 1
+                st.info(f"Twoja pozycja w rankingu ognia: **{my_rank}** na **{len(df_final)}** osób.")
         except:
             pass
 
