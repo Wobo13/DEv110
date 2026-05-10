@@ -2074,20 +2074,17 @@ elif choice == "📖 Słownik":
                 st.toast("Usunięto! 🗑️")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V235 - Multilang: Pełna separacja danych) ---
+# --- 25. STATYSTYKI (V240 - Multilang: Pełna separacja rekordów i nauki) ---
 elif choice == "📊 Statystyki":
-    # Pobieramy aktualny język i kod z sesji
+    # Pobieramy aktualny język i kod z sesji (DE/CS)
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📊 Statystyki: {current_lang_name}")
     
-    # 1. FILTROWANIE DANYCH POD JĘZYK
-    # Tworzymy df_full (wszystko) i df (tylko wybrany język)
+    # 1. FILTROWANIE DANYCH POD JĘZYK (Słówka)
     df_full = pd.DataFrame(st.session_state.flashcards)
-    
     if not df_full.empty:
-        # Filtrujemy główne zestawienie po języku
         df = df_full[df_full.get("lang", "de") == L_CODE].copy()
     else:
         df = pd.DataFrame()
@@ -2096,41 +2093,51 @@ elif choice == "📊 Statystyki":
     
     # 2. METRYKI GŁÓWNE
     c1, c2 = st.columns(2)
-    # Wielkość bazy tylko dla wybranego języka
     c1.metric(f"Słówek ({current_lang_name})", len(df))
-    # Passa jest globalna dla konta (motywuje do nauki czegokolwiek)
+    # Passa pozostaje globalna jako ogólna motywacja konta
     c2.metric("Passa Nauki (Global)", f"{ud.get('streak', 0)} dni")
     
     st.write("---")
 
-    # --- REKORDY GIER (Globalne dla konta) ---
-    st.subheader("🏆 Moje Rekordy w Grach")
+    # --- 3. REKORDY GIER (Zależne od języka DE/CS) ---
+    st.subheader(f"🏆 Moje Rekordy ({current_lang_name})")
     t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balonowy Wyścig", "🐍 Lingwistyczny Wąż"])
     
+    # Dynamiczne klucze do bazy (np. memory_scores_de lub memory_scores_cs)
+    mem_key = f"memory_scores_{L_CODE}"
+    bal_key = f"top_balloons_{L_CODE}"
+    # Zabezpieczenie dla starej nazwy kolumny balonu, jeśli istniała
+    bal_legacy_key = f"baloon_scores_{L_CODE}"
+
     with t_mem:
-        mem_scores = ud.get("memory_scores", [])
-        if mem_scores:
+        # Odczytujemy wyniki tylko dla wybranego języka
+        mem_scores = ud.get(mem_key, [])
+        if mem_scores and isinstance(mem_scores, list):
             top3_mem = sorted([float(s) for s in mem_scores])[:3]
             m_cols = st.columns(3)
             icons = ["🥇", "🥈", "🥉"]
             for i, score in enumerate(top3_mem):
-                if i < len(m_cols): m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+                if i < len(m_cols):
+                    m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
         else:
-            st.info("Zagraj w Memory, aby ustanowić rekord!")
+            st.info(f"Zagraj w Memory ({current_lang_name}), aby ustanowić rekord!")
 
     with t_bal:
-        # Pobieramy rekordy z top_balloons (zgodnie z V3.0 w Sekcji 16)
-        bal_scores = ud.get("top_balloons", [])
-        if bal_scores:
+        # Próba odczytu z nowej kolumny, a jeśli pusta - ze starej wersji językowej
+        bal_scores = ud.get(bal_key, ud.get(bal_legacy_key, []))
+        if bal_scores and isinstance(bal_scores, list):
             top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
             b_cols = st.columns(3)
             icons = ["🥇", "🥈", "🥉"]
             for i, score in enumerate(top3_bal):
-                if i < len(b_cols): b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
+                if i < len(b_cols):
+                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
         else:
-            st.info("Zagraj w Balonowy Wyścig, aby zdobyć punkty!")
+            st.info(f"Zagraj w Balonowy Wyścig ({current_lang_name}), aby zdobyć punkty!")
 
     with t_snake:
+        # Wąż na ten moment przechowuje rekord w user_data w sposób globalny, 
+        # ale wyświetlamy go tutaj dla spójności
         s_max = ud.get("snake_best_chain", 0)
         s_wins = ud.get("snake_wins", 0)
         s_loss = ud.get("snake_losses", 0)
@@ -2144,7 +2151,7 @@ elif choice == "📊 Statystyki":
 
     st.write("---")
     
-    # 3. CZAS NAUKI I FAZY (Zależne od języka)
+    # 4. CZAS NAUKI I FAZY (Zależne od języka)
     col_top1, col_top2 = st.columns(2)
     
     with col_top1:
@@ -2189,33 +2196,26 @@ elif choice == "📊 Statystyki":
             p_list = [{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]
             st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
         else:
-            st.info("Brak danych dla tego języka.")
+            st.info("Brak danych.")
 
     st.write("---")
     
-    # 4. PROGNOZA POWTÓREK (Tylko dla wybranego języka)
+    # 5. PROGNOZA POWTÓREK
     st.subheader(f"📅 Prognoza: {current_lang_name}")
     if not df.empty:
         sched = []
         today_dt = date.today()
         for i in range(10):
             target_date = str(today_dt + timedelta(days=i))
-            if i == 0:
-                count = len(df[df['next_review'] <= target_date])
-                label = "Dzisiaj"
-            else:
-                count = len(df[df['next_review'] == target_date])
-                label = (today_dt + timedelta(days=i)).strftime("%d.%m")
+            count = len(df[df['next_review'] <= target_date]) if i == 0 else len(df[df['next_review'] == target_date])
+            label = "Dzisiaj" if i == 0 else (today_dt + timedelta(days=i)).strftime("%d.%m")
             sched.append({"Dzień": label, "Liczba słówek": count})
         st.dataframe(pd.DataFrame(sched), use_container_width=True, hide_index=True)
-    else:
-        st.info("Dodaj słówka, aby zobaczyć prognozę.")
 
     st.write("---")
     
-    # 5. POZIOMY I ŹRÓDŁA (Tylko dla wybranego języka)
+    # 6. POZIOMY I ŹRÓDŁA
     col_stats1, col_stats2 = st.columns(2)
-    
     with col_stats1:
         st.subheader("📈 Słówka wg poziomu")
         if not df.empty:
@@ -2223,7 +2223,6 @@ elif choice == "📊 Statystyki":
             level_data = []
             today_str = str(date.today())
             for lvl in levels:
-                # Szukamy słówek które mają dany poziom w kategorii
                 mask = df['category'].str.contains(lvl, case=False, na=False)
                 u_lvl = df[mask]
                 total = len(u_lvl)
@@ -2231,8 +2230,6 @@ elif choice == "📊 Statystyki":
                 perc = int(round((mastered / total) * 100)) if total > 0 else 0
                 level_data.append({"Poziom": lvl, "Słówek": total, "Opanowane": f"{perc}%"})
             st.dataframe(pd.DataFrame(level_data), use_container_width=True, hide_index=True)
-        else:
-            st.info("Brak danych.")
             
     with col_stats2:
         st.subheader("📌 Źródła pozyskania")
@@ -2240,8 +2237,6 @@ elif choice == "📊 Statystyki":
             origin_counts = df['origin'].value_counts().reset_index()
             origin_counts.columns = ['Źródło', 'Liczba słówek']
             st.dataframe(origin_counts, use_container_width=True, hide_index=True)
-        else:
-            st.info("Brak danych.")
         
     st.write("---")
     st.subheader("📝 Historia rozwiązanych testów")
@@ -2251,8 +2246,6 @@ elif choice == "📊 Statystyki":
         hist_df = hist_df[["date", "score", "total", "perc"]]
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
-    else:
-        st.info("Brak rozwiązanych testów.")
 
 # --- 26. KONTO ---
 elif choice == "⚙️ Moje Konto":
