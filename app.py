@@ -565,7 +565,7 @@ if choice == "🏠 Start":
             else:
                 st.write("Baza jest pusta.")
 
-# --- 8. POWTÓRKI & TRENING (V263 - Multilang + Diacritics Insensitive) ---
+# --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -609,7 +609,10 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         st.success("Sesja zakończona! 🏆")
         if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn"):
             for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
-                if k in st.session_state: del st.session_state[k]
+                full_key = f"{pfx}_{k}" if k != "list" and k != "idx" and k != "mode" else f"{pfx}_{k}"
+                # Bezpieczne czyszczenie kluczy
+                if f"{pfx}_{k}" in st.session_state: 
+                    del st.session_state[f"{pfx}_{k}"]
             st.rerun()
     else:
         @st.fragment
@@ -620,13 +623,15 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 return
             c = cards[idx]
             
-            if f"{pfx}_dir" not in st.session_state:
-                st.session_state[f"{pfx}_dir"] = random.choice([0, 1])
+            # Klucz kierunku (losowanie DE->PL lub PL->DE)
+            dir_key = f"{pfx}_dir"
+            if dir_key not in st.session_state:
+                st.session_state[dir_key] = random.choice([0, 1])
 
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            is_target_foreign = (st.session_state[f"{pfx}_dir"] == 1)
+            is_target_foreign = (st.session_state[dir_key] == 1)
             display_word = c["de"] if not is_target_foreign else c["pl"]
             target_lang_label = "Polski" if not is_target_foreign else current_lang_name
             correct_val = c["pl"] if not is_target_foreign else c["de"]
@@ -651,9 +656,8 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                # --- KLUCZOWA ZMIANA: Normalizacja odporna na akcenty ---
                 def clean_text(text, is_foreign):
-                    t = normalize_text(text) # Używa nowej funkcji z Sekcji 2
+                    t = normalize_text(text)
                     if is_foreign and L_CODE == "de":
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
@@ -661,13 +665,10 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_foreign)
                 correct_synonyms = re.split(r'[/,;]', correct_val)
                 correct_synonyms = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
-                
                 is_correct = user_ans in correct_synonyms
                 
-                if is_correct:
-                    st.success(f"✅ Dobrze! Poprawne znaczenia: {correct_val}")
-                else:
-                    st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
+                if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
+                else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
                 if auto_audio: play_audio(c['de'], lang=L_CODE)
 
@@ -684,7 +685,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         new_date = str(date.today() + timedelta(days=d))
                         update_word(c['id'], {"next_review": new_date})
                         
-                        # Synchronizacja statystyk w locie
+                        # Synchronizacja statystyk
                         for card in st.session_state.flashcards:
                             if card['id'] == c['id']:
                                 card['next_review'] = new_date
@@ -692,14 +693,20 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
-                        if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
+                        # POPRAWKA del:
+                        if dir_key in st.session_state: 
+                            del st.session_state[dir_key]
+                            
                         if st.session_state[f"{pfx}_idx"] >= len(cards): st.rerun()
                         else: st.rerun(scope="fragment")
                 else:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
-                        if f"{pfx}_dir" in st.session_state: del f"{pfx}_dir"
+                        # POPRAWKA del:
+                        if dir_key in st.session_state: 
+                            del st.session_state[dir_key]
+                            
                         st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
 
         flashcard_engine()
