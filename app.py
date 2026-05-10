@@ -550,36 +550,47 @@ if choice == "🏠 Start":
             else:
                 st.write("Baza jest pusta.")
 
-# --- 8. POWTÓRKI & TRENING (V259 - Inteligentne synonimy) ---
+# --- 8. POWTÓRKI & TRENING (V260 - Multilang: DE/CS + SRS + Synonimy) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
-    st.header(choice)
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"{choice}: {current_lang_name}")
     
     pfx = "rep" if is_r else "trn"
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
+    # 1. FILTROWANIE BAZY SŁÓWEK POD AKTUALNY JĘZYK
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
+    # Pobieranie tagów tylko dla aktualnego języka
     all_tags = set()
-    for c in st.session_state.flashcards:
+    for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox("Zakres nauki:", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
+    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
-    if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
-        pool = [c for c in st.session_state.flashcards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
+    # 2. INICJALIZACJA KOLEJKI NAUKI
+    if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag or st.session_state.get(f"{pfx}_last_lang") != L_CODE:
+        pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
+        
         if is_r:
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
+        
         random.shuffle(pool)
         st.session_state[f"{pfx}_list"] = pool
         st.session_state[f"{pfx}_idx"] = 0
         st.session_state[f"{pfx}_last_tag"] = sel_tag
+        st.session_state[f"{pfx}_last_lang"] = L_CODE # Zapobiega mieszaniu języków przy zmianie w Sidebarze
         st.session_state[f"{pfx}_mode"] = "ask"
 
     cards = st.session_state.get(f"{pfx}_list", [])
     
     if not cards:
-        st.success("Brak słówek w tej sekcji! ✨")
+        st.success(f"Świetnie! Brak słówek do nauki w sekcji {choice} ({current_lang_name}). ✨")
     elif st.session_state[f"{pfx}_idx"] >= len(cards):
         st.balloons()
         st.success("Sesja zakończona! 🏆")
@@ -602,17 +613,19 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
             st.progress(idx / len(cards))
             st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            is_target_de = (st.session_state[f"{pfx}_dir"] == 1)
-            display_word = c["de"] if not is_target_de else c["pl"]
-            target_lang = "Polski" if not is_target_de else "Niemiecki"
-            correct_val = c["pl"] if not is_target_de else c["de"]
+            is_target_foreign = (st.session_state[f"{pfx}_dir"] == 1)
+            display_word = c["de"] if not is_target_foreign else c["pl"]
+            target_lang_label = "Polski" if not is_target_foreign else current_lang_name
+            correct_val = c["pl"] if not is_target_foreign else c["de"]
 
+            # Grafika karty
+            border_color = "#4CAF50" if is_r else "#FF9800"
             st.markdown(f'''
                 <div style="font-size:2.6em; text-align:center; padding:40px; 
-                background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
+                background: #111; border:3px solid {border_color}; 
                 border-radius:20px; margin-bottom:10px; color: white; line-height: 1.2;">
                     <div style="font-size:0.35em; color:gray; margin-bottom:5px; text-transform: uppercase;">
-                        Tłumaczysz na: {target_lang}
+                        Tłumaczysz na: {target_lang_label}
                     </div>
                     {display_word}
                 </div>
@@ -620,27 +633,23 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
             if st.session_state[f"{pfx}_mode"] == "ask":
                 with st.form(key=f"{pfx}_f_{idx}", clear_on_submit=True):
-                    u_in = st.text_input(f"Odpowiedź ({target_lang}):", key=f"{pfx}_in_{idx}")
+                    u_in = st.text_input(f"Odpowiedź ({target_lang_label}):", key=f"{pfx}_in_{idx}")
                     if st.form_submit_button("Sprawdź", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_user_ans"] = u_in
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                # --- NOWA LOGIKA SPRAWDZANIA SYNONIMÓW ---
-                def clean_text(text, is_german):
+                # Logika sprawdzania synonimów
+                def clean_text(text, is_foreign):
                     t = normalize_text(text)
-                    if is_german:
+                    if is_foreign and L_CODE == "de":
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
 
-                user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_de)
-                
-                # Rozbijamy poprawną odpowiedź na listę synonimów
-                # Dzielimy po: / lub , lub ;
+                user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_foreign)
                 correct_synonyms = re.split(r'[/,;]', correct_val)
-                correct_synonyms = [clean_text(s, is_target_de) for s in correct_synonyms if s.strip()]
+                correct_synonyms = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
                 
-                # Sprawdzamy czy odpowiedź użytkownika jest w liście synonimów
                 is_correct = user_ans in correct_synonyms
                 
                 if is_correct:
@@ -648,14 +657,20 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 else:
                     st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
                 
+                # Audio i przykłady (Lektor dostosowany do L_CODE)
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                if auto_audio: play_audio(c['de'], fex)
-                if fex: st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
+                
+                if auto_audio: 
+                    # Zawsze czytamy słowo w języku obcym (c['de']) z akcentem L_CODE
+                    play_audio(c['de'], fex, lang=L_CODE)
+                
+                if fex: 
+                    st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
 
                 st.divider()
                 if is_r:
-                    st.write("Oceń trudność:")
+                    st.write("Oceń trudność (algorytm SRS):")
                     col1, col2, col3 = st.columns(3)
                     d = None
                     if col1.button("🔴 Trudne"): d = 1
