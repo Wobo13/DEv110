@@ -1284,17 +1284,16 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR SŁÓW (V311 - Fix Lang Leak & UI) ---
+# --- 14. KONSTRUKTOR SŁÓW (V312 - With Undo Function & Fix UI) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h1>", unsafe_allow_html=True)
 
-    # 1. CSS - Wymuszenie widoczności przycisków
+    # 1. CSS - Poprawa widoczności i stylistyka
     st.markdown("""
         <style>
-            /* Styl dla liter w gridzie */
             .stButton > button {
                 border: 1px solid rgba(255, 255, 255, 0.2) !important;
                 background: rgba(255, 255, 255, 0.05) !important;
@@ -1314,28 +1313,24 @@ elif choice == "🏗️ Konstruktor":
                 border: 1px dashed #ff4b4b;
                 border-radius: 15px;
                 margin: 20px 0;
+                min-height: 100px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. FILTROWANIE BAZY (Kluczowy Fix)
-    # Pobieramy TYLKO słówka, które mają przypisany aktualny język (L_CODE)
+    # 2. FILTROWANIE DANYCH
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
     
     if not lang_cards:
-        st.warning(f"Baza {current_lang_name} jest pusta. Dodaj słówka w sekcji Dodaj/Skaner!")
+        st.warning(f"Baza {current_lang_name} jest pusta.")
     else:
-        # Resetowanie gry przy zmianie języka
-        if "konstr_lang_ref" not in st.session_state or st.session_state.konstr_lang_ref != L_CODE:
-            st.session_state.konstr_lang_ref = L_CODE
-            for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
-                if k in st.session_state: del st.session_state[k]
-
-        if "konstr_word" not in st.session_state:
+        # Inicjalizacja gry
+        if "konstr_word" not in st.session_state or st.session_state.get("konstr_lang_ref") != L_CODE:
             card = random.choice(lang_cards)
-            # 'de' w Twojej bazie to słowo obce (zarówno dla DE jak i CS)
             word = str(card['de']).strip()
-            
             letters = list(word)
             random.shuffle(letters)
             
@@ -1343,9 +1338,10 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_pl = card['pl']
             st.session_state.konstr_pool = letters
             st.session_state.konstr_ans = ""
-            st.session_state.konstr_used_indices = []
+            st.session_state.konstr_used_indices = [] # Lista indeksów z pool, które zostały kliknięte
+            st.session_state.konstr_lang_ref = L_CODE
 
-        # UI Zadania
+        # Panel Zadania
         st.markdown(f"""
             <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; text-align: center;">
                 <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Przetłumacz na {current_lang_name}:</div>
@@ -1353,7 +1349,7 @@ elif choice == "🏗️ Konstruktor":
             </div>
         """, unsafe_allow_html=True)
 
-        # Slot na odpowiedź
+        # Slot na odpowiedź (wizualizacja progresu)
         target_word = st.session_state.konstr_word
         display_ans = ""
         for i in range(len(target_word)):
@@ -1363,38 +1359,53 @@ elif choice == "🏗️ Konstruktor":
                 display_ans += "_"
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # Siatka liter
+        # 3. SIATKA LITER
         st.write("<div style='text-align:center; color: #888; margin-bottom:10px;'>DOSTĘPNE LITERY:</div>", unsafe_allow_html=True)
         cols = st.columns(6)
         for idx, char in enumerate(st.session_state.konstr_pool):
             col_idx = idx % 6
             with cols[col_idx]:
                 label = "␣" if char == " " else char
+                # Jeśli indeks jest na liście użytych, przycisk jest nieaktywny
                 is_used = idx in st.session_state.konstr_used_indices
                 if st.button(label, key=f"btn_k_{idx}", disabled=is_used, use_container_width=True):
                     st.session_state.konstr_ans += char
                     st.session_state.konstr_used_indices.append(idx)
                     st.rerun()
 
-        st.write("")
-        c1, c2 = st.columns(2)
-        if c1.button("🔄 Resetuj", use_container_width=True):
+        st.divider()
+
+        # 4. PRZYCISKI FUNKCYJNE (Reset, Cofnij, Pomiń)
+        c1, c2, c3 = st.columns(3)
+        
+        if c1.button("🔄 Reset", use_container_width=True):
             st.session_state.konstr_ans = ""
             st.session_state.konstr_used_indices = []
             st.rerun()
-        if c2.button("⏭️ Pomiń", use_container_width=True):
+            
+        # --- NOWA FUNKCJA: COFNIJ ---
+        can_undo = len(st.session_state.konstr_used_indices) > 0
+        if c2.button("⬅️ Cofnij", use_container_width=True, disabled=not can_undo):
+            if st.session_state.konstr_ans:
+                # Usuwamy ostatni znak ze stringa odpowiedzi
+                st.session_state.konstr_ans = st.session_state.konstr_ans[:-1]
+                # Usuwamy ostatni indeks z listy użytych (uwalniamy literę)
+                st.session_state.konstr_used_indices.pop()
+                st.rerun()
+            
+        if c3.button("⏭️ Pomiń", use_container_width=True):
             del st.session_state.konstr_word
             st.rerun()
 
-        # Wynik
+        # 5. WALIDACJA WYNIKU
         if st.session_state.konstr_ans == target_word:
             st.balloons()
-            st.success(f"Brawo! Poprawne słowo: **{target_word}**")
+            st.success(f"Brawo! Poprawnie: **{target_word}**")
             if st.button("Następne ➡️", type="primary", use_container_width=True):
                 del st.session_state.konstr_word
                 st.rerun()
         elif len(st.session_state.konstr_ans) >= len(target_word):
-            st.error("Błąd w pisowni! Spróbuj zresetować.")
+            st.error("Coś poszło nie tak. Użyj 'Cofnij' lub 'Reset'.")
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
