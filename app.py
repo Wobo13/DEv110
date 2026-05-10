@@ -550,7 +550,7 @@ if choice == "🏠 Start":
             else:
                 st.write("Baza jest pusta.")
 
-# --- 8. POWTÓRKI & TRENING (V261 - Multilang + Przywrócony SRS 1-3-7) ---
+# --- 8. POWTÓRKI & TRENING (V262 - Multilang + Fix Stats Sync) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -562,19 +562,15 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. FILTROWANIE SŁÓWEK POD AKTUALNY JĘZYK
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-    
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
-    # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag or st.session_state.get(f"{pfx}_last_lang") != L_CODE:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
-        
         if is_r:
             today_str = str(date.today())
             pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
@@ -646,39 +642,41 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_foreign)
                 correct_synonyms = re.split(r'[/,;]', correct_val)
                 correct_synonyms = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
-                
                 is_correct = user_ans in correct_synonyms
                 
-                if is_correct:
-                    st.success(f"✅ Dobrze! Poprawne znaczenia: {correct_val}")
-                else:
-                    st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
+                if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
+                else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                exs = c.get("examples", [])
-                fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                
-                if auto_audio: 
-                    play_audio(c['de'], fex, lang=L_CODE)
-                
-                if fex: 
-                    st.info(f"💡 Przykład: **{fex}**\n\n({exs[0].get('pl','')})")
+                if auto_audio: play_audio(c['de'], lang=L_CODE)
 
                 st.divider()
                 if is_r:
                     st.write("Oceń trudność (SRS):")
                     col1, col2, col3 = st.columns(3)
                     d = None
-                    # PRZYWRÓCONE WARTOŚCI: 1, 3, 7
                     if col1.button("🔴 Trudne"): d = 1
                     if col2.button("🟡 Średnie"): d = 3
                     if col3.button("🟢 Łatwe"): d = 7
                     
                     if d:
-                        update_word(c['id'], {"next_review": str(date.today() + timedelta(days=d))})
+                        new_date = str(date.today() + timedelta(days=d))
+                        # 1. Aktualizacja w Supabase
+                        update_word(c['id'], {"next_review": new_date})
+                        
+                        # 2. KLUCZOWY FIX: Aktualizacja lokalnej sesji flashcards
+                        # Dzięki temu Statystyki od razu zobaczą zmianę bez F5
+                        for card in st.session_state.flashcards:
+                            if card['id'] == c['id']:
+                                card['next_review'] = new_date
+                                break
+                        
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
                         if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
-                        st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
+                        
+                        # Jeśli to było ostatnie słowo, robimy pełny rerun dla statystyk
+                        if st.session_state[f"{pfx}_idx"] >= len(cards): st.rerun()
+                        else: st.rerun(scope="fragment")
                 else:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_idx"] += 1
