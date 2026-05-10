@@ -72,7 +72,7 @@ def play_audio(txt, ex_txt=None):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- 3. FUNKCJE DANYCH (V5 - Reset statystyk dziennych) ---
+# --- 3. FUNKCJE DANYCH (V6 - Inteligentny reset czasu i obsługa wizyt) ---
 def load_user_data(username):
     db = get_db()
     res = db.table("user_data").select("*").eq("username", username).execute()
@@ -82,24 +82,25 @@ def load_user_data(username):
 
     if res.data:
         data = res.data[0]
-        last_date = data.get("last_date") # Data ostatniego osiągnięcia CELU
+        
+        # Pobieramy datę ostatniej AKTUALIZACJI statystyk czasu.
+        # Jeśli pole last_visit_date jest puste w bazie, używamy last_date jako koła ratunkowego.
+        last_visit = data.get("last_visit_date")
+        if not last_visit:
+            last_visit = data.get("last_date", "2000-01-01")
         
         # MECHANIZM RESETU CZASU NA NOWY DZIEŃ
-        # Sprawdzamy pomocniczą zmienną sesyjną, by uniknąć pętli resetu przy odświeżaniu
-        if st.session_state.get("last_session_check") != today_str:
-            # Jeśli w bazie last_date (dzień spełnienia celu) nie jest dzisiejszy,
-            # oznacza to, że dzisiaj użytkownik jeszcze nie uczył się (lub nie skończył celu),
-            # więc zerujemy czas nauki w sesji.
-            if last_date != today_str:
-                data["time_stats"] = {}
-            
-            st.session_state["last_session_check"] = today_str
-            # UWAGA: Tutaj NIE zwiększamy już passy automatycznie przy logowaniu.
-            # Zrobi to funkcja update_activity w Sekcji 5, gdy cel zostanie osiągnięty.
+        # Resetujemy minuty TYLKO JEŚLI ostatnia wizyta zapisana w bazie nie była dzisiaj.
+        if last_visit != today_str:
+            data["time_stats"] = {}
+            # Ustawiamy nową datę wizyty, by przy następnym logowaniu dzisiaj system nie czyścił danych
+            data["last_visit_date"] = today_str
+            # Natychmiastowy zapis do bazy, aby "zaklepać" dzisiejszą wizytę
+            save_user_data(username, data)
         
         return data
 
-    # INICJALIZACJA DLA NOWEGO UŻYTKOWNIKA
+    # INICJALIZACJA DLA ZUPEŁNIE NOWEGO UŻYTKOWNIKA
     init = {
         "username": username, 
         "streak": 0, 
@@ -107,7 +108,8 @@ def load_user_data(username):
         "time_stats": {}, 
         "last_ts": time.time(), 
         "last_seen": datetime.now().strftime("%d.%m %H:%M"),
-        "last_date": "2000-01-01", # Bardzo stara data, aby wymusić start od zera
+        "last_date": "2000-01-01", 
+        "last_visit_date": today_str, # Odnotowujemy pierwszą wizytę
         "test_history": [],
         "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
     }
@@ -115,18 +117,21 @@ def load_user_data(username):
     return init
 
 def save_user_data(username, data):
-    # Tworzymy kopię, by nie modyfikować oryginału w sesji
+    # Tworzymy kopię słownika, aby nie zmieniać obiektu w pamięci podręcznej Streamlit
     d = data.copy()
     if "username" in d:
         del d["username"]
     
-    # Zabezpieczenie typu JSON dla time_stats
+    # Zabezpieczenie formatu JSON dla statystyk czasu
     if "time_stats" in d and isinstance(d["time_stats"], dict):
         d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
     
-    # Upewniamy się, że last_date ma format YYYY-MM-DD
+    # Upewniamy się, że daty nie są puste (Postgres/DATE nie wybacza pustych pól)
     if not d.get("last_date"):
         d["last_date"] = "2000-01-01"
+    
+    # Przy każdym zapisie upewniamy się, że last_visit_date to dzisiaj
+    d["last_visit_date"] = date.today().isoformat()
 
     get_db().table("user_data").update(d).eq("username", username).execute()
 
@@ -146,7 +151,7 @@ def save_word(username, word_obj):
 
 def update_word(word_id, fields):
     try:
-        # Zabezpieczenie typów danych dla bazy (BigInt/Integer)
+        # Zabezpieczenie typów dla bazy danych (BigInt/Integer)
         if "level" in fields and fields["level"] is not None:
             fields["level"] = int(fields["level"])
         if "interval" in fields and fields["interval"] is not None:
@@ -154,7 +159,7 @@ def update_word(word_id, fields):
 
         get_db().table("flashcards").update(fields).eq("id", word_id).execute()
     except Exception as e:
-        st.error(f"⚠️ Błąd bazy danych (update_word): {e}")
+        st.error(f"⚠️ Błąd krytyczny bazy danych (update_word): {e}")
 
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
