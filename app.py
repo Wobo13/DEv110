@@ -406,7 +406,7 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V360 - Laboratorium added to Nauka) ---
+# --- 6. SIDEBAR (V361 - Fixed NameError & Laboratorium) ---
 with st.sidebar:
     # 1. Stylizacja CSS dla minimalistycznego i spójnego menu
     st.markdown("""
@@ -458,6 +458,7 @@ with st.sidebar:
         wiedza = int((strong / len(all_c)) * 100)
 
     current_stats = ud.get("time_stats", {})
+    # Kod "Lab" musi być w liście, aby czas w Laboratorium się naliczał
     m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
@@ -468,7 +469,7 @@ with st.sidebar:
     st.progress(min(mins / goal, 1.0))
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # 5. Funkcja pomocnicza do generowania elementów menu
+    # 5. Funkcja pomocnicza do elementów menu
     def menu_item(label, target):
         is_selected = st.session_state.get("choice") == target
         btn_label = f"{'▶ ' if is_selected else ''}{label}"
@@ -480,7 +481,7 @@ with st.sidebar:
     menu_item("🏠 Start", "🏠 Start")
     choice_now = st.session_state.get("choice", "🏠 Start")
 
-    # GRUPA: NAUKA (Z Laboratorium i Sparing AI)
+    # GRUPA: NAUKA
     nauka_options = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]
     with st.expander("📚 Nauka", expanded=(choice_now in nauka_options)):
         for item in nauka_options:
@@ -492,7 +493,7 @@ with st.sidebar:
         for item in gry_options:
             menu_item(item, item)
 
-    # Narzędzia i Administracja
+    # Narzędzia
     st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
     for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
@@ -504,6 +505,9 @@ with st.sidebar:
     if st.button("🚪 Wyloguj", use_container_width=True):
         st.session_state.clear()
         st.rerun()
+
+# --- KLUCZOWA LINIA (Naprawia NameError) ---
+choice = st.session_state.get("choice", "🏠 Start")
 
 # --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
 
