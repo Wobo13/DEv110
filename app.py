@@ -1520,7 +1520,7 @@ elif choice == "🏗️ Konstruktor":
                 del st.session_state.konstr_word
                 st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V1.5 - Multilang + Difficulty Levels) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V1.6 - Multilang + Difficulty Levels + Logic Fix) ---
 elif choice == "🐍 Lingwistyczny Wąż":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -1528,20 +1528,36 @@ elif choice == "🐍 Lingwistyczny Wąż":
     st.header("🐍 Lingwistyczny Wąż")
     st.write("Rywalizuj z systemem! Wygrywa ten, kto doda ostatnie możliwe słowo z Twojej bazy.")
 
-    # 1. PRZYGOTOWANIE BAZY (Tylko rzeczowniki dla sensownej rozgrywki)
+    # 1. FUNKCJE POMOCNICZE LOGIKI
     def is_noun(card):
+        """Sprawdza czy słowo jest rzeczownikiem na podstawie kategorii lub rodzajnika."""
         c = str(card.get('category', '')).lower()
         d = str(card.get('de', '')).lower()
-        # Dla DE: szukamy rodzajników lub tagu. Dla CS: głównie tagu "rzeczownik"
         return "rzeczownik" in c or "noun" in c or d.startswith(("der ", "die ", "das "))
 
-    lang_cards = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE and is_noun(c)]
+    def get_first_letter(text):
+        """Wyciąga pierwszą literę słowa, ignorując niemieckie rodzajniki."""
+        clean = text.lower().strip()
+        clean = re.sub(r'^(der|die|das)\s+', '', clean)
+        clean = "".join(filter(str.isalpha, clean))
+        return clean[0] if clean else ""
+
+    def get_last_letter(text):
+        """Wyciąga ostatnią literę słowa, ignorując niemieckie rodzajniki."""
+        clean = text.lower().strip()
+        clean = re.sub(r'^(der|die|das)\s+', '', clean)
+        clean = "".join(filter(str.isalpha, clean))
+        return clean[-1] if clean else ""
+
+    # 2. PRZYGOTOWANIE BAZY
+    # Filtrujemy tylko rzeczowniki dla aktualnego języka
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE and is_noun(c)]
 
     if len(lang_cards) < 5:
-        st.warning(f"Masz za mało rzeczowników w bazie ({current_lang_name}), aby zacząć grę (min. 5).")
+        st.warning(f"Masz za mało rzeczowników w bazie ({current_lang_name}), aby zacząć grę (wymagane min. 5).")
         st.stop()
 
-    # 2. EKRAN STARTOWY (POZIOM TRUDNOŚCI)
+    # 3. EKRAN STARTOWY (WYBÓR TRUDNOŚCI)
     if "snake_active" not in st.session_state:
         st.subheader("Wybierz poziom trudności:")
         diff = st.radio("Poziom:", ["Łatwy", "Średni", "Trudny"], horizontal=True, label_visibility="collapsed")
@@ -1556,34 +1572,20 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
         st.stop()
 
-    # 3. POMOCNIK LOGIKI (Ostatnia litera bez rodzajnika)
-    def get_last_letter(text):
-        clean = text.lower().strip()
-        # Usuwamy niemieckie rodzajniki do kalkulacji litery
-        clean = re.sub(r'^(der|die|das)\s+', '', clean)
-        # Usuwamy znaki niebędące literami
-        clean = "".join(filter(str.isalpha, clean))
-        return clean[-1] if clean else ""
-
-    def get_first_letter(text):
-        clean = text.lower().strip()
-        clean = re.sub(r'^(der|die|das)\s+', '', clean)
-        clean = "".join(filter(str.isalpha, clean))
-        return clean[0] if clean else ""
-
     # 4. SILNIK GRY (FRAGMENT)
     @st.fragment
     def snake_engine():
         chain = st.session_state.snake_chain
-        last_word = chain[-1]
-        req_letter = get_last_letter(last_word['de'])
+        last_word_obj = chain[-1]
+        req_letter = get_last_letter(last_word_obj['de'])
 
-        # UI: Łańcuch (Grafika nienaruszona)
+        # UI: Łańcuch
         st.markdown("### Łańcuch:")
         display_chain = chain[-6:]
         cols = st.columns(len(display_chain))
         for i, word in enumerate(display_chain):
             with cols[i]:
+                # Logika kolorów: parzystość od początku łańcucha
                 is_system = (len(chain) - len(display_chain) + i) % 2 == 0
                 color = "#1E88E5" if is_system else "#4CAF50"
                 st.markdown(f"""
@@ -1595,26 +1597,28 @@ elif choice == "🐍 Lingwistyczny Wąż":
         
         st.write("")
         if st.session_state.snake_status != "end":
-            st.info(f"Ostatnie słowo: **{last_word['de']}**. Czekamy na słowo na literę: **{req_letter.upper()}**")
+            st.info(f"Ostatnie słowo: **{last_word_obj['de']}**. Czekamy na słowo na literę: **{req_letter.upper()}**")
 
         # KOLEJ GRACZA
         if st.session_state.snake_status == "player":
-            with st.form("snake_input", clear_on_submit=True):
+            with st.form("snake_input_form", clear_on_submit=True):
                 u_in = st.text_input(f"Twoja kolej ({L_CODE.upper()}):").strip().lower()
                 c1, c2 = st.columns([3, 1])
                 submit = c1.form_submit_button("Dodaj ogniwo 🔗", use_container_width=True)
                 give_up = c2.form_submit_button("🏳️ Poddaję się", use_container_width=True)
 
                 if submit:
-                    # Walidacja
-                    found = [c for c in lang_cards if normalize_text(c['de']) == normalize_text(u_in) or normalize_text(re.sub(r'^(der|die|das)\s+', '', c['de'].lower())) == normalize_text(u_in)]
+                    # Szukamy słowa w przefiltrowanej bazie rzeczowników
+                    found = [c for c in lang_cards if 
+                             normalize_text(c['de']) == normalize_text(u_in) or 
+                             normalize_text(re.sub(r'^(der|die|das)\s+', '', c['de'].lower())) == normalize_text(u_in)]
                     
                     if not found:
                         st.error("Nie znaleziono takiego rzeczownika w Twojej bazie!")
                     elif found[0]['id'] in st.session_state.snake_used_ids:
                         st.error("To słowo zostało już użyte!")
                     elif get_first_letter(u_in) != req_letter:
-                        st.error(f"Słowo musi zaczynać się na '{req_letter.upper()}'!")
+                        st.error(f"Słowo musi zaczynać się na literę '{req_letter.upper()}'!")
                     else:
                         st.session_state.snake_chain.append(found[0])
                         st.session_state.snake_used_ids.add(found[0]['id'])
@@ -1630,10 +1634,10 @@ elif choice == "🐍 Lingwistyczny Wąż":
         elif st.session_state.snake_status == "system":
             with st.spinner("System myśli..."):
                 time.sleep(1.5)
-                # Szukanie odpowiedzi w bazie gracza
+                # System szuka odpowiedzi w bazie gracza (pierwsza litera = wymagana litera)
                 possible = [c for c in lang_cards if get_first_letter(c['de']) == req_letter and c['id'] not in st.session_state.snake_used_ids]
                 
-                # APLIKACJA POZIOMU TRUDNOŚCI
+                # Szansa na błąd zależna od poziomu
                 fail_chance = {"Łatwy": 0.40, "Średni": 0.15, "Trudny": 0.0}.get(st.session_state.snake_diff, 0)
                 
                 if possible and random.random() > fail_chance:
