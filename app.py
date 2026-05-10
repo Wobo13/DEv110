@@ -1336,7 +1336,7 @@ elif choice == "🎈 Balonowy Wyścig":
         
         balloon_engine()
             
-# --- 20. ARENA WYZWAŃ (V300 - Pełny Ranking z nowymi grami) ---
+# --- 20. ARENA WYZWAŃ (V301 - Pełna kompatybilność z nowymi typami danych) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
@@ -1365,26 +1365,45 @@ elif choice == "🏆 Arena Wyzwań":
             uname = user.get("username", "Anonim")
             u_cards = df_cards[df_cards["username"] == uname]
             
-            # Obliczanie wiedzy %
+            # Wiedza %
             wiedza_val = 0
             if not u_cards.empty:
-                strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
-                wiedza_val = int((strong / len(u_cards)) * 100)
+                try:
+                    strong = len([r for r in u_cards["next_review"] if (pd.to_datetime(r).date() - today).days > 6])
+                    wiedza_val = int((strong / len(u_cards)) * 100)
+                except:
+                    wiedza_val = 0
             
-            # Najlepsze Memory (najniższy czas)
-            m_scores = user.get("memory_scores", [])
-            best_mem = min([float(s) for s in m_scores]) if m_scores and isinstance(m_scores, list) else None
+            # --- POPRAWKA DLA GIER (Obsługa list/tablic SQL) ---
+            
+            # Memory (najniższy czas)
+            m_scores = user.get("memory_scores")
+            best_mem = None
+            if isinstance(m_scores, list) and len(m_scores) > 0:
+                try:
+                    best_mem = min([float(s) for s in m_scores if s is not None])
+                except:
+                    best_mem = None
 
-            # Najlepszy Balon (najwyższy wynik)
-            b_scores = user.get("baloon_scores", [])
-            best_bal = max([int(s) for s in b_scores]) if b_scores and isinstance(b_scores, list) else None
+            # Balony (najwyższy wynik) - tutaj była główna blokada
+            b_scores = user.get("baloon_scores")
+            best_bal = 0
+            if isinstance(b_scores, list) and len(b_scores) > 0:
+                try:
+                    # Filtrujemy tylko wartości liczbowe
+                    valid_scores = [int(s) for s in b_scores if str(s).isdigit()]
+                    if valid_scores:
+                        best_bal = max(valid_scores)
+                except:
+                    best_bal = 0
 
-            # Najlepszy Wąż (najdłuższa seria)
+            # Wąż (najdłuższa seria)
             best_snake = user.get("snake_best_chain", 0)
+            if pd.isna(best_snake): best_snake = 0
 
             ranking_data.append({
                 "Użytkownik": uname.capitalize(),
-                "Ogień 🔥": user.get("streak", 0),
+                "Ogień 🔥": user.get("streak", 0) if not pd.isna(user.get("streak")) else 0,
                 "Wiedza 🧠": wiedza_val,
                 "Najlepsze Memory ⏱️": best_mem,
                 "Rekord Balony 🎈": best_bal,
@@ -1395,8 +1414,6 @@ elif choice == "🏆 Arena Wyzwań":
         df_final = pd.DataFrame(ranking_data)
 
         # 3. WYŚWIETLANIE TABEL
-        
-        # --- Rząd 1: Passa i Wiedza ---
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🔥 Najdłuższa Passa")
@@ -1414,7 +1431,6 @@ elif choice == "🏆 Arena Wyzwań":
 
         st.write("---")
 
-        # --- Rząd 2: Rankingi Gier ---
         st.subheader("🧩 Mistrzowie Gier (Top 10)")
         t_m, t_b, t_s = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
 
@@ -1430,6 +1446,7 @@ elif choice == "🏆 Arena Wyzwań":
                 st.info("Brak rekordów w Memory.")
 
         with t_b:
+            # Filtrujemy tylko te rekordy, które faktycznie mają punkty
             df_bal = df_final[df_final["Rekord Balony 🎈"] > 0]
             if not df_bal.empty:
                 df_bal_sorted = df_bal.sort_values(by="Rekord Balony 🎈", ascending=False).head(10).reset_index(drop=True)
@@ -1450,10 +1467,12 @@ elif choice == "🏆 Arena Wyzwań":
         st.divider()
         
         # 4. TWOJA POZYCJA
-        df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
         try:
-            my_rank = df_pos[df_pos["Użytkownik"] == u.capitalize()].index[0] + 1
-            st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank}** na **{len(df_final)}** użytkowników.")
+            df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
+            my_rank_list = df_pos[df_pos["Użytkownik"] == u.capitalize()].index
+            if not my_rank_list.empty:
+                my_rank = my_rank_list[0] + 1
+                st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank}** na **{len(df_final)}** użytkowników.")
         except:
             pass
 
