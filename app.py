@@ -1296,14 +1296,14 @@ elif choice == "🎈 Balonowy Wyścig":
                             st.toast("Pudło!"); next_bal_round(); st.rerun(scope="fragment")
         engine()
             
-# --- 20. ARENA WYZWAŃ (V303 - Pełna synchronizacja z nową kolumną top_balloons) ---
+# --- 20. ARENA WYZWAŃ (V304 - Przywrócony klasyczny wygląd) ---
 elif choice == "🏆 Arena Wyzwań":
     st.header("🏆 Arena Wyzwań")
     st.write("Sprawdź, jak wypadasz na tle innych użytkowników!")
 
     db = get_db()
     
-    # 1. POBIERANIE DANYCH
+    # 1. BEZPIECZNE POBIERANIE DANYCH
     try:
         all_users_res = db.table("user_data").select("*").execute().data
         all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
@@ -1325,7 +1325,7 @@ elif choice == "🏆 Arena Wyzwań":
             uname = user.get("username", "Anonim")
             u_cards = df_cards[df_cards["username"] == uname]
             
-            # Wiedza %
+            # Obliczanie wiedzy %
             wiedza_val = 0
             if not u_cards.empty:
                 try:
@@ -1334,85 +1334,89 @@ elif choice == "🏆 Arena Wyzwań":
                 except:
                     wiedza_val = 0
             
-            # --- POBIERANIE REKORDÓW Z GIER ---
-            
-            # Memory (najniższy czas)
+            # Najlepsze Memory (najniższy czas)
             m_scores = user.get("memory_scores", [])
             best_mem = min([float(s) for s in m_scores]) if isinstance(m_scores, list) and m_scores else None
 
-            # Balony (NOWA KOLUMNA: top_balloons)
+            # Najlepszy Balon (NOWA KOLUMNA top_balloons)
             b_scores = user.get("top_balloons", [])
             best_bal = max([int(s) for s in b_scores]) if isinstance(b_scores, list) and b_scores else 0
 
-            # Wąż (najdłuższa seria)
+            # Najlepszy Wąż (najdłuższa seria)
             best_snake = user.get("snake_best_chain", 0)
-            if pd.isna(best_snake): best_snake = 0
 
             ranking_data.append({
                 "Użytkownik": uname.capitalize(),
-                "Ogień 🔥": user.get("streak", 0) if not pd.isna(user.get("streak")) else 0,
+                "Ogień 🔥": user.get("streak", 0),
                 "Wiedza 🧠": wiedza_val,
-                "Memory ⏱️": best_mem,
-                "Balony 🎈": best_bal,
-                "Wąż 🐍": best_snake
+                "Najlepsze Memory ⏱️": best_mem,
+                "Rekord Balony 🎈": best_bal,
+                "Seria Węża 🐍": best_snake,
+                "Ostatnio aktywny": user.get("last_seen", "Brak")
             })
 
         df_final = pd.DataFrame(ranking_data)
 
-        # 3. WYŚWIETLANIE RANKINGÓW
-        t1, t2 = st.tabs(["🔥 Ogólne (Passa i Wiedza)", "🧩 Rankingi Gier"])
+        # 3. WYŚWIETLANIE TABEL (Klasyczny układ: 2 kolumny)
+        
+        # --- Rząd 1: Passa i Wiedza ---
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🔥 Najdłuższa Passa")
+            top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5).reset_index(drop=True)
+            top_streak.index += 1
+            st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
 
-        with t1:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("🔥 Najdłuższa Passa")
-                top_streak = df_final.sort_values(by="Ogień 🔥", ascending=False).head(5).reset_index(drop=True)
-                top_streak.index += 1
-                st.table(top_streak[["Użytkownik", "Ogień 🔥"]])
+        with col2:
+            st.subheader("🧠 Mistrzowie Wiedzy")
+            top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5).reset_index(drop=True)
+            top_knowledge.index += 1
+            display_knowledge = top_knowledge[["Użytkownik", "Wiedza 🧠"]].copy()
+            display_knowledge["Wiedza 🧠"] = display_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
+            st.table(display_knowledge)
 
-            with col2:
-                st.subheader("🧠 Mistrzowie Wiedzy")
-                top_knowledge = df_final.sort_values(by="Wiedza 🧠", ascending=False).head(5).reset_index(drop=True)
-                top_knowledge.index += 1
-                display_knowledge = top_knowledge[["Użytkownik", "Wiedza 🧠"]].copy()
-                display_knowledge["Wiedza 🧠"] = display_knowledge["Wiedza 🧠"].apply(lambda x: f"{x}%")
-                st.table(display_knowledge)
+        st.write("---")
 
-        with t2:
-            st.subheader("🏆 Najlepsi w grach")
-            c3, c4 = st.columns(2)
-            
-            with c3:
-                st.markdown("#### ⏱️ Memory (Czas)")
-                df_mem = df_final.dropna(subset=["Memory ⏱️"])
-                if not df_mem.empty:
-                    df_mem_s = df_mem.sort_values(by="Memory ⏱️", ascending=True).head(5).reset_index(drop=True)
-                    df_mem_s.index += 1
-                    disp_mem = df_mem_s[["Użytkownik", "Memory ⏱️"]].copy()
-                    disp_mem["Memory ⏱️"] = disp_mem["Memory ⏱️"].apply(lambda x: f"{x}s")
-                    st.table(disp_mem)
-                else:
-                    st.info("Brak rekordów.")
+        # --- Rząd 2: Rankingi Gier (3 Zakładki) ---
+        st.subheader("🧩 Mistrzowie Gier (Top 10)")
+        t_m, t_b, t_s = st.tabs(["⏱️ Memory", "🎈 Balony", "🐍 Wąż"])
 
-            with c4:
-                st.markdown("#### 🎈 Balony (Punkty)")
-                df_bal = df_final[df_final["Balony 🎈"] > 0]
-                if not df_bal.empty:
-                    df_bal_s = df_bal.sort_values(by="Balony 🎈", ascending=False).head(5).reset_index(drop=True)
-                    df_bal_s.index += 1
-                    st.table(df_bal_s[["Użytkownik", "Balony 🎈"]])
-                else:
-                    st.info("Zagraj w Balony, aby się tu pojawić!")
+        with t_m:
+            df_mem = df_final.dropna(subset=["Najlepsze Memory ⏱️"])
+            if not df_mem.empty:
+                df_mem_sorted = df_mem.sort_values(by="Najlepsze Memory ⏱️", ascending=True).head(10).reset_index(drop=True)
+                df_mem_sorted.index += 1
+                display_mem = df_mem_sorted[["Użytkownik", "Najlepsze Memory ⏱️"]].copy()
+                display_mem["Najlepsze Memory ⏱️"] = display_mem["Najlepsze Memory ⏱️"].apply(lambda x: f"{x}s")
+                st.table(display_mem)
+            else:
+                st.info("Brak rekordów w Memory.")
+
+        with t_b:
+            df_bal = df_final[df_final["Rekord Balony 🎈"] > 0]
+            if not df_bal.empty:
+                df_bal_sorted = df_bal.sort_values(by="Rekord Balony 🎈", ascending=False).head(10).reset_index(drop=True)
+                df_bal_sorted.index += 1
+                st.table(df_bal_sorted[["Użytkownik", "Rekord Balony 🎈"]])
+            else:
+                st.info("Brak rekordów w Balonach.")
+
+        with t_s:
+            df_snake = df_final[df_final["Seria Węża 🐍"] > 0]
+            if not df_snake.empty:
+                df_snake_sorted = df_snake.sort_values(by="Seria Węża 🐍", ascending=False).head(10).reset_index(drop=True)
+                df_snake_sorted.index += 1
+                st.table(df_snake_sorted[["Użytkownik", "Seria Węża 🐍"]])
+            else:
+                st.info("Brak rekordów w Wężu.")
 
         st.divider()
         
         # 4. TWOJA POZYCJA
         try:
             df_pos = df_final.sort_values(by="Ogień 🔥", ascending=False).reset_index(drop=True)
-            my_row = df_pos[df_pos["Użytkownik"] == u.capitalize()]
-            if not my_row.empty:
-                my_rank = my_row.index[0] + 1
-                st.info(f"Twoja pozycja w rankingu ognia: **{my_rank}** na **{len(df_final)}** osób.")
+            my_rank = df_pos[df_pos["Użytkownik"] == u.capitalize()].index[0] + 1
+            st.info(f"Twoja aktualna pozycja w rankingu ogólnym ognia: **{my_rank}** na **{len(df_final)}** użytkowników.")
         except:
             pass
 
