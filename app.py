@@ -1523,125 +1523,101 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V300 - Stylized & Multilang) ---
+# --- 16. BALONOWY WYŚCIG (V310 - API Safe & Multilang) ---
 elif choice == "🎈 Balonowy Wyścig":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h2 style='text-align: center;'>🎈 Balonowy Wyścig: {current_lang_name}</h2>", unsafe_allow_html=True)
 
-    # 1. CSS DLA WIZUALNEGO UPGRADE'U (Przyciski-Balony)
+    # 1. CSS DLA WIZUALNEGO UPGRADE'U
     st.markdown("""
         <style>
             .balloon-btn {
                 display: inline-block;
                 padding: 15px 25px;
-                margin: 10px;
-                font-size: 1.2rem;
+                font-size: 1.1rem;
                 font-weight: bold;
                 text-align: center;
                 background: linear-gradient(145deg, #ff4b4b, #ff7676);
-                border-radius: 50px; /* Wygląd balonu/pigułki */
-                box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3);
+                border-radius: 50px;
                 color: white !important;
                 border: none;
-                cursor: pointer;
                 transition: all 0.3s ease;
-                width: 100%;
-            }
-            .balloon-btn:hover {
-                transform: scale(1.05) translateY(-5px);
-                box-shadow: 0 8px 25px rgba(255, 75, 75, 0.5);
-                filter: brightness(1.1);
             }
             .target-card {
                 background: rgba(255, 255, 255, 0.05);
                 border: 2px solid #ff4b4b;
                 border-radius: 20px;
-                padding: 40px;
+                padding: 30px;
                 text-align: center;
-                font-size: 2.5rem;
+                font-size: 2.2rem;
                 font-weight: bold;
-                margin-bottom: 30px;
-                box-shadow: inset 0 0 20px rgba(255,75,75,0.1);
-            }
-            .stats-box {
-                display: flex;
-                justify-content: space-around;
                 margin-bottom: 20px;
-                font-family: monospace;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. LOGIKA GRY
+    # 2. LOGIKA GRY (API SAFE - Korzystamy tylko z session_state.flashcards)
+    # Filtrujemy słówka z pamięci sesji zamiast pytać bazę danych w pętli
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     if len(lang_cards) < 4:
-        st.warning(f"Potrzebujesz minimum 4 słówek w języku {current_lang_name}, aby zacząć wyścig!")
+        st.warning(f"Potrzebujesz minimum 4 słówek w języku {current_lang_name}, aby zacząć!")
     else:
-        # Inicjalizacja stanu gry
         if "bal_active" not in st.session_state:
             st.session_state.bal_active = True
             st.session_state.bal_score = 0
             st.session_state.bal_start_time = time.time()
-            st.session_state.bal_duration = 30 # 30 sekund na rundę
+            st.session_state.bal_duration = 30
             
-        # Sprawdzenie czasu
         elapsed = time.time() - st.session_state.bal_start_time
         time_left = max(0, int(st.session_state.bal_duration - elapsed))
 
         if time_left <= 0:
             st.session_state.bal_active = False
             st.balloons()
-            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Twój wynik: {st.session_state.bal_score}</h2></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Wynik: {st.session_state.bal_score}</h2></div>", unsafe_allow_html=True)
             if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
-                del st.session_state.bal_active
+                for k in ["bal_active", "bal_target", "bal_options"]:
+                    if k in st.session_state: del st.session_state[k]
                 st.rerun()
         else:
-            # Losowanie nowej rundy jeśli nie ma aktywnego słowa
+            # Losowanie nowej rundy - całkowicie lokalnie
             if "bal_target" not in st.session_state:
                 target = random.choice(lang_cards)
-                # Losujemy 3 błędne odpowiedzi
-                wrong = random.sample([c['pl'] for c in lang_cards if c['id'] != target['id']], 2)
+                # Bierzemy błędne odpowiedzi z lokalnej listy lang_cards
+                other_options = [c['pl'] for c in lang_cards if c['id'] != target['id']]
+                
+                # Zabezpieczenie: jeśli mamy mało słówek, dobieramy tyle ile się da (max 2)
+                num_wrong = min(len(other_options), 2)
+                wrong = random.sample(other_options, num_wrong)
+                
                 options = [target['pl']] + wrong
                 random.shuffle(options)
                 
                 st.session_state.bal_target = target
                 st.session_state.bal_options = options
 
-            # 3. INTERFEJS GRY
-            st.markdown(f"""
-                <div class="stats-box">
-                    <div style="font-size: 1.5rem;">⏱️ {time_left}s</div>
-                    <div style="font-size: 1.5rem; color: #ffbc00;">⭐ {st.session_state.bal_score} pkt</div>
-                </div>
-            """, unsafe_allow_html=True)
+            # 3. INTERFEJS
+            st.markdown(f"<div style='display:flex; justify-content:space-around;'><b>⏱️ {time_left}s</b> <b style='color:#ffbc00;'>⭐ {st.session_state.bal_score}</b></div>", unsafe_allow_html=True)
 
-            # Słowo do odgadnięcia (DE/CS)
-            st.markdown(f"""
-                <div class="target-card">
-                    {st.session_state.bal_target['de']}
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='target-card'>{st.session_state.bal_target['de']}</div>", unsafe_allow_html=True)
 
-            # Przyciski-Balony (Opcje PL)
-            cols = st.columns(3)
+            # Wyświetlamy dostępne balony
+            cols = st.columns(len(st.session_state.bal_options))
             for i, opt in enumerate(st.session_state.bal_options):
                 with cols[i]:
-                    # Używamy standardowego buttona Streamlit, ale stylizowanego przez CSS
-                    if st.button(opt, key=f"bal_opt_{i}", use_container_width=True):
+                    if st.button(opt, key=f"bal_btn_{i}", use_container_width=True):
                         if opt == st.session_state.bal_target['pl']:
                             st.session_state.bal_score += 10
-                            # Czyścimy cel, aby wylosować nowy przy następnym rerun
                             del st.session_state.bal_target
                             st.rerun()
                         else:
                             st.session_state.bal_score = max(0, st.session_state.bal_score - 5)
-                            st.toast("Pudło! 💨", icon="❌")
+                            st.toast("Pudło! ❌")
 
-        st.divider()
-        if st.button("Wyjdź z gry", use_container_width=True):
+        if st.button("Wyjdź", use_container_width=True):
             for k in ["bal_active", "bal_score", "bal_start_time", "bal_target", "bal_options"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
