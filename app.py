@@ -2779,45 +2779,41 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V450 - Final Stability & Regex Fix) ---
+# --- 28. SPARING AI (V460 - German Grammar Logic Fix & Diacritics Tolerance) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Szlifuj język w praktyce. Rozmawiaj, a w razie trudności sprawdź ukryte tłumaczenie.")
+    st.write("Rozmawiaj swobodnie. System nie będzie Cię karał za brak specjalnych znaków, ale zadba o poprawną strukturę.")
 
-    # 1. ZAANSOWANA FUNKCJA PARSOWANIA (Wyciąga dane nawet z błędnego JSON)
+    # 1. FUNKCJA NAPRAWCZA DLA JSON (Regex + Cleanup)
     def extract_ai_data(raw_text):
         data = {"reply": "", "translation": "", "correction": None}
         try:
-            # Próba standardowa
             cleaned = json.loads(raw_text)
             data["reply"] = cleaned.get("reply", raw_text)
             data["translation"] = cleaned.get("translation", "")
             corr = cleaned.get("correction", "Brak uwag")
-            data["correction"] = corr if corr != "Brak uwag" else None
+            data["correction"] = corr if corr not in ["Brak uwag", ""] else None
         except:
-            # Jeśli JSON padnie, szukamy kluczy tekstowo (Regex)
             import re
             r = re.search(r'"reply":\s*"(.*?)"', raw_text)
             t = re.search(r'"translation":\s*"(.*?)"', raw_text)
             c = re.search(r'"correction":\s*"(.*?)"', raw_text)
-            
             data["reply"] = r.group(1) if r else raw_text
-            data["translation"] = t.group(1) if t else "Błąd tłumaczenia"
+            data["translation"] = t.group(1) if t else ""
             corr = c.group(1) if c else "Brak uwag"
             data["correction"] = corr if corr not in ["Brak uwag", ""] else None
-            
         return data
 
     scenarios = {
         "🍽️ Restauracja": {"de": "Im Restaurant bestellen", "cs": "V restauraci"},
-        "🏥 U lekarza": {"de": "Beim Arzt - Symptome beschreiben", "cs": "U lékaře"},
-        "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovní pohovor"},
-        "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nákup w obchodě"},
-        "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letišti / nádraží"},
-        "☕ Luźna rozmowa": {"de": "Smalltalk o pogodne i hobby", "cs": "Pokec o počasí a hobby"}
+        "🏥 U lekarza": {"de": "Beim Arzt - Symptome beschreiben", "cs": "U lekarze"},
+        "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovni pohovor"},
+        "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nakup v obchode"},
+        "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letisti / nadrazi"},
+        "☕ Luźna rozmowa": {"de": "Smalltalk o pogodzie i hobby", "cs": "Pokec o pocasi a hobby"}
     }
 
     if "chat_history" not in st.session_state: st.session_state.chat_history = []
@@ -2833,7 +2829,6 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history = []
                     st.rerun()
     else:
-        # 2. INICJALIZACJA ROZMOWY
         if not st.session_state.chat_history:
             with st.spinner("Budowanie scenariusza..."):
                 details = scenarios[st.session_state.chat_scenario]
@@ -2846,10 +2841,7 @@ elif choice == "🤖 Sparing AI":
                     })
                     st.rerun()
                 except:
-                    st.error("Błąd połączenia. Spróbuj zmienić temat.")
-                    if st.button("Powrót"):
-                        st.session_state.chat_scenario = None
-                        st.rerun()
+                    st.error("Błąd połączenia.")
                     st.stop()
 
         # Belka kontrolna
@@ -2876,16 +2868,23 @@ elif choice == "🤖 Sparing AI":
                     if st.button("🔊 Słuchaj", key=f"sp_aud_{i}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        # 4. OBSŁUGA WIADOMOŚCI
+        # 4. OBSŁUGA WIADOMOŚCI (Z poprawionym promptem)
         u_in = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
 
         if u_in:
             st.session_state.chat_history.append({"role": "user", "content": u_in})
             with st.spinner("AI analizuje..."):
+                # POPRAWIONY PROMPT (LOGIKA DE + TOLERANCJA ZNAKÓW)
                 prompt = f"""
                 Jesteś nauczycielem {current_lang_name}. Scenariusz: {st.session_state.chat_scenario}.
-                Użytkownik: "{u_in}". Odpowiedz naturalnie i sprawdź błędy.
-                Zwróć JSON: {{"reply": "...", "translation": "...", "correction": "Poprawna forma + wyjaśnienie PL LUB 'Brak uwag'"}}
+                Użytkownik napisał: "{u_in}".
+                
+                Zasady korekty:
+                1. Jeśli język to Niemiecki (de), pamiętaj, że WSZYSTKIE RZECZOWNIKI piszemy DUŻĄ LITERĄ. Nigdy nie sugeruj pisania ich małą literą.
+                2. Jeśli użytkownik używa zwykłych liter zamiast znaków specjalnych (np. 'u' zamiast 'ü', 'ss' zamiast 'ß', 'a' zamiast 'á'), NIE traktuj tego jako błąd gramatyczny. Możesz to zignorować lub wspomnieć o tym tylko jako o drobnej uwadze, jeśli to konieczne.
+                3. Skup się na błędach w szyku zdania, rodzajnikach (der/die/das) i odmianie.
+                
+                Zwróć JSON: {{"reply": "naturalna odpowiedź", "translation": "tłumaczenie PL", "correction": "Poprawna forma w {current_lang_name} + krótkie wyjaśnienie PL LUB 'Brak uwag'"}}
                 """
                 try:
                     raw_res = get_openai_response(prompt)
@@ -2896,5 +2895,5 @@ elif choice == "🤖 Sparing AI":
                         "role": "assistant", "content": data["reply"], "trans": data["translation"]
                     })
                     st.rerun()
-                except Exception as e:
-                    st.error("Problem z analizą wiadomości. Spróbuj wysłać ją ponownie.")
+                except:
+                    st.error("Błąd analizy wiadomości.")
