@@ -885,9 +885,12 @@ elif choice == "🕹️ Quiz":
 
         quiz_engine()
         
-# --- 10. FISZKI (Wersja z obsługą Auto-Audio) ---
+# --- 10. FISZKI (V350 - Multilang Themes & National Colors) ---
 elif choice == "🎴 Fiszki":
-    st.header("🎴 Fiszki")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🎴 Fiszki: {current_lang_name}")
     
     # 1. Pobieranie ustawienia z bazy
     user_settings = st.session_state.user_data.get("settings", {})
@@ -897,64 +900,76 @@ elif choice == "🎴 Fiszki":
     if "f_idx" not in st.session_state: st.session_state.f_idx = 0
     if "f_flipped" not in st.session_state: st.session_state.f_flipped = False
     
-    # Pobieranie tagów do filtra
+    # Pobieranie tagów do filtra (tylko dla aktualnego języka)
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
     all_tags = set()
-    for c in st.session_state.flashcards:
+    for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="f_tag_sel")
-    cards = [c for c in st.session_state.flashcards if sel_tag == "Wszystkie" or sel_tag in str(c.get('category',''))]
+    cards = [c for c in lang_cards if sel_tag == "Wszystkie" or sel_tag in str(c.get('category',''))]
 
     if not cards:
-        st.warning("Brak słówek w wybranej kategorii.")
+        st.warning(f"Brak słówek w języku {current_lang_name} dla wybranej kategorii.")
     else:
         # Silnik Fiszek jako izolowany fragment
         @st.fragment
         def flashcards_ui():
-            # Zabezpieczenie indeksu
             if st.session_state.f_idx >= len(cards): st.session_state.f_idx = 0
             if st.session_state.f_idx < 0: st.session_state.f_idx = len(cards) - 1
             
             c = cards[st.session_state.f_idx]
-            txt = c["pl"] if st.session_state.f_flipped else c["de"]
-            color = "#2E7D32" if st.session_state.f_flipped else "#C62828"
-            label = "POLSKI" if st.session_state.f_flipped else "DEUTSCH"
+            
+            # --- LOGIKA KOLORÓW NARODOWYCH ---
+            if st.session_state.f_flipped:
+                # STRONA POLSKA (Biało-Czerwona)
+                txt = c["pl"]
+                border_color = "#DC143C" # Polska czerwień
+                label = "🇵🇱 POLSKI"
+                glow_style = "box-shadow: 0 10px 30px rgba(220, 20, 60, 0.4);"
+            else:
+                # STRONA OBCA
+                txt = c["de"]
+                if L_CODE == "de":
+                    # NIEMCY (Czarny-Czerwony-Złoty -> Akcent na Złoty/Czerwony)
+                    border_color = "#FFCC00" # Niemiecki złoty
+                    label = "🇩🇪 DEUTSCH"
+                    glow_style = "box-shadow: 0 10px 30px rgba(255, 204, 0, 0.3);"
+                else:
+                    # CZECHY (Niebieski-Biały-Czerwony -> Akcent na Niebieski)
+                    border_color = "#11457E" # Czeski niebieski
+                    label = "🇨🇿 ČEŠTINA"
+                    glow_style = "box-shadow: 0 10px 30px rgba(17, 69, 126, 0.4);"
 
             # Renderowanie graficzne karty (HTML)
             st.markdown(f"""
                 <div style="min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; 
-                background:#111; border:5px solid {color}; border-radius:40px; color:white; text-align:center; padding:30px; 
-                box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px;">
-                    <div style="color:{color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:0.9em;">{label}</div>
+                background:#111; border:6px solid {border_color}; border-radius:40px; color:white; text-align:center; padding:30px; 
+                {glow_style} margin-bottom: 20px; transition: all 0.3s ease;">
+                    <div style="color:{border_color}; font-weight:bold; letter-spacing:3px; margin-bottom:15px; font-size:1.1em;">{label}</div>
                     <div style="font-size:3.5em; font-weight:700; line-height:1.1; margin-bottom:10px;">{txt}</div>
                 </div>
             """, unsafe_allow_html=True)
 
-            # Obsługa przykładów i dźwięku (widoczne po obróceniu)
+            # Obsługa przykładów i dźwięku
             if st.session_state.f_flipped:
                 exs = c.get("examples", [])
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
                 if fex:
-                    st.info(f"🇩🇪 **{fex}**\n\n🇵🇱 {exs[0].get('pl','')}")
-                    
-                    # Logika Auto-Audio dla słówka i przykładu
-                    if auto_audio:
-                        play_audio(c['de'], fex)
+                    # Flaga przy przykładzie zależna od języka
+                    flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
+                    st.info(f"{flag} **{fex}**\n\n🇵🇱 {exs[0].get('pl','')}")
+                    if auto_audio: play_audio(c['de'], fex, lang=L_CODE)
                 else:
-                    # Logika Auto-Audio tylko dla słówka
-                    if auto_audio:
-                        play_audio(c['de'])
+                    if auto_audio: play_audio(c['de'], lang=L_CODE)
 
-                # Manualny przycisk dźwięku, jeśli Auto-Audio jest na OFF
                 if not auto_audio:
                     if st.button("🔊 Odsłuchaj wymowę", use_container_width=True):
-                        if fex:
-                            play_audio(c['de'], fex)
-                        else:
-                            play_audio(c['de'])
+                        play_audio(c['de'], fex if fex else None, lang=L_CODE)
             
-            # Nawigacja - używamy st.rerun(scope="fragment") dla maksymalnej płynności
+            # Nawigacja
             st.write("")
             c1, c2, c3 = st.columns([1, 2, 1])
             
@@ -972,7 +987,6 @@ elif choice == "🎴 Fiszki":
                 st.session_state.f_flipped = False
                 st.rerun(scope="fragment")
 
-        # Uruchomienie interfejsu
         flashcards_ui()
 
 # --- 11. TESTY (V300 - Full Multilang + Lang-Specific History) ---
