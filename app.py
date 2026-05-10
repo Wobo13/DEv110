@@ -1284,109 +1284,130 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR (V1.4 - Poprawiona logika resetu i bezpiecznika) ---
+# --- 18. KONSTRUKTOR SŁÓW (V300 - Stylized & Multilang) ---
 elif choice == "🏗️ Konstruktor":
-    st.header("🏗️ Konstruktor Słów")
-    st.write("Ułóż niemieckie słowo lub frazę. Pamiętaj o spacjach!")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor Słów: {current_lang_name}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: gray;'>Ułóż słowo z dostępnych liter. Pamiętaj o znakach specjalnych!</p>", unsafe_allow_html=True)
 
-    # Funkcja pomocnicza do czyszczenia stanu gry
-    def reset_konstructor():
-        for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
-            if k in st.session_state: 
-                del st.session_state[k]
+    # 1. CSS DLA KLIENTA (STYLISTYKA PRZYCISKÓW)
+    st.markdown("""
+        <style>
+            .letter-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: white;
+                font-size: 1.5rem;
+                font-weight: bold;
+                height: 60px;
+                transition: all 0.2s ease;
+                cursor: pointer;
+            }
+            .letter-btn:hover {
+                background: rgba(255, 75, 75, 0.2);
+                border-color: #ff4b4b;
+                transform: translateY(-2px);
+            }
+            .slot-box {
+                font-size: 2.5rem;
+                letter-spacing: 8px;
+                text-align: center;
+                color: #ff4b4b;
+                font-family: monospace;
+                padding: 20px;
+                background: rgba(0,0,0,0.2);
+                border-radius: 15px;
+                margin: 20px 0;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # 1. INICJALIZACJA GRY
-    if "kon_word" not in st.session_state:
-        if len(st.session_state.flashcards) < 3:
-            st.warning("Dodaj min. 3 słówka, aby uruchomić ten moduł.")
-            st.stop()
-        
-        pool = [c for c in st.session_state.flashcards if len(c['de']) > 2]
-        target = random.choice(pool if pool else st.session_state.flashcards)
-        
-        de_word = target['de'].strip()
-        letters = [l for l in de_word]
-        random.shuffle(letters)
-        
-        st.session_state.kon_word = de_word
-        st.session_state.kon_pl = target['pl']
-        st.session_state.kon_shuffled = letters
-        st.session_state.kon_user = []
-        st.session_state.kon_done = False
-        st.session_state.kon_seed = random.randint(1000, 9999)
-
-    # 2. SILNIK GRY (Fragment UI)
-    @st.fragment
-    def constructor_engine():
-        # BEZPIECZNIK: Jeśli sesja wyparuje, pokazujemy tylko jeden, działający przycisk
-        if "kon_word" not in st.session_state or "kon_seed" not in st.session_state:
-            st.warning("Sesja gry wygasła lub została zresetowana.")
-            if st.button("🚀 Kliknij tutaj, aby zacząć nową rundę", use_container_width=True):
-                reset_konstructor()
-                st.rerun()
-            return
-
-        kon_w = st.session_state.kon_word
-        kon_pl = st.session_state.kon_pl
-        shuffled = st.session_state.kon_shuffled
-        user_build = st.session_state.kon_user
-        k_seed = st.session_state.kon_seed
-        
-        st.info(f"### 🇵🇱 {kon_pl}")
-        
-        # Podgląd postępu
-        current_str = "".join(user_build)
-        remaining = len(kon_w) - len(user_build)
-        display_str = current_str.replace(" ", "•") + "_" * remaining
-        
-        st.markdown(f"""
-            <div style="font-size: 2.5em; text-align: center; letter-spacing: 5px; 
-            padding: 20px; background: #0e1117; border: 2px dashed #444; border-radius: 10px; color: #00ff00; font-family: monospace;">
-                {display_str}
-            </div>
-            <div style="text-align: center; font-size: 0.8em; color: gray; margin-top: 5px;">(• = spacja)</div>
-        """, unsafe_allow_html=True)
-        
-        st.write("")
-
-        # Cofanie ruchu
-        if user_build and not st.session_state.kon_done:
-            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True, key=f"back_{k_seed}"):
-                last_l = st.session_state.kon_user.pop()
-                st.session_state.kon_shuffled.append(last_l)
-                st.rerun(scope="fragment")
-
-        # Kafelki z literami
-        cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
-        for i, letter in enumerate(shuffled):
-            label = "Spacja ␣" if letter == " " else letter
-            if cols[i % 8].button(label, key=f"k_{k_seed}_{i}", use_container_width=True):
-                st.session_state.kon_user.append(letter)
-                st.session_state.kon_shuffled.pop(i)
-                if len(st.session_state.kon_user) == len(kon_w):
-                    st.session_state.kon_done = True
-                st.rerun(scope="fragment")
-
-        # Sprawdzanie wyniku
-        if st.session_state.kon_done:
-            final_guess = "".join(st.session_state.kon_user)
-            if final_guess.lower() == kon_w.lower():
-                st.balloons()
-                st.success(f"🎊 Idealnie! To: **{kon_w}**")
-            else:
-                st.error(f"❌ Prawie! Poprawny zapis: **{kon_w}**")
+    # 2. LOGIKA GRY
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
+    if not lang_cards:
+        st.warning(f"Brak słówek dla języka {current_lang_name}. Dodaj coś do bazy!")
+    else:
+        if "konstr_word" not in st.session_state:
+            card = random.choice(lang_cards)
+            word = card['de'].strip()
+            # Przygotowanie liter: litery ze słowa + 3 losowe
+            letters = list(word)
+            extra = "abcde" if L_CODE == "de" else "pqrst"
+            letters += random.sample(extra, 3)
+            random.shuffle(letters)
             
-            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary", key=f"next_{k_seed}"):
-                reset_konstructor()
+            st.session_state.konstr_word = word
+            st.session_state.konstr_pl = card['pl']
+            st.session_state.konstr_pool = letters
+            st.session_state.konstr_ans = ""
+            st.session_state.konstr_used_indices = []
+
+        # Panel Zadania
+        st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; text-align: center; border-left: 5px solid #ff4b4b;">
+                <span style="font-size: 1.2rem; color: #aaa;">PRZETŁUMACZ:</span><br>
+                <span style="font-size: 2rem; font-weight: bold;">{st.session_state.konstr_pl}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Wyświetlanie postępu (Sloty)
+        display_ans = ""
+        target_word = st.session_state.konstr_word
+        for i in range(len(target_word)):
+            if i < len(st.session_state.konstr_ans):
+                display_ans += st.session_state.konstr_ans[i]
+            else:
+                display_ans += "_"
+        
+        st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
+
+        # 3. SIATKA LITER (Stały układ)
+        cols = st.columns(6) # Stałe 6 kolumn, aby litery nie skakały
+        for idx, char in enumerate(st.session_state.konstr_pool):
+            col_idx = idx % 6
+            with cols[col_idx]:
+                # Wyświetlamy ikonę dla spacji, ale technicznie to spacja
+                label = "␣" if char == " " else char
+                
+                # Przycisk staje się nieaktywny po użyciu (zachowuje miejsce w gridzie)
+                if idx in st.session_state.konstr_used_indices:
+                    st.button(label, key=f"key_{idx}", disabled=True, use_container_width=True)
+                else:
+                    if st.button(label, key=f"key_{idx}", use_container_width=True):
+                        st.session_state.konstr_ans += char
+                        st.session_state.konstr_used_indices.append(idx)
+                        st.rerun()
+
+        st.write("")
+        c1, c2 = st.columns(2)
+        
+        if c1.button("🔄 Resetuj próbę", use_container_width=True):
+            st.session_state.konstr_ans = ""
+            st.session_state.konstr_used_indices = []
+            st.rerun()
+            
+        if c2.button("⏭️ Inne słowo", use_container_width=True):
+            for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
+                if k in st.session_state: del st.session_state[k]
+            st.rerun()
+
+        # 4. SPRAWDZANIE WYNIKU
+        if st.session_state.konstr_ans == target_word:
+            st.balloons()
+            st.success(f"Brawo! Poprawna odpowiedź to: {target_word}")
+            if st.button("Następne słowo ➡️", type="primary", use_container_width=True):
+                for k in ["konstr_word", "konstr_pl", "konstr_pool", "konstr_ans", "konstr_used_indices"]:
+                    if k in st.session_state: del st.session_state[k]
                 st.rerun()
-
-    # Uruchomienie fragmentu
-    constructor_engine()
-
-    # Główny reset (zawsze widoczny pod grą)
-    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="global_reset_kon"):
-        reset_konstructor()
-        st.rerun()
+        elif len(st.session_state.konstr_ans) >= len(target_word):
+            st.error("Coś poszło nie tak... spróbuj zresetować.")
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.2 - Tryb Rywalizacji) ---
 elif choice == "🐍 Lingwistyczny Wąż":
