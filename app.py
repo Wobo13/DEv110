@@ -301,11 +301,20 @@ def update_activity(m):
     if needs_save:
         save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V301 - Pełna synchronizacja z systemem celu) ---
+# --- 6. SIDEBAR (V305 - Obsługa Wielu Języków: DE/CS) ---
 with st.sidebar:
-    # 1. Nagłówek: Nazwa użytkownika + Ogień (Streak)
+    # 1. Inicjalizacja i Wybór Języka
+    if "current_lang" not in st.session_state:
+        st.session_state.current_lang = "Niemiecki"
+
+    # Definicja obsługiwanych języków
+    LANG_MAP = {
+        "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki", "emoji": "🚀"},
+        "Czeski": {"code": "cs", "label": "🇨🇿 Czeski", "emoji": "🦁"}
+    }
+
+    # Nagłówek użytkownika
     user_display = str(u).capitalize()
-    # Pobieramy świeże dane z session_state (zaktualizowane w Sekcji 3/5)
     ud = st.session_state.user_data
     streak = ud.get('streak', 0)
     
@@ -316,41 +325,65 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Obliczanie Wiedzy (% słówek opanowanych)
-    all_c = st.session_state.flashcards
+    st.write("---")
+
+    # Selektor języka
+    selected_lang_name = st.selectbox(
+        "Język nauki:", 
+        options=list(LANG_MAP.keys()),
+        format_func=lambda x: LANG_MAP[x]["label"],
+        key="lang_selector"
+    )
+
+    # Reakcja na zmianę języka
+    if selected_lang_name != st.session_state.current_lang:
+        st.session_state.current_lang = selected_lang_name
+        # Wymuszamy odświeżenie danych przy zmianie języka
+        st.rerun()
+
+    # Pobieramy kod aktualnego języka (np. 'de' lub 'cs')
+    L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
+    L_EMOJI = LANG_MAP[st.session_state.current_lang]["emoji"]
+
+    st.write("---")
+
+    # 2. Filtrowanie słówek pod wybrany język (do statystyk w sidebarze)
+    # Zakładamy, że słówka bez przypisanego języka są Niemieckie (default 'de')
+    all_c_full = st.session_state.flashcards
+    all_c = [c for c in all_c_full if c.get("lang", "de") == L_CODE]
+
+    # 3. Obliczanie Wiedzy dla wybranego języka
     wiedza_perc = 0
     if all_c:
-        # Silne słówka to te, których powtórka jest za ponad 6 dni
-        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
+        today_dt = date.today()
+        strong = len([
+            c for c in all_c 
+            if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6
+        ])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # 3. Obliczanie Celu Dziennego (Suma minut z dzisiaj)
-    # Lista wszystkich kodów modułów, które wliczamy do nauki
+    # 4. Obliczanie Celu Dziennego
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     current_stats = ud.get("time_stats", {})
     
-    # Sumujemy sekundy i zamieniamy na pełne minuty
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
-    
-    # Pobieramy cel z ustawień (domyślnie 20 min)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
     
-    # 4. Wyświetlanie pasków postępu
-    st.caption(f"🧠 Wiedza: {wiedza_perc}%")
+    # 5. Wyświetlanie pasków postępu
+    st.caption(f"🧠 Wiedza ({st.session_state.current_lang}): {wiedza_perc}%")
     st.progress(min(wiedza_perc / 100, 1.0))
     
-    st.caption(f"🎯 Cel: {study_minutes}/{daily_goal}m")
+    st.caption(f"🎯 Cel dnia: {study_minutes}/{daily_goal}m")
     goal_progress = min(study_minutes / daily_goal, 1.0)
     st.progress(goal_progress)
     
-    # Komunikat o sukcesie
     if study_minutes >= daily_goal:
         st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 5. MENU NAWIGACYJNE
+    # 6. MENU NAWIGACYJNE
     menu_options = [
         "🏠 Start", 
         "📅 Powtórki", 
@@ -375,15 +408,13 @@ with st.sidebar:
     if u == ADMIN_USER:
         menu_options.append("👑 Admin")
 
-    # Radio button jako główne menu
     choice = st.radio("Menu", menu_options, label_visibility="collapsed")
     
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # 6. Przycisk wylogowania
+    # 7. Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
-        # Czyścimy parametry URL (tokeny) przy wylogowaniu
         st.query_params.clear()
         st.rerun()
 
