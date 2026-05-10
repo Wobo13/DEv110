@@ -3002,14 +3002,17 @@ elif choice == "🧪 Laboratorium":
                 st.rerun()
 
     # Sidebar info
-    with st.sidebar:
-        st.divider()
-        st.subheader("💡 Ściąga końcówek")
-        if L_CODE == "de":
-            st.write("🔴 **DIE:** -ung, -heit, -keit, -schaft")
-            st.write("🔵 **DER:** -ismus, -or, -er, -ig")
-            st.write("🟢 **DAS:** -chen, -lein, -um, -ment")
-        else:
-            st.write("🔴 **TA:** -ost, -a, -ice")
-            st.write("🔵 **TEN:** spółgłoski (h, k, r...)")
-            st.write("🟢 **TO:** -o, -í, -e")
+    # --- ZAKTUALIZOWANA ŚCIĄGA W SIDEBARZE (KOLORY FLAG) ---
+        with st.sidebar:
+            st.divider()
+            st.subheader("💡 Ściąga końcówek")
+            if L_CODE == "de":
+                # NIEMCY: Czarny (Der), Czerwony (Die), Złoty (Das)
+                st.markdown("⚫ **DER (Męski):** -ismus, -or, -er, -ig")
+                st.markdown("<span style='color:#FF0000;'>🔴</span> **DIE (Żeński):** -ung, -heit, -keit, -schaft", unsafe_allow_html=True)
+                st.markdown("<span style='color:#FFCC00;'>🟡</span> **DAS (Nijaki):** -chen, -lein, -um, -ment", unsafe_allow_html=True)
+            else:
+                # CZECHY: Biały (Ten), Niebieski (Ta), Czerwony (To)
+                st.markdown("⚪ **TEN (Męski):** spółgłoski (h, k, r, d...)")
+                st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
+                st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
