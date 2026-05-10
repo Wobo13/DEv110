@@ -1829,160 +1829,109 @@ elif choice == "📦 Generator":
                 del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V3.1 - Z licznikiem wyskanowanych słówek) ---
+# --- 22. SKANER AI (V270 - Multilang + Vision OCR + Multi-Word Editor) ---
 elif choice == "📸 Skaner AI":
-    st.header("📸 Skaner AI")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"📸 Skaner AI: {current_lang_name}")
+    st.write(f"Zrób zdjęcie tekstu lub wgraj grafikę, a AI wyciągnie z niej słówka w języku {current_lang_name}.")
 
-    # Obsługa komunikatu o sukcesie po zapisie i odświeżeniu
-    if "scan_msg" in st.session_state:
-        st.success(st.session_state.scan_msg)
-        del st.session_state.scan_msg
+    # 1. UPLOAD I CAMERA
+    cam_col, file_col = st.columns(2)
+    img_file = cam_col.camera_input("Zrób zdjęcie tekstu")
+    uploaded_file = file_col.file_uploader("Lub wgraj plik obrazu", type=["jpg", "jpeg", "png"])
 
-    # 1. Inicjalizacja tymczasowej listy w sesji, jeśli nie istnieje
-    if "temp_scanned" not in st.session_state:
-        st.session_state.temp_scanned = []
+    active_img = img_file if img_file else uploaded_file
 
-    # --- WIDOK 1: PRZETWARZANIE OBRAZU ---
-    if not st.session_state.temp_scanned:
-        st.write("Wgraj zdjęcie lub zrób fotkę notatek, aby AI wyciągnęła z nich nowe słówka.")
-        t1, t2 = st.tabs(["📁 Wgraj plik", "📷 Zrób zdjęcie"])
+    if active_img:
+        img_obj = Image.open(active_img)
+        st.image(img_obj, caption="Podgląd skanu", use_container_width=True)
         
-        img_to_process = None
-        with t1:
-            uploaded_file = st.file_uploader("Wybierz zdjęcie (PNG, JPG)", type=["png", "jpg", "jpeg"])
-            if uploaded_file: img_to_process = uploaded_file
-        with t2:
-            camera_file = st.camera_input("Zrób zdjęcie")
-            if camera_file: img_to_process = camera_file
+        if st.button("🔍 Analizuj obraz przez AI", use_container_width=True, type="primary"):
+            with st.spinner(f"Sztuczna inteligencja czyta tekst ({current_lang_name})..."):
+                # Dynamiczna instrukcja zależna od języka
+                lang_instruction = ""
+                if L_CODE == "de":
+                    lang_instruction = "Jeśli znajdziesz niemieckie rzeczowniki, dodaj do nich rodzajniki (der, die, das)."
+                elif L_CODE == "cs":
+                    lang_instruction = "Analizuj tekst w języku CZESKIM. Zwróć uwagę na znaki diakrytyczne (haczki i kreski)."
 
-        if img_to_process:
-            if st.button("🚀 Analizuj i przygotuj listę", type="primary", use_container_width=True):
-                with st.spinner("AI analizuje tekst, wyklucza duplikaty i generuje przykłady..."):
-                    try:
-                        # Pobieramy obecne niemieckie słówka z bazy
-                        existing_de = {str(w.get('de', '')).lower().strip() for w in st.session_state.flashcards}
-                        
-                        image = Image.open(img_to_process)
-                        
-                        prompt = """
-                        Przeanalizuj zdjęcie. Znajdź na nim niemieckie słówka, wyrażenia lub fragmenty notatek.
-                        Dla każdego znalezionego pojęcia:
-                        1. Podaj poprawny niemiecki (z rodzajnikiem dla rzeczowników).
-                        2. Podaj polskie tłumaczenie. 
-                        3. MUSISZ wygenerować dokładnie 3 tagi: część mowy, kategoria tematyczna oraz poziom CEFR.
-                        4. BEZWZGLĘDNIE wygeneruj 1 naturalne zdanie przykładowe po niemiecku z jego polskim tłumaczeniem.
-                        Zwróć TYLKO JSON w formacie: {"flashcards": [{"de": "...", "pl": "...", "category": "...", "examples": [{"de": "...", "pl": "..."}]}]}
-                        """
-                        
-                        raw_res = get_openai_response(prompt, img_obj=image)
-                        raw_res = raw_res.replace("```json", "").replace("```", "").strip()
-                        data = json.loads(raw_res)
-                        
-                        items = data.get("flashcards", data.get("words", []))
-                        
-                        if items:
-                            unique_items = []
-                            skipped_count = 0
-                            
-                            for item in items:
-                                word_de = str(item.get("de", "")).lower().strip()
-                                if word_de and word_de not in existing_de:
-                                    unique_items.append(item)
-                                else:
-                                    skipped_count += 1
+                prompt = f"""Przeanalizuj ten obraz. Wyciągnij z niego listę najważniejszych słówek i fraz w języku {current_lang_name}.
+                {lang_instruction}
+                Dla każdego słowa przygotuj:
+                - de: słowo w języku {current_lang_name}
+                - pl: tłumaczenie na polski
+                - tags: kategorie (np. Poziom, Temat)
+                - ex_de: zdanie przykładowe w języku {current_lang_name}
+                - ex_pl: tłumaczenie zdania na polski
+                
+                Zwróć TYLKO czysty JSON:
+                {{"flashcards": [
+                    {{"de": "...", "pl": "...", "tags": "...", "ex_de": "...", "ex_pl": "..."}}
+                ]}}"""
+                
+                try:
+                    res_raw = get_openai_response(prompt, img_obj=img_obj)
+                    data = json.loads(res_raw)
+                    st.session_state.scanner_results = data.get("flashcards", [])
+                    st.success(f"Znaleziono {len(st.session_state.scanner_results)} słówek!")
+                except Exception as e:
+                    st.error(f"Błąd analizy: {e}")
 
-                            if unique_items:
-                                st.session_state.temp_scanned = unique_items
-                                if skipped_count > 0:
-                                    st.toast(f"ℹ️ Pominięto {skipped_count} słówek (już są w bazie).")
-                                st.rerun()
-                            else:
-                                st.warning(f"AI znalazło {len(items)} słówek, ale wszystkie masz już w słowniku!")
-                        else:
-                            st.warning("Nie znaleziono czytelnych słówek na zdjęciu.")
-                            
-                    except Exception as e:
-                        st.error(f"Błąd analizy AI: {e}")
+    # --- 2. MASOWY EDYTOR WYNIKÓW SKANOWANIA ---
+    if "scanner_results" in st.session_state and st.session_state.scanner_results:
+        st.divider()
+        st.subheader("📝 Edytuj i zatwierdź znalezione słówka")
+        
+        lang_col_label = "Niemiecki" if L_CODE == "de" else "Czeski"
+        
+        # Przygotowanie danych do edytora
+        df_init = []
+        for item in st.session_state.scanner_results:
+            df_init.append({
+                "Zapisz": True,
+                lang_col_label: item.get("de", ""),
+                "Polski": item.get("pl", ""),
+                "Kategorie": item.get("tags", "Skaner AI"),
+                "Przykład": item.get("ex_de", ""),
+                "Przykład PL": item.get("ex_pl", "")
+            })
 
-    # --- WIDOK 2: EDYCJA I WERYFIKACJA ---
-    else:
-        # NOWOŚĆ: Licznik słówek na górze panelu edycji
-        scanned_count = len(st.session_state.temp_scanned)
-        st.subheader(f"📝 Weryfikacja ({scanned_count} nowych słówek)")
-        st.info("Pominięto duplikaty. Sprawdź i edytuj dane przed zapisem.")
+        edited_df = st.data_editor(
+            df_init,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="scanner_data_editor"
+        )
 
-        @st.fragment
-        def review_scanned_items():
-            temp_list = st.session_state.temp_scanned
-            updated_list = []
-            to_delete = None
-
-            for i, item in enumerate(temp_list):
-                with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns([3, 3, 3, 1])
-                    
-                    new_de = c1.text_input("Niemiecki (DE)", item.get('de', ''), key=f"sc_de_{i}")
-                    new_pl = c2.text_input("Polski (PL)", item.get('pl', ''), key=f"sc_pl_{i}")
-                    new_cat = c3.text_input("Tagi", item.get('category', ''), key=f"sc_cat_{i}")
-                    
-                    if c4.button("🗑️", key=f"sc_del_{i}", help="Usuń z listy"):
-                        to_delete = i
-
-                    examples = item.get('examples', [])
-                    if examples and len(examples) > 0:
-                        ex_de = examples[0].get('de', '')
-                        ex_pl = examples[0].get('pl', '')
-                        st.caption(f"💡 Przykład: **{ex_de}** (*{ex_pl}*)")
-                    else:
-                        st.caption("⚠️ Brak przykładu.")
-
-                    updated_list.append({
-                        "de": new_de,
-                        "pl": new_pl,
-                        "category": new_cat,
-                        "examples": examples
-                    })
-
-            if to_delete is not None:
-                st.session_state.temp_scanned.pop(to_delete)
-                st.rerun(scope="fragment")
-
-            st.write("---")
-            col_act1, col_act2 = st.columns(2)
+        col_save, col_cancel = st.columns(2)
+        
+        if col_save.button(f"🚀 Dodaj wybrane do bazy ({current_lang_name})", use_container_width=True, type="primary"):
+            success_count = 0
+            for row in edited_df:
+                if row.get("Zapisz", False):
+                    new_word = {
+                        "de": row[lang_col_label],
+                        "pl": row["Polski"],
+                        "category": row["Kategorie"],
+                        "next_review": str(date.today()),
+                        "level": 0,
+                        "origin": "Skaner AI",
+                        "lang": L_CODE,
+                        "examples": [{"de": row["Przykład"], "pl": row["Przykład PL"]}]
+                    }
+                    save_word(u, new_word)
+                    success_count += 1
             
-            if col_act1.button("🔥 Anuluj wszystko", use_container_width=True):
-                del st.session_state.temp_scanned
-                st.rerun()
+            st.session_state.flashcards = load_flashcards(u)
+            st.success(f"Dodano {success_count} nowych słówek do Twojej bazy {current_lang_name}!")
+            del st.session_state.scanner_results
+            st.rerun()
 
-            if col_act2.button(f"✅ Zapisz {len(updated_list)} słówek", type="primary", use_container_width=True):
-                with st.spinner("Zapisywanie..."):
-                    insert_payload = []
-                    for card in updated_list:
-                        if str(card["de"]).strip() and str(card["pl"]).strip():
-                            insert_payload.append({
-                                "username": u,
-                                "de": str(card["de"]).strip(),
-                                "pl": str(card["pl"]).strip(),
-                                "category": str(card["category"]).strip(),
-                                "examples": card["examples"],
-                                "next_review": str(date.today()),
-                                "origin": "Skaner"
-                            })
-                    
-                    if insert_payload:
-                        get_db().table("flashcards").insert(insert_payload).execute()
-                        st.session_state.flashcards = load_flashcards(u)
-                        st.session_state.user_data["historical_cost"] += 0.05
-                        save_user_data(u, st.session_state.user_data)
-                        
-                        count = len(insert_payload)
-                        del st.session_state.temp_scanned
-                        st.session_state.scan_msg = f"✅ Gotowe! Pomyślnie dodano {count} zweryfikowanych słówek."
-                        st.rerun()
-                    else:
-                        st.error("Lista jest pusta!")
-
-        review_scanned_items()
+        if col_cancel.button("🗑️ Odrzuć skan", use_container_width=True):
+            del st.session_state.scanner_results
+            st.rerun()
         
 # --- 23. DODAJ (V266 - Multilang + Obsługa Przykładów w obu trybach) ---
 elif choice == "➕ Dodaj":
