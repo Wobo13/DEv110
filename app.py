@@ -42,12 +42,13 @@ CLEAN_TIME_LABELS = {
     "admin": "Adm"
 }
 
-# --- 2. SILNIK BAZY I POMOCNIKI ---
+# --- 2. SILNIK BAZY I POMOCNIKI (V220 - Multilang Audio & AI) ---
 def get_db():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     return SyncPostgrestClient(f"{SUPABASE_URL}/rest/v1", headers=headers)
 
-def hash_pw(pw): return hashlib.sha256(str.encode(pw)).hexdigest()
+def hash_pw(pw): 
+    return hashlib.sha256(str.encode(pw)).hexdigest()
 
 def normalize_text(t):
     if not t: return ""
@@ -56,22 +57,51 @@ def normalize_text(t):
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY: raise Exception("Brak klucza API OpenAI.")
     client = OpenAI(api_key=API_KEY)
-    messages = [{"role": "system", "content": "Jesteś ekspertem niemieckiego. Odpowiadaj TYLKO w JSON. Kategorie po polsku, przykłady jako lista {de, pl}."}]
+    
+    # Dynamiczny system prompt - AI będzie wiedziało o jaki język chodzi z treści promptu użytkownika
+    messages = [{"role": "system", "content": "Jesteś ekspertem językowym. Odpowiadaj TYLKO w JSON. Kategorie po polsku, przykłady jako lista {de, pl}."}]
+    
     if img_obj:
-        buf = BytesIO(); img_obj.thumbnail((800, 800)); img_obj.save(buf, format="JPEG")
+        buf = BytesIO()
+        img_obj.thumbnail((800, 800))
+        img_obj.save(buf, format="JPEG")
         img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        messages.append({"role": "user", "content": [{"type": "text", "text": prompt_text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]})
+        messages.append({"role": "user", "content": [
+            {"type": "text", "text": prompt_text}, 
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+        ]})
     else:
         messages.append({"role": "user", "content": prompt_text})
-    res = client.chat.completions.create(model="gpt-4o-mini", messages=messages, response_format={"type": "json_object"})
+        
+    res = client.chat.completions.create(
+        model="gpt-4o-mini", 
+        messages=messages, 
+        response_format={"type": "json_object"}
+    )
     return res.choices[0].message.content
 
-def play_audio(txt, ex_txt=None):
+def play_audio(txt, ex_txt=None, lang='de'):
+    """
+    Odtwarza wymowę słowa i opcjonalnego przykładu.
+    lang: 'de' dla niemieckiego, 'cs' dla czeskiego, 'en' dla angielskiego itd.
+    """
     try:
-        full = f"{txt}. . . . {ex_txt}" if ex_txt else txt
-        f = BytesIO(); tts = gTTS(text=full, lang='de'); tts.write_to_fp(f); f.seek(0)
+        # Konstruujemy pełny tekst do przeczytania (z pauzą między słowem a przykładem)
+        full_text = f"{txt}. . . . {ex_txt}" if ex_txt else txt
+        
+        f = BytesIO()
+        # gTTS używa teraz dynamicznego kodu języka
+        tts = gTTS(text=full_text, lang=lang)
+        tts.write_to_fp(f)
+        f.seek(0)
+        
+        # Odtwarzanie w Streamlit
         st.audio(f, format="audio/mp3", autoplay=True)
-    except: pass
+    except Exception as e:
+        # Ciche pominięcie błędu audio, aby nie przerywać nauki
+        pass
+
+# --- KONIEC SEKCJI 2 ---
 
 # --- 3. FUNKCJE DANYCH (V7 - Polska strefa czasowa + Fix Resetu) ---
 def get_now_pl():
@@ -635,18 +665,23 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
 
-# --- 9. QUIZ (V238 - Rozwiązanie błędu AttributeError i DuplicateKey) ---
+# --- 9. QUIZ (V240 - Obsługa Wielu Języków DE/CS) ---
 elif choice == "🕹️ Quiz":
-    st.header("🕹️ Quiz")
+    # Dynamiczny tytuł z flagą i nazwą języka
+    st.header(f"🕹️ Quiz: {st.session_state.current_lang}")
     
-    all_c = st.session_state.flashcards
+    # 1. FILTROWANIE SŁÓWEK (Tylko dla wybranego języka)
+    # L_CODE pochodzi z Sidebaru (Sekcja 6)
+    all_c_full = st.session_state.flashcards
+    all_c = [c for c in all_c_full if c.get("lang", "de") == L_CODE]
+    
     ud = st.session_state.user_data
     user_settings = ud.get("settings", {})
     show_hints = user_settings.get("show_hints", True)
     auto_audio = user_settings.get("auto_audio", True)
     
     if len(all_c) < 4: 
-        st.warning("Dodaj min. 4 słówka, aby uruchomić quiz.")
+        st.warning(f"Dodaj min. 4 słówka w języku {st.session_state.current_lang}, aby uruchomić quiz.")
     else:
         @st.fragment
         def quiz_engine():
@@ -654,12 +689,14 @@ elif choice == "🕹️ Quiz":
             if "q_c" not in st.session_state:
                 idx = random.randrange(len(all_c))
                 t = all_c[idx]
+                
+                # Szukamy dystraktorów (błędnych odpowiedzi) tylko w obrębie tego samego języka
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
                 distractors = random.sample(other_pls, min(3, len(other_pls)))
+                
                 opts = distractors + [t['pl']]
                 random.shuffle(opts)
                 
-                # Zapisujemy wszystko do sesji
                 st.session_state.q_c = t
                 st.session_state.q_a = t['pl']
                 st.session_state.q_o = opts
@@ -667,11 +704,12 @@ elif choice == "🕹️ Quiz":
                 st.session_state.u_q = None
                 st.session_state.q_key_seed = random.randint(1000, 9999)
 
-            # 2. BEZPIECZNIK DLA SEEDA (Zapobiega AttributeError)
             if "q_key_seed" not in st.session_state:
                 st.session_state.q_key_seed = random.randint(1000, 9999)
 
             q_c = st.session_state.q_c
+            
+            # Dynamiczne pytanie
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
             
             if st.session_state.q_s == "ask":
@@ -679,10 +717,8 @@ elif choice == "🕹️ Quiz":
                     first_letter = st.session_state.q_a[0].upper()
                     st.caption(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**...")
 
-                # 3. RENDEROWANIE PRZYCISKÓW Z UNIKALNYM SEEDEM
                 current_seed = st.session_state.q_key_seed
                 for i, o in enumerate(st.session_state.q_o):
-                    # Klucz składa się z seeda rundy i indeksu przycisku
                     if st.button(o, key=f"qbtn_{current_seed}_{i}", use_container_width=True):
                         st.session_state.u_q = o
                         st.session_state.q_s = "res"
@@ -703,26 +739,30 @@ elif choice == "🕹️ Quiz":
                         payload["level"] = 0
                     update_word(word_id, payload)
                 
+                # Przeładowanie słówek, aby odświeżyć daty powtórek w sesji
                 st.session_state.flashcards = load_flashcards(u)
 
-                # Audio i przykłady
+                # --- OBSŁUGA AUDIO (Zmieniony L_CODE) ---
                 exs = q_c.get("examples", [])
-                fex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                fex_pl = exs[0].get("pl") if fex_de else None
+                fex_foreign = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
+                fex_pl = exs[0].get("pl") if fex_foreign else None
                 
-                if fex_de:
-                    st.info(f"💡 Przykład: **{fex_de}**" + (f"\n\n🇵🇱 *{fex_pl}*" if show_hints and fex_pl else ""))
-                    if auto_audio: play_audio(q_c['de'], fex_de)
+                if fex_foreign:
+                    st.info(f"💡 Przykład: **{fex_foreign}**" + (f"\n\n🇵🇱 *{fex_pl}*" if show_hints and fex_pl else ""))
+                    if auto_audio: 
+                        # Używamy L_CODE (np. 'de' lub 'cs'), aby lektor miał poprawny akcent
+                        play_audio(q_c['de'], fex_foreign, lang=L_CODE)
                 else:
-                    if auto_audio: play_audio(q_c['de'])
+                    if auto_audio: 
+                        play_audio(q_c['de'], lang=L_CODE)
                 
-                # Przycisk "Następne" czyści stan, co wymusza nową inicjalizację (punkt 1)
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q", "q_key_seed"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun(scope="fragment")
 
         quiz_engine()
+        
 # --- 10. FISZKI (Wersja z obsługą Auto-Audio) ---
 elif choice == "🎴 Fiszki":
     st.header("🎴 Fiszki")
