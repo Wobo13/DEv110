@@ -793,15 +793,16 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
         
-# --- 9. QUIZ (V240 - Obsługa Wielu Języków DE/CS) ---
+# --- 9. QUIZ (V245 - Full Multilang & Distractor Fix) ---
 elif choice == "🕹️ Quiz":
-    # Dynamiczny tytuł z flagą i nazwą języka
-    st.header(f"🕹️ Quiz: {st.session_state.current_lang}")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. FILTROWANIE SŁÓWEK (Tylko dla wybranego języka)
-    # L_CODE pochodzi z Sidebaru (Sekcja 6)
-    all_c_full = st.session_state.flashcards
-    all_c = [c for c in all_c_full if c.get("lang", "de") == L_CODE]
+    st.header(f"🕹️ Quiz: {current_lang_name}")
+    
+    # 1. FILTROWANIE SŁÓWEK (Tylko dla aktualnie wybranego języka)
+    all_cards_full = st.session_state.flashcards
+    all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     
     ud = st.session_state.user_data
     user_settings = ud.get("settings", {})
@@ -809,45 +810,56 @@ elif choice == "🕹️ Quiz":
     auto_audio = user_settings.get("auto_audio", True)
     
     if len(all_c) < 4: 
-        st.warning(f"Dodaj min. 4 słówka w języku {st.session_state.current_lang}, aby uruchomić quiz.")
+        st.warning(f"Dodaj min. 4 słówka w języku {current_lang_name}, aby uruchomić quiz.")
     else:
         @st.fragment
         def quiz_engine():
             # 1. INICJALIZACJA PYTANIA
-            if "q_c" not in st.session_state:
-                idx = random.randrange(len(all_c))
-                t = all_c[idx]
+            if "q_c" not in st.session_state or st.session_state.get("q_lang_ref") != L_CODE:
+                # Losujemy słowo testowe z puli wybranego języka
+                t = random.choice(all_c)
                 
-                # Szukamy dystraktorów (błędnych odpowiedzi) tylko w obrębie tego samego języka
+                # POPRAWKA DYSTRAKTORÓW: Pobieramy błędne opcje TYLKO z przefiltrowanej bazy 'all_c'
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
-                distractors = random.sample(other_pls, min(3, len(other_pls)))
+                
+                # Jeśli baza jest mała, bierzemy tyle ile się da (max 3)
+                num_distractors = min(3, len(other_pls))
+                distractors = random.sample(other_pls, num_distractors)
                 
                 opts = distractors + [t['pl']]
                 random.shuffle(opts)
                 
+                # Zapis stanu pytania
                 st.session_state.q_c = t
                 st.session_state.q_a = t['pl']
                 st.session_state.q_o = opts
                 st.session_state.q_s = "ask"
                 st.session_state.u_q = None
                 st.session_state.q_key_seed = random.randint(1000, 9999)
-
-            if "q_key_seed" not in st.session_state:
-                st.session_state.q_key_seed = random.randint(1000, 9999)
+                st.session_state.q_lang_ref = L_CODE
 
             q_c = st.session_state.q_c
             
-            # Dynamiczne pytanie
-            st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
+            # Interfejs Pytania
+            st.markdown(f"""
+                <div style="background: rgba(255,255,255,0.05); padding: 25px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="color: #888; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 10px;">Jak przetłumaczysz:</div>
+                    <div style="font-size: 2.5rem; font-weight: bold; color: white;">{q_c['de']}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.write("")
             
             if st.session_state.q_s == "ask":
                 if show_hints:
                     first_letter = st.session_state.q_a[0].upper()
-                    st.caption(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**...")
+                    st.info(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**")
 
+                # Grid przycisków odpowiedzi
                 current_seed = st.session_state.q_key_seed
+                cols = st.columns(2)
                 for i, o in enumerate(st.session_state.q_o):
-                    if st.button(o, key=f"qbtn_{current_seed}_{i}", use_container_width=True):
+                    if cols[i % 2].button(o, key=f"qbtn_{current_seed}_{i}", use_container_width=True):
                         st.session_state.u_q = o
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
@@ -857,34 +869,36 @@ elif choice == "🕹️ Quiz":
                 word_id = q_c.get('id')
                 
                 if is_correct:
-                    st.success("✅ Świetnie! (Słówko przesunięte o +2 dni)")
+                    st.success(f"✅ **Świetnie!** Poprawna odpowiedź: {st.session_state.q_a}")
+                    # Przesuwamy termin powtórki (SRS)
                     new_date = str(date.today() + timedelta(days=2))
                     update_word(word_id, {"next_review": new_date})
                 else:
-                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}**")
-                    payload = {"next_review": str(date.today())}
-                    if 'level' in q_c:
-                        payload["level"] = 0
-                    update_word(word_id, payload)
+                    st.error(f"❌ **Błąd!** Poprawna odpowiedź to: **{st.session_state.q_a}**")
+                    # Słowo wraca na dziś do powtórek
+                    update_word(word_id, {"next_review": str(date.today()), "level": 0})
                 
-                # Przeładowanie słówek, aby odświeżyć daty powtórek w sesji
-                st.session_state.flashcards = load_flashcards(u)
-
-                # --- OBSŁUGA AUDIO (Zmieniony L_CODE) ---
+                # --- OBSŁUGA PRZYKŁADÓW I AUDIO ---
                 exs = q_c.get("examples", [])
-                fex_foreign = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
-                fex_pl = exs[0].get("pl") if fex_foreign else None
+                example_foreign = None
+                example_pl = None
                 
-                if fex_foreign:
-                    st.info(f"💡 Przykład: **{fex_foreign}**" + (f"\n\n🇵🇱 *{fex_pl}*" if show_hints and fex_pl else ""))
-                    if auto_audio: 
-                        # Używamy L_CODE (np. 'de' lub 'cs'), aby lektor miał poprawny akcent
-                        play_audio(q_c['de'], fex_foreign, lang=L_CODE)
-                else:
-                    if auto_audio: 
-                        play_audio(q_c['de'], lang=L_CODE)
+                if exs and isinstance(exs, list) and len(exs) > 0:
+                    example_foreign = exs[0].get("de")
+                    example_pl = exs[0].get("pl")
+                elif q_c.get('example'): # Fallback
+                    example_foreign = q_c['example']
+
+                if example_foreign:
+                    st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
                 
+                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
+                if auto_audio:
+                    play_audio(q_c['de'], example_foreign, lang=L_CODE)
+
+                st.write("---")
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
+                    # Czyścimy stan, aby wylosować nowe pytanie
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q", "q_key_seed"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun(scope="fragment")
