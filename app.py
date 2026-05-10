@@ -989,137 +989,103 @@ elif choice == "📝 Testy":
 
             test_engine()
 
-# --- 12. MEMORY GAME (V228 - Zabezpieczony zapis wyników) ---
+# --- 12. GRA MEMORY (V280 - Multilang: DE/CS) ---
 elif choice == "🧠 Memory":
-    st.header("🧠 Memory: Znajdź pary")
-    st.write("Połącz niemieckie słówka z ich polskimi odpowiednikami. Liczy się czas!")
+    # Pobieramy aktualny język z sesji
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🧠 Memory: {current_lang_name}")
+    
+    # 1. Filtrowanie słówek pod wybrany język
+    all_c_full = st.session_state.flashcards
+    # Wybieramy słówka z aktualnego języka
+    all_c = [c for c in all_c_full if c.get("lang", "de") == L_CODE]
 
-    # 1. INICJALIZACJA STANU GRY
-    if "mem_grid" not in st.session_state:
-        if len(st.session_state.flashcards) < 6:
-            st.warning("Dodaj przynajmniej 6 słówek, aby móc zagrać.")
-            st.stop()
-        
-        cards_pool = random.sample(st.session_state.flashcards, 6)
-        grid = []
-        for c in cards_pool:
-            grid.append({"id": c["id"], "text": c["de"], "type": "de"})
-            grid.append({"id": c["id"], "text": c["pl"], "type": "pl"})
-        
-        random.shuffle(grid)
-        st.session_state.mem_grid = grid
-        st.session_state.mem_status = ["hidden"] * 12
-        st.session_state.mem_first = None
-        st.session_state.mem_pairs = 0
-        st.session_state.mem_start_time = None
-        st.session_state.mem_final_time = None
-
-    # 2. SILNIK GRY (FRAGMENT)
-    @st.fragment
-    def memory_engine():
-        grid = st.session_state.mem_grid
-        status = st.session_state.mem_status
-        
-        c1, c2, _ = st.columns([1, 1, 2])
-        
-        if st.session_state.mem_start_time and st.session_state.mem_final_time is None:
-            elapsed = round(time.time() - st.session_state.mem_start_time, 1)
-            c1.metric("⏱️ Czas", f"{elapsed}s")
-        elif st.session_state.mem_final_time:
-            c1.metric("🏁 Wynik", f"{st.session_state.mem_final_time}s")
-        else:
-            c1.metric("⏱️ Czas", "0.0s")
+    if len(all_c) < 6:
+        st.warning(f"Dodaj co najmniej 6 słówek w języku {current_lang_name}, aby zagrać w Memory!")
+    else:
+        # Inicjalizacja gry
+        if "mem_cards" not in st.session_state:
+            # Wybieramy 6 losowych słówek
+            selected = random.sample(all_c, 6)
+            cards = []
+            for i, c in enumerate(selected):
+                # Para: Słówko obce i Słówko polskie
+                cards.append({"id": i, "val": c['de'], "pair": i, "type": "foreign"})
+                cards.append({"id": i, "val": c['pl'], "pair": i, "type": "pl"})
             
-        c2.metric("🧩 Pary", f"{st.session_state.mem_pairs}/6")
-        
-        # LOGIKA KOŃCA GRY
-        if st.session_state.mem_pairs == 6:
-            if st.session_state.mem_final_time is None:
-                st.session_state.mem_final_time = round(time.time() - st.session_state.mem_start_time, 2)
-                
-                # BEZPIECZNY ZAPIS DO BAZY
-                try:
-                    db = get_db()
-                    new_score = st.session_state.mem_final_time
-                    # Pobieramy obecne wyniki (jeśli kolumna nie istnieje, get zwróci [])
-                    current_scores = st.session_state.user_data.get("memory_scores", [])
-                    if not isinstance(current_scores, list): current_scores = []
-                    
-                    current_scores.append(new_score)
-                    current_scores = sorted([float(s) for s in current_scores])[:10]
-                    
-                    # Próba aktualizacji bazy
-                    db.table("user_data").update({"memory_scores": current_scores}).eq("username", u).execute()
-                    st.session_state.user_data["memory_scores"] = current_scores
-                except Exception as e:
-                    # Jeśli baza wyrzuci błąd (np. brak kolumny), nie crashujemy apki
-                    st.warning("⚠️ Nie udało się zapisać rekordu w bazie (prawdopodobnie brak kolumny memory_scores).")
-                    # Zapisujemy chociaż lokalnie w sesji na ten czas
-                    st.session_state.user_data["memory_scores"] = current_scores
+            random.shuffle(cards)
+            st.session_state.mem_cards = cards
+            st.session_state.mem_found = []
+            st.session_state.mem_opened = []
+            st.session_state.mem_start_time = time.time()
 
-            st.balloons()
-            st.success(f"Brawo! Twój czas: {st.session_state.mem_final_time}s")
-            if st.button("Zagraj jeszcze raz", use_container_width=True):
-                for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
-                    if k in st.session_state: del st.session_state[k]
-                st.rerun(scope="fragment")
-            return
+        # Wyświetlanie siatki kart
+        cols = st.columns(4)
+        for idx, card in enumerate(st.session_state.mem_cards):
+            with cols[idx % 4]:
+                if idx in st.session_state.mem_found:
+                    # Karta już odnaleziona (wyłączona)
+                    st.button(card['val'], key=f"mem_{idx}", disabled=True, use_container_width=True)
+                elif idx in st.session_state.mem_opened:
+                    # Karta aktualnie odkryta
+                    st.button(card['val'], key=f"mem_{idx}", type="primary", use_container_width=True)
+                else:
+                    # Karta zakryta
+                    if st.button("❓", key=f"mem_{idx}", use_container_width=True):
+                        st.session_state.mem_opened.append(idx)
+                        
+                        # Jeśli odkryto dwie karty
+                        if len(st.session_state.mem_opened) == 2:
+                            st.rerun()
 
-        st.write("---")
+        # Logika sprawdzania pary
+        if len(st.session_state.mem_opened) == 2:
+            idx1, idx2 = st.session_state.mem_opened
+            card1 = st.session_state.mem_cards[idx1]
+            card2 = st.session_state.mem_cards[idx2]
 
-        # RENDEROWANIE PRZYCISKÓW
-        for row in range(3):
-            cols = st.columns(4)
-            for col in range(4):
-                idx = row * 4 + col
-                tile_text = "❓"
-                tile_type = "secondary"
-                tile_disabled = False
-
-                if status[idx] == "matched":
-                    tile_text = "✅"
-                    tile_disabled = True
-                elif status[idx] == "flipped":
-                    tile_text = grid[idx]["text"]
-                    tile_type = "primary"
-                    tile_disabled = True
-
-                if cols[col].button(tile_text, key=f"mem_{idx}", use_container_width=True, disabled=tile_disabled, type=tile_type):
-                    if st.session_state.mem_start_time is None:
-                        st.session_state.mem_start_time = time.time()
-
-                    if st.session_state.mem_first is None:
-                        status[idx] = "flipped"
-                        st.session_state.mem_first = idx
-                        st.rerun(scope="fragment")
-                    else:
-                        status[idx] = "flipped"
-                        st.rerun(scope="fragment") 
-
-        # SPRAWDZANIE PAR (opóźnienie ukrycia)
-        flipped = [i for i, s in enumerate(status) if s == "flipped"]
-        if len(flipped) == 2:
-            idx1, idx2 = flipped
-            time.sleep(0.8) # Czekamy chwilę, żeby użytkownik zobaczył drugą kartę
-            
-            if grid[idx1]["id"] == grid[idx2]["id"]:
-                status[idx1] = "matched"
-                status[idx2] = "matched"
-                st.session_state.mem_pairs += 1
+            if card1['pair'] == card2['pair'] and card1['type'] != card2['type']:
+                st.session_state.mem_found.extend([idx1, idx2])
+                st.success("Para!")
+                # Odtwarzanie dźwięku dla słowa obcego z pary
+                word_to_play = card1['val'] if card1['type'] == 'foreign' else card2['val']
+                play_audio(word_to_play, lang=L_CODE)
+                time.sleep(0.5)
+                st.session_state.mem_opened = []
+                st.rerun()
             else:
-                status[idx1] = "hidden"
-                status[idx2] = "hidden"
+                st.error("To nie jest para!")
+                time.sleep(1.0)
+                st.session_state.mem_opened = []
+                st.rerun()
+
+        # Koniec gry
+        if len(st.session_state.mem_found) == len(st.session_state.mem_cards):
+            end_time = time.time()
+            score = round(end_time - st.session_state.mem_start_time, 2)
+            st.balloons()
+            st.success(f"Brawo! Twój czas w języku {current_lang_name}: {score} sekund.")
             
-            st.session_state.mem_first = None
-            st.rerun(scope="fragment")
-
-    memory_engine()
-
-    if st.button("Wygeneruj nową tablicę", type="secondary", use_container_width=True):
-        for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
-            if k in st.session_state: del st.session_state[k]
-        st.rerun()
-
+            # 2. ZAPIS REKORDU DO WŁAŚCIWEJ KOLUMNY (_de lub _cs)
+            mem_key = f"memory_scores_{L_CODE}"
+            ud = st.session_state.user_data
+            
+            # Pobieramy aktualne rekordy dla danego języka
+            current_scores = list(ud.get(mem_key, []))
+            current_scores.append(score)
+            # Zostawiamy 10 najlepszych (najkrótszych) czasów
+            current_scores = sorted([float(s) for s in current_scores])[:10]
+            
+            # Zapis do bazy i sesji
+            ud[mem_key] = current_scores
+            save_user_data(u, ud)
+            
+            if st.button("Zagraj jeszcze raz 🔄", use_container_width=True):
+                for key in ["mem_cards", "mem_found", "mem_opened", "mem_start_time"]:
+                    if key in st.session_state: del st.session_state[key]
+                st.rerun()
 # --- 13. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
 elif choice == "🛠️ Warsztat":
     st.header("🛠️ Warsztat Słówek")
