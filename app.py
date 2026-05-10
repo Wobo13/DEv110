@@ -6,6 +6,7 @@ import hashlib
 import pandas as pd
 import time
 import base64
+import pytz
 from datetime import datetime, date, timedelta
 from io import BytesIO
 from gtts import gTTS
@@ -72,44 +73,45 @@ def play_audio(txt, ex_txt=None):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- 3. FUNKCJE DANYCH (V6 - Inteligentny reset czasu i obsługa wizyt) ---
+# --- 3. FUNKCJE DANYCH (V7 - Polska strefa czasowa + Fix Resetu) ---
+def get_now_pl():
+    """Pomocnik zwracający aktualny czas w Polsce jako string."""
+    tz_pl = pytz.timezone('Europe/Warsaw')
+    return datetime.now(tz_pl).strftime("%d.%m %H:%M")
+
 def load_user_data(username):
     db = get_db()
     res = db.table("user_data").select("*").eq("username", username).execute()
-    
-    # Przygotowanie daty dzisiejszej w formacie ISO (YYYY-MM-DD)
     today_str = date.today().isoformat()
 
     if res.data:
         data = res.data[0]
         
-        # Pobieramy datę ostatniej AKTUALIZACJI statystyk czasu.
-        # Jeśli pole last_visit_date jest puste w bazie, używamy last_date jako koła ratunkowego.
+        # Pobieramy datę ostatniej wizyty do logiki resetu minut
         last_visit = data.get("last_visit_date")
         if not last_visit:
             last_visit = data.get("last_date", "2000-01-01")
         
-        # MECHANIZM RESETU CZASU NA NOWY DZIEŃ
-        # Resetujemy minuty TYLKO JEŚLI ostatnia wizyta zapisana w bazie nie była dzisiaj.
+        # Jeśli to pierwsze wejście dzisiaj - czyścimy licznik minut
         if last_visit != today_str:
             data["time_stats"] = {}
-            # Ustawiamy nową datę wizyty, by przy następnym logowaniu dzisiaj system nie czyścił danych
             data["last_visit_date"] = today_str
-            # Natychmiastowy zapis do bazy, aby "zaklepać" dzisiejszą wizytę
+            # Przy okazji aktualizujemy czas ostatniej aktywności na polski
+            data["last_seen"] = get_now_pl()
             save_user_data(username, data)
         
         return data
 
-    # INICJALIZACJA DLA ZUPEŁNIE NOWEGO UŻYTKOWNIKA
+    # INICJALIZACJA NOWEGO UŻYTKOWNIKA
     init = {
         "username": username, 
         "streak": 0, 
         "historical_cost": 0.0, 
         "time_stats": {}, 
         "last_ts": time.time(), 
-        "last_seen": datetime.now().strftime("%d.%m %H:%M"),
+        "last_seen": get_now_pl(), # Czas PL
         "last_date": "2000-01-01", 
-        "last_visit_date": today_str, # Odnotowujemy pierwszą wizytę
+        "last_visit_date": today_str,
         "test_history": [],
         "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
     }
@@ -117,21 +119,19 @@ def load_user_data(username):
     return init
 
 def save_user_data(username, data):
-    # Tworzymy kopię słownika, aby nie zmieniać obiektu w pamięci podręcznej Streamlit
     d = data.copy()
     if "username" in d:
         del d["username"]
     
-    # Zabezpieczenie formatu JSON dla statystyk czasu
     if "time_stats" in d and isinstance(d["time_stats"], dict):
         d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
     
-    # Upewniamy się, że daty nie są puste (Postgres/DATE nie wybacza pustych pól)
     if not d.get("last_date"):
         d["last_date"] = "2000-01-01"
     
-    # Przy każdym zapisie upewniamy się, że last_visit_date to dzisiaj
+    # Zawsze aktualizujemy datę wizyty i czas aktywności (czas PL) przy zapisie
     d["last_visit_date"] = date.today().isoformat()
+    d["last_seen"] = get_now_pl()
 
     get_db().table("user_data").update(d).eq("username", username).execute()
 
@@ -151,15 +151,13 @@ def save_word(username, word_obj):
 
 def update_word(word_id, fields):
     try:
-        # Zabezpieczenie typów dla bazy danych (BigInt/Integer)
         if "level" in fields and fields["level"] is not None:
             fields["level"] = int(fields["level"])
         if "interval" in fields and fields["interval"] is not None:
             fields["interval"] = int(fields["interval"])
-
         get_db().table("flashcards").update(fields).eq("id", word_id).execute()
     except Exception as e:
-        st.error(f"⚠️ Błąd krytyczny bazy danych (update_word): {e}")
+        st.error(f"⚠️ Błąd bazy danych (update_word): {e}")
 
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
