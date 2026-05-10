@@ -1690,10 +1690,14 @@ elif choice == "🏆 Arena Wyzwań":
         except:
             pass
 
-# --- 21. GENERATOR SŁÓW (V247 - Gwarantowane Rodzajniki) ---
+# --- 21. GENERATOR SŁÓW (V250 - Multilang: DE/CS + Gwarantowane Rodzajniki) ---
 elif choice == "📦 Generator słów":
-    st.header("📦 Generator słów")
-    st.write("Generuj słówka na podstawie poziomu lub konkretnego tematu.")
+    # Pobieramy aktualny język z sesji
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"📦 Generator słów: {current_lang_name}")
+    st.write(f"Generuj słówka {current_lang_name} na podstawie poziomu lub konkretnego tematu.")
 
     # 1. PANEL STEROWANIA
     with st.container(border=True):
@@ -1701,27 +1705,33 @@ elif choice == "📦 Generator słów":
         with c1:
             gen_lvl = st.selectbox("Poziom (opcjonalnie):", ["Brak", "A1", "A2", "B1", "B2", "C1"], key="gen_lvl_sel")
         with c2:
-            gen_topic = st.text_input("Temat (opcjonalnie):", placeholder="np. Kuchnia, Praca...", key="gen_top_in")
+            gen_topic = st.text_input("Temat (opcjonalnie):", placeholder="np. Podróże, Praca, Dom...", key="gen_top_in")
         with c3:
             gen_count = st.number_input("Ilość:", 3, 20, 5, key="gen_cnt_in")
         
-        if st.button("✨ Generuj listę do sprawdzenia", use_container_width=True, type="primary"):
+        if st.button(f"✨ Generuj listę ({current_lang_name})", use_container_width=True, type="primary"):
             if gen_lvl == "Brak" and not gen_topic:
                 st.warning("Wybierz poziom lub wpisz temat!")
             else:
-                with st.spinner("AI dobiera słownictwo i sprawdza rodzajniki..."):
+                with st.spinner(f"AI dobiera słownictwo ({current_lang_name})..."):
                     context = f"na poziomie {gen_lvl}" if gen_lvl != "Brak" else ""
                     if gen_topic: context += f" o tematyce: {gen_topic}"
                     
-                    # WZMOCNIONY PROMPT (Instrukcja o rodzajnikach jest teraz na początku i końcu)
-                    prompt = f"""Wygeneruj {gen_count} unikalnych słówek/fraz po niemiecku {context}.
-                    UWAGA: Każdy rzeczownik MUSI posiadać rodzajnik (der, die lub das).
+                    # Dynamiczna instrukcja dla AI w zależności od języka
+                    lang_specific_instruction = ""
+                    if L_CODE == "de":
+                        lang_specific_instruction = "UWAGA: Każdy rzeczownik NIEMIECKI MUSI posiadać rodzajnik (der, die lub das)."
+                    elif L_CODE == "cs":
+                        lang_specific_instruction = "UWAGA: Generuj słowa w języku CZESKIM. Jeśli to możliwe, zaznaczaj aspekty czasowników lub specyficzne formy."
+
+                    prompt = f"""Wygeneruj {gen_count} unikalnych słówek/fraz w języku {current_lang_name} {context}.
+                    {lang_specific_instruction}
                     Dla każdego elementu podaj:
-                    1. de: słowo (BEZWZGLĘDNIE z rodzajnikiem dla rzeczowników)
-                    2. pl: tłumaczenie
+                    1. de: słowo (w języku {current_lang_name})
+                    2. pl: tłumaczenie na polski
                     3. tags: minimum 3 tagi (np. 'Poziom, Część mowy, Temat')
-                    4. ex_de: przykład użycia
-                    5. ex_pl: tłumaczenie przykładu
+                    4. ex_de: przykład użycia (w języku {current_lang_name})
+                    5. ex_pl: tłumaczenie przykładu na polski
                     Zwróć WYŁĄCZNIE JSON: {{"flashcards": [{{"de":"", "pl":"", "tags":"", "ex_de":"", "ex_pl":""}}]}}"""
                     
                     try:
@@ -1738,6 +1748,7 @@ elif choice == "📦 Generator słów":
         st.subheader("📝 Podgląd i personalizacja")
         
         saved_lvl = st.session_state.get("last_gen_lvl", "Brak")
+        lang_column_name = "Niemiecki" if L_CODE == "de" else "Czeski"
 
         df_init = []
         for item in st.session_state.temp_generated:
@@ -1747,10 +1758,10 @@ elif choice == "📦 Generator słów":
 
             df_init.append({
                 "Dodaj": True,
-                "Niemiecki": item.get("de", ""),
+                lang_column_name: item.get("de", ""),
                 "Polski": item.get("pl", ""),
                 "Kategorie (Tagi)": base_tags,
-                "Przykład DE": item.get("ex_de", ""),
+                "Przykład (Oryginał)": item.get("ex_de", ""),
                 "Przykład PL": item.get("ex_pl", "")
             })
 
@@ -1758,28 +1769,29 @@ elif choice == "📦 Generator słów":
             df_init, 
             use_container_width=True, 
             num_rows="dynamic",
-            key="ai_editor_v247"
+            key="ai_editor_multilang"
         )
 
         col_save, col_cancel = st.columns(2)
         
-        if col_save.button("🚀 Zapisz wybrane słówka", use_container_width=True, type="primary"):
+        if col_save.button(f"🚀 Zapisz jako {current_lang_name}", use_container_width=True, type="primary"):
             success_count = 0
             for row in edited_df:
                 if row.get("Dodaj", False):
                     new_word = {
-                        "de": row["Niemiecki"],
+                        "de": row[lang_column_name],
                         "pl": row["Polski"],
                         "category": row["Kategorie (Tagi)"],
                         "next_review": str(date.today()),
                         "level": 0,
                         "origin": "Generator",
-                        "examples": [{"de": row["Przykład DE"], "pl": row["Przykład PL"]}]
+                        "lang": L_CODE, # KLUCZOWE: Zapisujemy kod języka
+                        "examples": [{"de": row["Przykład (Oryginał)"], "pl": row["Przykład PL"]}]
                     }
                     save_word(u, new_word)
                     success_count += 1
             
-            st.success(f"Pomyślnie dodano {success_count} słówek!")
+            st.success(f"Pomyślnie dodano {success_count} słówek w języku {current_lang_name}!")
             st.session_state.flashcards = load_flashcards(u)
             if "temp_generated" in st.session_state:
                 del st.session_state.temp_generated
