@@ -551,12 +551,12 @@ with st.sidebar:
 # --- KLUCZOWY ŁĄCZNIK: Definicja zmiennej choice dla reszty skryptu ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V1.5 - Fix NameError choice) ---
+# --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
 
 # Pobieramy aktualny wybór z sesji, aby uniknąć błędu NameError
 current_choice = st.session_state.get("choice", "🏠 Start")
 
-# Aktualizacja czasu aktywności
+# Aktualizacja czasu aktywności (naliczanie minut)
 update_activity(current_choice)
 
 if current_choice == "🏠 Start":
@@ -564,18 +564,15 @@ if current_choice == "🏠 Start":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # Dynamiczne powitanie
-    hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
-    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
-    
     # 1. ANALIZA DANYCH BIEŻĄCYCH (Filtrowana pod język)
     all_cards_full = st.session_state.flashcards
+    # Wybieramy tylko słówka z aktualnego języka do statystyk na kafelkach
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     
     ud = st.session_state.user_data
     today_str = str(date.today())
     
-    # Statystyki czasu
+    # Statystyki czasu nauki
     current_stats = ud.get("time_stats", {})
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
@@ -586,7 +583,11 @@ if current_choice == "🏠 Start":
     total_words = len(all_c)
     to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
     
-    # 2. UKŁAD KAFELKÓW
+    # Dynamiczne powitanie zależne od języka
+    hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
+    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
+    
+    # 2. UKŁAD KAFELKÓW (KPI)
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(f"Słówek ({current_lang_name})", total_words)
@@ -604,42 +605,47 @@ if current_choice == "🏠 Start":
         if study_minutes >= daily_goal:
             st.success(f"🌟 Cel dzienny osiągnięty! ({study_minutes} min)")
         elif study_minutes > 0:
-            st.info(f"📈 Jesteś w trakcie nauki. Jeszcze {daily_goal - study_minutes} min do celu.")
+            st.info(f"📈 Jesteś w trakcie nauki. Jeszcze {max(0, daily_goal - study_minutes)} min do celu.")
         else:
-            st.warning(f"🆕 Czas na {current_lang_name}!")
+            st.warning(f"🆕 Czas na Twój dzisiejszy {current_lang_name}!")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         t_done = "✅" if study_minutes >= daily_goal else "❌"
-        st.write(f"{t_done} Cel: **{daily_goal} min**")
-        st.write("✅ Sekcja **Warsztat**")
-        st.write("✅ Jeden **Quiz** lub **Test**")
+        st.write(f"{t_done} Cel czasowy: **{daily_goal} min**")
+        st.write("✅ Sprawdź sekcję **Warsztat**")
+        st.write("✅ Rozwiąż jeden **Quiz** lub **Test**")
 
     st.divider()
 
-    # 4. CYTATY I OSTATNIE SŁÓWKA
+    # 4. CYTATY I OSTATNIE SŁÓWKA (Poprawione filtrowanie)
     col_q, col_w = st.columns([2, 1])
+    
     with col_q:
         if L_CODE == "de":
             quotes = [
                 "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
-                "„Übung macht den Meister!” – Praktyka czyni mistrza."
+                "„Übung macht den Meister!” – Praktyka czyni mistrza.",
+                "„Aller Anfang ist schwer.” – Każdy początek jest trudny."
             ]
         else:
             quotes = [
-                "„Kolik jazyků znáš, tolikrát jsi člověkem.” – Ile języków znasz, tyle razy jesteś człowiekiem.",
-                "„Trpělivost přináší růže.” – Cierpliwość przynosi róże."
+                "„Kolik jazyků znáš, tolikrát jsi člověkem.” – Ile języků znasz, tyle razy jesteś człowiekiem.",
+                "„Trpělivost přináší růže.” – Cierpliwość przynosi róże.",
+                "„Učený nikdo z nebe nespadl.” – Nikt uczony z nieba nie spadł."
             ]
         st.info(random.choice(quotes))
 
     with col_w:
-        with st.expander(f"🆕 Ostatnie", expanded=True):
+        # Sekcja wyświetlająca 3 ostatnio dodane słówka TYLKO dla wybranego języka
+        with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
             if all_c:
+                # Wybieramy 3 ostatnie słówka z przefiltrowanej listy all_c
                 recent = all_c[-3:]
                 for r in reversed(recent):
                     st.write(f"**{r['de']}**")
             else:
-                st.write("Baza jest pusta.")
+                st.write(f"Baza {current_lang_name} jest pusta.")
 
 # --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
