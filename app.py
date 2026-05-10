@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V400 - Live Conversation & Correction) ---
+# --- 28. SPARING AI (V401 - Fixed TypeError & Button) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2787,23 +2787,20 @@ elif choice == "🤖 Sparing AI":
     st.header(f"🤖 Sparing AI: {current_lang_name}")
     st.write("Rozmawiaj z AI w naturalnych sytuacjach. System poprawi Twoje błędy na bieżąco!")
 
-    # 1. KONFIGURACJA SCENARIUSZY
     scenarios = {
         "🍽️ Restauracja": {"de": "Im Restaurant bestellen", "cs": "V restauraci"},
         "🏥 U lekarza": {"de": "Beim Arzt - Symptome beschreiben", "cs": "U lékaře"},
         "💼 Rozmowa o pracę": {"de": "Vorstellungsgespräch", "cs": "Pracovní pohovor"},
         "🛒 Zakupy": {"de": "Im Supermarkt einkaufen", "cs": "Nákup v obchodě"},
         "✈️ Podróż": {"de": "Am Flughafen / Bahnhof", "cs": "Na letišti / nádraží"},
-        "☕ Luźna rozmowa": {"de": "Smalltalk über das Wetter i Hobbys", "cs": "Pokec o počasí a hobby"}
+        "☕ Luźna rozmowa": {"de": "Smalltalk über das Wetter und Hobbys", "cs": "Pokec o počasí a hobby"}
     }
 
-    # 2. INICJALIZACJA CZATU
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "chat_scenario" not in st.session_state:
         st.session_state.chat_scenario = None
 
-    # EKRAN WYBORU SCENARIUSZA
     if not st.session_state.chat_scenario:
         st.subheader("Wybierz scenariusz rozmowy:")
         cols = st.columns(2)
@@ -2811,25 +2808,23 @@ elif choice == "🤖 Sparing AI":
             with cols[i % 2]:
                 if st.button(name, use_container_width=True):
                     st.session_state.chat_scenario = name
-                    # Pierwsza wiadomość od AI
-                    intro_prompt = f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Zacznij rozmowę naturalnie, przywitaj się i zadaj pytanie. Odpowiadaj krótko i zwięźle."
+                    intro_prompt = f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Zacznij rozmowę naturalnie, przywitaj się i zadaj pytanie. Odpowiadaj krótko."
                     try:
                         ai_intro = get_openai_response(intro_prompt)
                         st.session_state.chat_history.append({"role": "assistant", "content": ai_intro, "correction": None})
                         st.rerun()
                     except: st.error("Błąd połączenia z AI.")
-
-    # EKRAN ROZMOWY
     else:
         st.info(f"📍 Aktywny scenariusz: **{st.session_state.chat_scenario}**")
-        if st.button("🏁 Zakończ rozmowę i zmień scenariusz", type="secondary", size="small"):
+        
+        # POPRAWKA TUTAJ: Usunięto size="small"
+        if st.button("🏁 Zakończ rozmowę i zmień scenariusz", type="secondary"):
             st.session_state.chat_history = []
             st.session_state.chat_scenario = None
             st.rerun()
 
         st.divider()
 
-        # Wyswietlanie historii rozmowy
         for msg in st.session_state.chat_history:
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
@@ -2837,50 +2832,31 @@ elif choice == "🤖 Sparing AI":
                 if msg.get("correction"):
                     st.warning(f"📝 **Poprawka:** {msg['correction']}")
                 
-                # Przycisk audio dla assistant
                 if msg["role"] == "assistant":
-                    if st.button("🔊 Słuchaj", key=hashlib.md5(msg["content"].encode()).hexdigest()):
+                    m_hash = hashlib.md5(msg["content"].encode()).hexdigest()
+                    if st.button("🔊 Słuchaj", key=f"sparing_aud_{m_hash}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        # Input użytkownika
         user_input = st.chat_input(f"Napisz coś po {current_lang_name.lower()}...")
 
         if user_input:
-            # Dodaj wpis użytkownika do historii
             st.session_state.chat_history.append({"role": "user", "content": user_input})
-            
             with st.spinner("AI analizuje i odpowiada..."):
-                # PROMPT DLA LIVE CORRECTION
                 prompt = f"""
                 Jesteś nauczycielem języka {current_lang_name}. 
                 Aktualny scenariusz: {st.session_state.chat_scenario}.
                 Użytkownik powiedział: "{user_input}".
-                
-                Zadanie:
-                1. Przeanalizuj gramatykę i słownictwo użytkownika. Jeśli zrobił błąd, przygotuj krótką poprawkę po polsku. Jeśli nie ma błędów, napisz 'Brak uwag'.
-                2. Odpowiedz naturalnie na jego wiadomość w języku {current_lang_name}, kontynuując rozmowę (max 2 zdania).
-                
                 Zwróć TYLKO JSON:
                 {{
-                  "reply": "Twoja naturalna odpowiedź po {current_lang_name}",
-                  "correction": "Twoja uwaga o błędach po polsku LUB 'Brak uwag'"
+                  "reply": "naturalna odpowiedź po {current_lang_name}",
+                  "correction": "krótka uwaga o błędach po polsku LUB 'Brak uwag'"
                 }}
                 """
-                
                 try:
                     res_raw = get_openai_response(prompt)
                     data = json.loads(res_raw)
-                    
-                    # Przypisz poprawkę do OSTATNIEJ wiadomości użytkownika
                     st.session_state.chat_history[-1]["correction"] = data["correction"] if data["correction"] != "Brak uwag" else None
-                    
-                    # Dodaj odpowiedź AI
                     st.session_state.chat_history.append({"role": "assistant", "content": data["reply"]})
                     st.rerun()
                 except Exception as e:
                     st.error(f"Błąd AI: {e}")
-
-    # Statystyki sesji w sidebarze
-    if st.session_state.chat_scenario:
-        st.sidebar.divider()
-        st.sidebar.write(f"💬 Wiadomości: **{len(st.session_state.chat_history)}**")
