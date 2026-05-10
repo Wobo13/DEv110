@@ -370,49 +370,68 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V340 - Ultra Compact & Precise Layout) ---
+# --- 6. SIDEBAR (V350 - Ultra Slim & Scalable) ---
 with st.sidebar:
-    # 1. CSS dla maksymalnej oszczędności miejsca
+    # 1. Agresywny CSS dla oszczędności każdego piksela
     st.markdown("""
         <style>
-            /* Redukcja marginesów bocznych i górnych kontenera */
+            /* Usuwamy domyślne nawigacje i paddingi */
             [data-testid="stSidebarNav"] {display: none;}
-            .st-emotion-cache-1avcm0n {padding: 0rem 0.5rem 1rem !important;}
+            .st-emotion-cache-1avcm0n {padding: 0rem 0.4rem !important;}
             .st-emotion-cache-6q9sum {padding-top: 0rem !important;}
             
-            /* Stylizacja przycisków menu - jeszcze mniejsze odstępy */
+            /* Przyciski menu - mniejsza czcionka, brak marginesów */
             div.stButton > button {
                 width: 100%;
                 text-align: left;
                 background-color: transparent;
                 border: none;
-                padding: 2px 8px !important;
+                padding: 1px 6px !important;
                 margin: 0px !important;
                 border-radius: 4px;
-                font-size: 0.95rem;
+                font-size: 0.88rem; /* Mniejsza czcionka */
+                height: auto;
+                min-height: 28px;
             }
             
-            /* Mniejsze odstępy w expanderach */
-            .st-emotion-cache-p5msec {padding: 0.2rem 0.5rem !important;}
-            .st-emotion-cache-p5msec blockquote {margin: 0px !important;}
+            /* Expandery - bardzo ciasne */
+            .st-emotion-cache-p5msec {
+                padding: 0rem 0.4rem !important; 
+                font-size: 0.9rem !important;
+            }
             
-            /* Naprawa odstępów między paskami postępu */
-            .stProgress {margin-bottom: 0.5rem !important;}
+            /* Paski postępu - cieńsze i ciaśniejsze */
+            .stProgress > div > div > div > div { height: 6px !important; }
+            .stProgress { margin-bottom: 0.3rem !important; }
             
-            /* Zmniejszenie pionowych odstępów między widgetami */
-            [data-testid="stVerticalBlock"] > div {gap: 0.1rem !important;}
+            /* Redukcja przerw między wszystkimi elementami */
+            [data-testid="stVerticalBlock"] > div { gap: 0rem !important; }
             
-            hr {margin: 0.5rem 0 !important;}
+            /* Mniejsze napisy nad paskami */
+            .small-text {
+                font-size: 0.75rem;
+                color: #aaa;
+                margin-bottom: -2px;
+            }
+            
+            hr { margin: 0.4rem 0 !important; opacity: 0.3; }
         </style>
     """, unsafe_allow_html=True)
 
-    # 2. Nagłówek Użytkownika (Minimalistyczny rząd)
+    # 2. Nagłówek (Jeden bardzo ciasny wiersz)
     ud = st.session_state.user_data
-    st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center;'><b>👤 {str(u).capitalize()}</b> <span style='color:#FF4B4B;'>🔥 {ud.get('streak', 0)}d</span></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
+            <span style='font-size:0.9rem;'><b>👤 {str(u).capitalize()}</b></span>
+            <span style='color:#FF4B4B; font-size:0.85rem;'>🔥 {ud.get('streak', 0)}d</span>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # 3. Język (Kompaktowy)
-    LANG_MAP = {"Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki"}, "Czeski": {"code": "cs", "label": "🇨🇿 Czeski"}}
-    selected_lang = st.selectbox("Language", options=list(LANG_MAP.keys()), format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
+    # 3. Język (Kompaktowy selectbox)
+    LANG_MAP = {"Niemiecki": {"code": "de", "label": "🇩🇪 DE"}, "Czeski": {"code": "cs", "label": "🇨🇿 CS"}}
+    selected_lang = st.selectbox("L", options=list(LANG_MAP.keys()), 
+                                 format_func=lambda x: LANG_MAP[x]["label"], 
+                                 key="lang_sel", label_visibility="collapsed")
 
     if selected_lang != st.session_state.current_lang:
         st.session_state.current_lang = selected_lang
@@ -420,9 +439,8 @@ with st.sidebar:
         st.rerun()
 
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
-    st.markdown("<hr>", unsafe_allow_html=True)
 
-    # 4. Wskaźniki i Paski (Każdy nad swoim paskiem)
+    # 4. Statystyki (Minimalistyczne paski)
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     wiedza = 0
     if all_c:
@@ -434,18 +452,19 @@ with st.sidebar:
     mins = int(sum(current_stats.get(c, 0) for c in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # Blok Wiedzy
-    st.markdown(f"<small>🧠 Wiedza: {wiedza}%</small>", unsafe_allow_html=True)
+    st.markdown(f"<div class='small-text'>🧠 Wiedza: {wiedza}%</div>", unsafe_allow_html=True)
     st.progress(min(wiedza / 100, 1.0))
     
-    # Blok Celu
-    st.markdown(f"<small>🎯 Cel: {mins}/{goal}m</small>", unsafe_allow_html=True)
+    st.markdown(f"<div class='small-text'>🎯 Cel: {mins}/{goal}m</div>", unsafe_allow_html=True)
     st.progress(min(mins / goal, 1.0))
+
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     # --- 5. FUNKCJA POMOCNICZA MENU ---
     def menu_item(label, target):
         is_selected = st.session_state.get("choice") == target
-        btn_label = f"{'🔴 ' if is_selected else ''}{label}"
+        # Używamy prostego wskaźnika, aby nie rozszerzać przycisku
+        btn_label = f"{'▶ ' if is_selected else ''}{label}"
         if st.button(btn_label, key=f"btn_{target}"):
             st.session_state.choice = target
             st.rerun()
@@ -468,13 +487,13 @@ with st.sidebar:
         menu_item("🎈 Balonowy Wyścig", "🎈 Balonowy Wyścig")
         menu_item("🏆 Arena Wyzwań", "🏆 Arena Wyzwań")
 
-    for opt in ["📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]:
+    # Narzędzia - jeden po drugim bez przerw
+    for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
     if u == ADMIN_USER:
         menu_item("👑 Admin", "👑 Admin")
 
-    choice = st.session_state.get("choice", "🏠 Start")
     st.markdown("<hr>", unsafe_allow_html=True)
     
     if st.button("🚪 Wyloguj", use_container_width=True):
