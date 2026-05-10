@@ -1111,38 +1111,44 @@ elif choice == "🛠️ Warsztat":
     st.sidebar.divider()
     st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
 
-# --- 14. KONSTRUKTOR (V1.2 - Stabilne przyciski i spacje) ---
+# --- 14. KONSTRUKTOR (V1.3 - Poprawka stabilności sesji i spacji) ---
 elif choice == "🏗️ Konstruktor":
     st.header("🏗️ Konstruktor Słów")
     st.write("Ułóż niemieckie słowo lub frazę. Pamiętaj o spacjach!")
 
-    # 1. INICJALIZACJA GRY
+    # 1. INICJALIZACJA GRY (Mózg gry)
     if "kon_word" not in st.session_state:
         if len(st.session_state.flashcards) < 3:
             st.warning("Dodaj min. 3 słówka, aby móc zagrać.")
             st.stop()
         
-        # Losujemy słowo/frazę
+        # Wybieramy słowo/frazę
         pool = [c for c in st.session_state.flashcards if len(c['de']) > 2]
         target = random.choice(pool if pool else st.session_state.flashcards)
         
         de_word = target['de'].strip()
+        # Rozbijamy na znaki (wliczając spacje)
         letters = [l for l in de_word]
         random.shuffle(letters)
         
-        st.session_state.update({
-            "kon_word": de_word,
-            "kon_pl": target['pl'],
-            "kon_shuffled": letters,
-            "kon_user": [],
-            "kon_done": False,
-            "kon_seed": random.randint(1000, 9999) # Stabilny klucz dla tej rundy
-        })
+        # Zapisujemy stan początkowy
+        st.session_state.kon_word = de_word
+        st.session_state.kon_pl = target['pl']
+        st.session_state.kon_shuffled = letters
+        st.session_state.kon_user = []
+        st.session_state.kon_done = False
+        st.session_state.kon_seed = random.randint(1000, 9999)
 
-    # 2. SILNIK GRY (FRAGMENT)
+    # 2. SILNIK GRY (Fragment UI)
     @st.fragment
     def constructor_engine():
-        # Pobieramy dane z sesji
+        # BEZPIECZNIK: Jeśli sesja wygaśnie w trakcie renderowania fragmentu
+        if "kon_word" not in st.session_state or "kon_seed" not in st.session_state:
+            st.warning("Sesja gry wygasła. Odświeżam...")
+            if st.button("Zacznij od nowa"):
+                st.rerun()
+            return
+
         kon_w = st.session_state.kon_word
         kon_pl = st.session_state.kon_pl
         shuffled = st.session_state.kon_shuffled
@@ -1151,9 +1157,10 @@ elif choice == "🏗️ Konstruktor":
         
         st.info(f"### 🇵🇱 {kon_pl}")
         
-        # Widok ułożonego słowa
+        # Podgląd postępu
         current_str = "".join(user_build)
         remaining = len(kon_w) - len(user_build)
+        # Wizualizacja spacji jako kropki dla ułatwienia
         display_str = current_str.replace(" ", "•") + "_" * remaining
         
         st.markdown(f"""
@@ -1166,20 +1173,19 @@ elif choice == "🏗️ Konstruktor":
         
         st.write("")
 
-        # Przycisk cofania
+        # Cofanie ruchu
         if user_build and not st.session_state.kon_done:
-            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True, key=f"kon_back_{k_seed}"):
+            if st.button("⬅️ Cofnij ostatni znak", use_container_width=True, key=f"back_{k_seed}"):
                 last_l = st.session_state.kon_user.pop()
                 st.session_state.kon_shuffled.append(last_l)
                 st.rerun(scope="fragment")
 
-        # Kafelki z dostępnymi znakami
-        # Używamy stałego seeda rundy i indeksu, aby klucze były unikalne ale niezmienne podczas klikania
+        # Kafelki z literami i spacjami
         cols = st.columns(min(len(shuffled), 8) if shuffled else 1)
         for i, letter in enumerate(shuffled):
-            label = "␣" if letter == " " else letter
-            # KLUCZ: Stały prefiks + seed rundy + indeks litery
-            if cols[i % 8].button(label, key=f"kbtn_{k_seed}_{i}", use_container_width=True):
+            label = "Spacja ␣" if letter == " " else letter
+            # Klucz musi być unikalny i zawierać seed, by nie było konfliktu DuplicateKey
+            if cols[i % 8].button(label, key=f"k_{k_seed}_{i}", use_container_width=True):
                 st.session_state.kon_user.append(letter)
                 st.session_state.kon_shuffled.pop(i)
                 
@@ -1187,24 +1193,25 @@ elif choice == "🏗️ Konstruktor":
                     st.session_state.kon_done = True
                 st.rerun(scope="fragment")
 
-        # Logika sprawdzania wyniku
+        # Sprawdzanie wyniku
         if st.session_state.kon_done:
             final_guess = "".join(st.session_state.kon_user)
-            
             if final_guess.lower() == kon_w.lower():
                 st.balloons()
                 st.success(f"🎊 Idealnie! To: **{kon_w}**")
             else:
                 st.error(f"❌ Prawie! Poprawny zapis: **{kon_w}**")
             
-            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary", key=f"kon_next_{k_seed}"):
+            if st.button("Następne słowo 🏗️", use_container_width=True, type="primary", key=f"next_{k_seed}"):
                 for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
+    # Uruchomienie fragmentu
     constructor_engine()
 
-    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="kon_reset_global"):
+    # Reset ręczny (poza fragmentem)
+    if st.button("Zmień słowo (Reset)", type="secondary", use_container_width=True, key="global_reset"):
         for k in ["kon_word", "kon_pl", "kon_shuffled", "kon_user", "kon_done", "kon_seed"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
