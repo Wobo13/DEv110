@@ -905,7 +905,7 @@ elif choice == "🕹️ Quiz":
 
         quiz_engine()
         
-# --- 10. FISZKI (V350 - Multilang Themes & National Colors) ---
+# --- 10. FISZKI (V351 - Multilang Themes + Shuffle Function) ---
 elif choice == "🎴 Fiszki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -920,15 +920,34 @@ elif choice == "🎴 Fiszki":
     if "f_idx" not in st.session_state: st.session_state.f_idx = 0
     if "f_flipped" not in st.session_state: st.session_state.f_flipped = False
     
-    # Pobieranie tagów do filtra (tylko dla aktualnego języka)
+    # 2. Filtrowanie i Mieszanie
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="f_tag_sel")
-    cards = [c for c in lang_cards if sel_tag == "Wszystkie" or sel_tag in str(c.get('category',''))]
+    col_sel, col_shuf = st.columns([3, 1])
+    sel_tag = col_sel.selectbox("Zakres:", ["Wszystkie"] + sorted(list(all_tags)), key="f_tag_sel")
+    
+    # Filtrujemy bazę wyjściową
+    cards_to_show = [c for c in lang_cards if sel_tag == "Wszystkie" or sel_tag in str(c.get('category',''))]
+
+    # Przycisk mieszania (Shuffle)
+    if col_shuf.button("🔀 Pomieszaj", use_container_width=True):
+        random.shuffle(cards_to_show)
+        st.session_state.f_shuffled_list = cards_to_show
+        st.session_state.f_idx = 0
+        st.session_state.f_flipped = False
+        st.toast("Kolejność pomieszana! 🎲")
+
+    # Używamy pomieszanej listy jeśli istnieje, w przeciwnym razie standardowej
+    if "f_shuffled_list" in st.session_state and sel_tag == st.session_state.get("f_last_tag"):
+        cards = st.session_state.f_shuffled_list
+    else:
+        cards = cards_to_show
+        st.session_state.f_last_tag = sel_tag
+        if "f_shuffled_list" in st.session_state: del st.session_state.f_shuffled_list
 
     if not cards:
         st.warning(f"Brak słówek w języku {current_lang_name} dla wybranej kategorii.")
@@ -941,28 +960,24 @@ elif choice == "🎴 Fiszki":
             
             c = cards[st.session_state.f_idx]
             
-            # --- LOGIKA KOLORÓW NARODOWYCH ---
+            # --- LOGIKA KOLORÓW NARODOWYCH (BEZ ZMIAN) ---
             if st.session_state.f_flipped:
-                # STRONA POLSKA (Biało-Czerwona)
                 txt = c["pl"]
-                border_color = "#DC143C" # Polska czerwień
+                border_color = "#DC143C" 
                 label = "🇵🇱 POLSKI"
                 glow_style = "box-shadow: 0 10px 30px rgba(220, 20, 60, 0.4);"
             else:
-                # STRONA OBCA
                 txt = c["de"]
                 if L_CODE == "de":
-                    # NIEMCY (Czarny-Czerwony-Złoty -> Akcent na Złoty/Czerwony)
-                    border_color = "#FFCC00" # Niemiecki złoty
+                    border_color = "#FFCC00" 
                     label = "🇩🇪 DEUTSCH"
                     glow_style = "box-shadow: 0 10px 30px rgba(255, 204, 0, 0.3);"
                 else:
-                    # CZECHY (Niebieski-Biały-Czerwony -> Akcent na Niebieski)
-                    border_color = "#11457E" # Czeski niebieski
+                    border_color = "#11457E" 
                     label = "🇨🇿 ČEŠTINA"
                     glow_style = "box-shadow: 0 10px 30px rgba(17, 69, 126, 0.4);"
 
-            # Renderowanie graficzne karty (HTML)
+            # Renderowanie graficzne karty
             st.markdown(f"""
                 <div style="min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:center; 
                 background:#111; border:6px solid {border_color}; border-radius:40px; color:white; text-align:center; padding:30px; 
@@ -978,7 +993,6 @@ elif choice == "🎴 Fiszki":
                 fex = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 
                 if fex:
-                    # Flaga przy przykładzie zależna od języka
                     flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
                     st.info(f"{flag} **{fex}**\n\n🇵🇱 {exs[0].get('pl','')}")
                     if auto_audio: play_audio(c['de'], fex, lang=L_CODE)
