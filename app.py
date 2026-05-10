@@ -2886,15 +2886,20 @@ elif choice == "🤖 Sparing AI":
                     st.error("Problem techniczny. Spróbuj wysłać ponownie.")
                     if u_input: st.session_state.chat_history.pop()
 
-# --- 29. LABORATORIUM RODZAJNIKÓW (V1.0 - Ending Rules & Color Feedback) ---
+# --- 29. LABORATORIUM RODZAJNIKÓW (V1.1 - Color-Coded Font & Visibility Fix) ---
 elif choice == "🧪 Laboratorium":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🧪 Laboratorium Rodzajników: {current_lang_name}")
-    st.write("Trenuj rozpoznawanie rodzaju rzeczownika na podstawie jego końcówki.")
+    st.write("Rozpoznaj rodzaj. Kolor czcionki po odpowiedzi wskaże Ci właściwą barwę rodzajnika.")
 
-    # 1. REGUŁY KOŃCÓWEK (Logika pedagogiczna)
+    # 1. KONFIGURACJA KOLORÓW (Barwy narodowe)
+    GENDER_COLORS = {
+        "de": {"der": "#000000", "die": "#FF0000", "das": "#FFCC00"}, # Czarny, Czerwony, Złoty
+        "cs": {"ten": "#FFFFFF", "ta": "#11457E", "to": "#D71920"}  # Biały, Niebieski, Czerwony
+    }
+
     RULES = {
         "de": {
             "die": ["ung", "heit", "keit", "schaft", "in", "ion", "ei", "ität"],
@@ -2903,22 +2908,19 @@ elif choice == "🧪 Laboratorium":
         },
         "cs": {
             "ta": ["ost", "a", "ice", "ba"],
-            "ten": ["r", "l", "n", "t", "d", "m", "s", "z"], # spółgłoski
+            "ten": ["r", "l", "n", "t", "d", "m", "s", "z"],
             "to": ["o", "í", "e", "um"]
         }
     }
 
     # 2. PRZYGOTOWANIE DANYCH
-    # Wyciągamy tylko rzeczowniki, które mają w bazie rodzajnik lub zaimek
     def get_gender(word, lang):
         w = word.lower().strip()
         if lang == "de":
             if w.startswith("der "): return "der", word[4:]
             if w.startswith("die "): return "die", word[4:]
             if w.startswith("das "): return "das", word[4:]
-        else: # czeski - szukamy zaimków lub zakładamy na podstawie tagów, 
-              # tutaj najbezpieczniej sprawdzić czy user dodał słowo z "Ten/Ta/To" 
-              # lub po prostu filtrować po końcówce w bazie
+        else:
             if w.startswith("ten "): return "ten", word[4:]
             if w.startswith("ta "): return "ta", word[4:]
             if w.startswith("to "): return "to", word[4:]
@@ -2934,7 +2936,6 @@ elif choice == "🧪 Laboratorium":
     if len(nouns) < 3:
         st.warning(f"Dodaj więcej rzeczowników z rodzajnikami (np. 'der Hund' lub 'ten dům'), aby odblokować ten moduł.")
     else:
-        # Inicjalizacja stanu gry
         if "lab_idx" not in st.session_state:
             st.session_state.lab_idx = random.randint(0, len(nouns)-1)
             st.session_state.lab_feedback = None
@@ -2942,23 +2943,29 @@ elif choice == "🧪 Laboratorium":
 
         curr = nouns[st.session_state.lab_idx]
         
-        # UI: Licznik punktów
-        st.caption(f"Punkty: {st.session_state.lab_score}")
+        # LOGIKA KOLORÓW I RAMKI
+        word_color = "white"
+        border_color = "#333"
+        text_glow = "none"
+
+        if st.session_state.lab_feedback:
+            # Ramka: Zielona/Czerwona zależnie od wyniku
+            border_color = "#28a745" if st.session_state.lab_feedback["is_correct"] else "#dc3545"
+            # Czcionka: Kolor właściwego rodzajnika
+            word_color = GENDER_COLORS[L_CODE].get(curr['gender'], "white")
+            
+            # Specjalny efekt dla czarnego koloru (DER), żeby był widoczny na ciemnym tle
+            if L_CODE == "de" and curr['gender'] == "der":
+                text_glow = "0px 0px 10px rgba(255,255,255,0.8), 1px 1px 2px white"
 
         # GŁÓWNA KARTA
-        # Kolory dynamiczne zależne od feedbacku
-        border_color = "#333"
-        if st.session_state.lab_feedback:
-            if st.session_state.lab_feedback["is_correct"]:
-                border_color = "#28a745" # Zielony (Dobrze)
-            else:
-                border_color = "#dc3545" # Czerwony (Źle)
-
         st.markdown(f"""
-            <div style="text-align:center; padding:50px; border:5px solid {border_color}; 
-            border-radius:20px; background:#111; margin-bottom:20px;">
+            <div style="text-align:center; padding:50px; border:6px solid {border_color}; 
+            border-radius:25px; background:#111; margin-bottom:20px; transition: all 0.3s ease;">
                 <div style="font-size:1.2rem; color:#aaa; margin-bottom:10px;">{curr['pl']}</div>
-                <div style="font-size:3.5rem; font-weight:bold; color:white;">{curr['clean']}</div>
+                <div style="font-size:4rem; font-weight:bold; color:{word_color}; text-shadow:{text_glow};">
+                    {curr['clean']}
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -2967,16 +2974,22 @@ elif choice == "🧪 Laboratorium":
         cols = st.columns(3)
         
         for i, opt in enumerate(options):
-            if cols[i].button(opt, use_container_width=True, type="primary" if opt.lower() == curr['gender'] and st.session_state.lab_feedback else "secondary"):
+            # Przycisk staje się 'primary' jeśli jest poprawną odpowiedzią po zakończeniu rundy
+            is_correct_btn = opt.lower() == curr['gender']
+            btn_type = "secondary"
+            if st.session_state.lab_feedback and is_correct_btn:
+                btn_type = "primary"
+
+            if cols[i].button(opt, key=f"lab_btn_{i}", use_container_width=True, type=btn_type):
                 if not st.session_state.lab_feedback:
                     is_correct = opt.lower() == curr['gender']
                     
-                    # Szukanie reguły końcówki
+                    # Szukanie reguły
                     rule_found = None
                     for g, endings in RULES[L_CODE].items():
                         for e in endings:
                             if curr['clean'].lower().endswith(e):
-                                rule_found = f"Zasada końcówki: -{e} zazwyczaj oznacza rodzaj {g.upper()}."
+                                rule_found = f"Zasada końcówki: -{e} oznacza rodzaj {g.upper()}."
                                 break
                     
                     st.session_state.lab_feedback = {
@@ -2986,33 +2999,30 @@ elif choice == "🧪 Laboratorium":
                     if is_correct: st.session_state.lab_score += 1
                     st.rerun()
 
-        # FEEDBACK
+        # FEEDBACK I NASTĘPNE SŁOWO
         if st.session_state.lab_feedback:
             st.divider()
             if st.session_state.lab_feedback["is_correct"]:
-                st.success(f"✨ Doskonale! To jest **{curr['gender'].upper()} {curr['clean']}**")
+                st.success(f"✨ Dobrze! To jest **{curr['gender'].upper()} {curr['clean']}**")
             else:
                 st.error(f"❌ Błąd. Poprawna forma to **{curr['gender'].upper()} {curr['clean']}**")
             
             st.info(st.session_state.lab_feedback["rule"])
             
-            if st.button("Następne słowo ➡️", use_container_width=True):
+            if st.button("Następne słowo ➡️", use_container_width=True, type="primary"):
                 st.session_state.lab_idx = random.randint(0, len(nouns)-1)
                 st.session_state.lab_feedback = None
                 st.rerun()
 
-    # Sidebar info
-    # --- ZAKTUALIZOWANA ŚCIĄGA W SIDEBARZE (KOLORY FLAG) ---
-        with st.sidebar:
-            st.divider()
-            st.subheader("💡 Ściąga końcówek")
-            if L_CODE == "de":
-                # NIEMCY: Czarny (Der), Czerwony (Die), Złoty (Das)
-                st.markdown("⚫ **DER (Męski):** -ismus, -or, -er, -ig")
-                st.markdown("<span style='color:#FF0000;'>🔴</span> **DIE (Żeński):** -ung, -heit, -keit, -schaft", unsafe_allow_html=True)
-                st.markdown("<span style='color:#FFCC00;'>🟡</span> **DAS (Nijaki):** -chen, -lein, -um, -ment", unsafe_allow_html=True)
-            else:
-                # CZECHY: Biały (Ten), Niebieski (Ta), Czerwony (To)
-                st.markdown("⚪ **TEN (Męski):** spółgłoski (h, k, r, d...)")
-                st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
-                st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
+    # --- ŚCIĄGA W SIDEBARZE (Zgodna z nowymi kolorami) ---
+    with st.sidebar:
+        st.divider()
+        st.subheader("💡 Ściąga końcówek")
+        if L_CODE == "de":
+            st.markdown("⚫ **DER (Męski):** -ismus, -or, -er, -ig")
+            st.markdown("<span style='color:#FF0000;'>🔴</span> **DIE (Żeński):** -ung, -heit, -keit, -schaft", unsafe_allow_html=True)
+            st.markdown("<span style='color:#FFCC00;'>🟡</span> **DAS (Nijaki):** -chen, -lein, -um, -ment", unsafe_allow_html=True)
+        else:
+            st.markdown("⚪ **TEN (Męski):** spółgłoski (h, k, r, d...)")
+            st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
+            st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
