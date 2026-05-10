@@ -1287,63 +1287,78 @@ elif choice == "🧠 Memory":
         init_memory_game()
         st.rerun()
                 
-# --- 13. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
+# --- 13. WARSZTAT SŁÓWEK (V315 - Multilang & Ultra Fast) ---
 elif choice == "🛠️ Warsztat":
-    st.header("🛠️ Warsztat Słówek")
-    st.write("Tu trafiają słówka, które sprawiają Ci najwięcej trudności. Opanuj je raz a dobrze!")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🛠️ Warsztat Słówek: {current_lang_name}")
+    st.write(f"Tu trafiają słówka {current_lang_name.lower()}, które sprawiają Ci trudność. Opanuj je raz a dobrze!")
 
-    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK
-    if "w_list" not in st.session_state:
+    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK (Filtrowane pod język)
+    if "w_list" not in st.session_state or st.session_state.get("w_lang_ref") != L_CODE:
+        # Pobieramy karty tylko dla aktualnego języka
+        lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+        
         # Filtrujemy słówka: te z level < 2 lub interval < 2 (najświeższe błędy)
         hard_cards = [
-            c for c in st.session_state.flashcards 
+            c for c in lang_cards 
             if c.get("level", 0) < 2 or c.get("interval", 0) < 2
         ]
         
-        # Jeśli nie ma "bardzo trudnych", weźmy te z najniższym levelem ogólnie
-        if len(hard_cards) < 5:
-            hard_cards = sorted(st.session_state.flashcards, key=lambda x: x.get("level", 0))[:10]
+        # Jeśli nie ma "bardzo trudnych", weźmy te z najniższym levelem ogólnie w tym języku
+        if len(hard_cards) < 5 and lang_cards:
+            hard_cards = sorted(lang_cards, key=lambda x: x.get("level", 0))[:10]
 
         random.shuffle(hard_cards)
         st.session_state.w_list = hard_cards[:15] # Sesja max 15 "koszmarów"
         st.session_state.w_idx = 0
         st.session_state.w_show = False
+        st.session_state.w_lang_ref = L_CODE
 
     if not st.session_state.w_list:
-        st.success("Twoja lista trudnych słówek jest pusta! Wygląda na to, że wszystko świetnie pamiętasz. ✨")
+        st.success(f"Twoja lista trudnych słówek ({current_lang_name}) jest pusta! ✨")
     
     elif st.session_state.w_idx >= len(st.session_state.w_list):
         st.balloons()
-        st.success("Warsztat zakończony! Te słówka nie powinny Cię już straszyć.")
+        st.success(f"Warsztat {current_lang_name} zakończony! Dobra robota.")
         if st.button("Zacznij od nowa", use_container_width=True):
-            del st.session_state.w_list
+            for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
+                if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # --- SILNIK WARSZTATU (FRAGMENT) ---
+        # --- SILNIK WARSZTATU (FRAGMENT - BEZ ZMIAN W GRAFICE) ---
         @st.fragment
         def workshop_engine():
-            # Musimy pobrać aktualne dane ze stanu sesji wewnątrz fragmentu
             idx = st.session_state.w_idx
             w_list = st.session_state.w_list
             curr = w_list[idx]
             
-            # Pasek postępu
             progress = (idx) / len(w_list)
             st.progress(progress)
             st.caption(f"Słówko {idx + 1} z {len(w_list)}")
 
-            # Karta Warsztatowa
             with st.container(border=True):
                 st.markdown(f"<h1 style='text-align: center; margin-bottom: 20px;'>{curr['de']}</h1>", unsafe_allow_html=True)
                 
                 if st.session_state.w_show:
                     st.markdown(f"<h3 style='text-align: center; color: #FF5252; margin-top: -10px;'>{curr['pl']}</h3>", unsafe_allow_html=True)
-                    if curr.get('example'):
-                        st.info(f"💡 Przykład: {curr['example']}")
-                    # Automatyczne audio jeśli jest włączone w ustawieniach
+                    
+                    # Obsługa przykładów (pobieranie z nowej struktury listy jeśli istnieje)
+                    ex_obj = curr.get('examples', [])
+                    example_text = ""
+                    if ex_obj and isinstance(ex_obj, list):
+                        example_text = ex_obj[0].get('de', '')
+                    elif curr.get('example'): # fallback dla starych danych
+                        example_text = curr['example']
+
+                    if example_text:
+                        st.info(f"💡 Przykład: {example_text}")
+                    
                     user_settings = st.session_state.user_data.get("settings", {})
                     if user_settings.get("auto_audio", True):
-                        play_audio(curr['de'], curr.get('example'))
+                        # Kluczowa zmiana: lang=L_CODE dla poprawnej wymowy
+                        play_audio(curr['de'], example_text if example_text else None, lang=L_CODE)
                 
                 st.write("")
                 if not st.session_state.w_show:
@@ -1353,7 +1368,6 @@ elif choice == "🛠️ Warsztat":
                 else:
                     col_a, col_b = st.columns(2)
                     if col_a.button("❌ Nadal trudne", use_container_width=True):
-                        # Przesuwamy na koniec listy
                         card = st.session_state.w_list.pop(st.session_state.w_idx)
                         st.session_state.w_list.append(card)
                         st.session_state.w_show = False
@@ -1364,18 +1378,17 @@ elif choice == "🛠️ Warsztat":
                         st.session_state.w_show = False
                         st.rerun(scope="fragment")
 
-        # Uruchomienie silnika
         workshop_engine()
 
-    # Przycisk resetu (poza fragmentem dla pełnego odświeżenia bazy słówek do warsztatu)
+    # Przycisk resetu
     if st.button("Wygeneruj nową listę warsztatową", type="secondary", use_container_width=True):
-        for k in ["w_list", "w_idx", "w_show"]:
+        for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
     # Statystyki warsztatu w sidebarze
     st.sidebar.divider()
-    st.sidebar.write(f"🔧 W warsztacie: **{len(st.session_state.w_list)}** słówek")
+    st.sidebar.write(f"🔧 W warsztacie ({current_lang_name}): **{len(st.session_state.w_list)}**")
 
 # --- 14. KONSTRUKTOR SŁÓW (V313 - CSS Isolation & Sidebar Fix) ---
 elif choice == "🏗️ Konstruktor":
