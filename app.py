@@ -2779,7 +2779,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V401 - Fixed TypeError & Button) ---
+# --- 28. SPARING AI (V402 - Fixed Intro & Formatting) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2808,16 +2808,22 @@ elif choice == "🤖 Sparing AI":
             with cols[i % 2]:
                 if st.button(name, use_container_width=True):
                     st.session_state.chat_scenario = name
-                    intro_prompt = f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Zacznij rozmowę naturalnie, przywitaj się i zadaj pytanie. Odpowiadaj krótko."
+                    # POPRAWKA: Wymuszamy na AI czysty tekst w powitaniu, nie JSON
+                    intro_prompt = f"Jesteś partnerem do rozmowy w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Przywitaj się krótko i zadaj jedno pytanie startowe. Odpowiedz TYLKO tekstem, nie JSONem."
                     try:
                         ai_intro = get_openai_response(intro_prompt)
+                        # Jeśli AI mimo wszystko wysłało JSON (bo funkcja bazowa go wymusza), próbujemy go wyczyścić
+                        if ai_intro.startswith("{"):
+                             try:
+                                 d = json.loads(ai_intro)
+                                 ai_intro = d.get("reply", list(d.values())[0])
+                             except: pass
+                        
                         st.session_state.chat_history.append({"role": "assistant", "content": ai_intro, "correction": None})
                         st.rerun()
                     except: st.error("Błąd połączenia z AI.")
     else:
         st.info(f"📍 Aktywny scenariusz: **{st.session_state.chat_scenario}**")
-        
-        # POPRAWKA TUTAJ: Usunięto size="small"
         if st.button("🏁 Zakończ rozmowę i zmień scenariusz", type="secondary"):
             st.session_state.chat_history = []
             st.session_state.chat_scenario = None
@@ -2825,6 +2831,7 @@ elif choice == "🤖 Sparing AI":
 
         st.divider()
 
+        # Renderowanie czatu
         for msg in st.session_state.chat_history:
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
@@ -2841,16 +2848,15 @@ elif choice == "🤖 Sparing AI":
 
         if user_input:
             st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.spinner("AI analizuje i odpowiada..."):
+            with st.spinner("AI analizuje..."):
                 prompt = f"""
                 Jesteś nauczycielem języka {current_lang_name}. 
                 Aktualny scenariusz: {st.session_state.chat_scenario}.
                 Użytkownik powiedział: "{user_input}".
-                Zwróć TYLKO JSON:
-                {{
-                  "reply": "naturalna odpowiedź po {current_lang_name}",
-                  "correction": "krótka uwaga o błędach po polsku LUB 'Brak uwag'"
-                }}
+                Zadanie:
+                1. Odpowiedz krótko i naturalnie po {current_lang_name}.
+                2. Jeśli użytkownik zrobił błąd, popraw go po polsku.
+                Zwróć JSON: {{"reply": "tekst", "correction": "poprawka lub 'Brak uwag'"}}
                 """
                 try:
                     res_raw = get_openai_response(prompt)
@@ -2858,5 +2864,4 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history[-1]["correction"] = data["correction"] if data["correction"] != "Brak uwag" else None
                     st.session_state.chat_history.append({"role": "assistant", "content": data["reply"]})
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Błąd AI: {e}")
+                except: st.error("AI miało problem z przetworzeniem wiadomości.")
