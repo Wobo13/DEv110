@@ -2250,30 +2250,29 @@ elif choice == "➕ Dodaj":
                 del st.session_state.single_temp
                 st.rerun()
 
-# --- 24. SŁOWNIK (V270 - Multilang: Filtrowanie po Języku) ---
+# --- 24. SŁOWNIK (V275 - Multilang + Examples Display + Audio Fix) ---
 elif choice == "📖 Słownik":
-    # Pobieramy aktualny język i kod z sesji
+    # Pobieramy aktualny język i kody z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     L_LABEL = "DE" if L_CODE == "de" else "CS"
     
     st.header(f"📖 Słownik: {current_lang_name}")
     
-    # 1. Pobranie słówek tylko dla wybranego języka
-    # Używamy get("lang", "de"), aby stare słówka bez tagu domyślnie trafiły do niemieckiego
+    # 1. Filtrowanie słówek pod wybrany język
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
-    # 2. Pobranie unikalnych tagów (tylko z odfiltrowanych słówek)
+    # 2. Pobieranie unikalnych tagów dla filtrów
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    # 3. Wyszukiwarka i filtry
+    # 3. UI Wyszukiwarki
     col1, col2 = st.columns([1, 2])
     f_tag = col1.selectbox(f"Kategorie ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)))
     search = col2.text_input("Szukaj słowa (ENTER ⏎):", placeholder=f"Szukaj w {current_lang_name} lub PL...")
     
-    # 4. Logika filtrowania wyników wyszukiwania
+    # 4. Logika wyszukiwania
     filtered = [
         c for c in lang_cards 
         if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) 
@@ -2283,9 +2282,9 @@ elif choice == "📖 Słownik":
     st.write("---")
     st.subheader(f"Znaleziono słówek: {len(filtered)}")
     
-    # Zabezpieczenie przed przeładowaniem strony
+    # Zabezpieczenie wydajności
     MAX_DISPLAY = 50
-    display_list = filtered[:MAX_DISPLAY] if len(filtered) > MAX_DISPLAY else filtered
+    display_list = filtered[:MAX_DISPLAY]
     
     if len(filtered) > MAX_DISPLAY:
         st.warning(f"Wyświetlam pierwsze {MAX_DISPLAY} wyników. Zawęź wyszukiwanie.")
@@ -2293,37 +2292,55 @@ elif choice == "📖 Słownik":
     if not display_list:
         st.info(f"Brak słówek w języku {current_lang_name} spełniających kryteria.")
         
-    # 5. Wyświetlanie wyników
+    # 5. Renderowanie listy wyników
     for c in display_list:
-        # Dynamiczna etykieta akordeonu (Flaga + Słowo)
         flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
         with st.expander(f"{flag} {c['de']} ➔ 🇵🇱 {c['pl']}"):
             
+            # --- SEKCJA SZCZEGÓŁÓW I PRZYKŁADÓW ---
             st.caption(f"🗓️ Powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')}")
             
-            # Przycisk Audio z poprawnym kodem języka
-            if st.button(f"🔊 Odsłuchaj ({L_LABEL})", key=f"audio_{c['id']}", use_container_width=True):
-                play_audio(c['de'], lang=L_CODE)
+            # Pobieranie tekstu przykładu (obsługa starego pola i nowej listy)
+            exs = c.get("examples", [])
+            example_to_play = None
             
-            # Tryb Edycji
-            with st.form(f"ed_{c['id']}"):
-                input_label = f"Słowo {current_lang_name} ({L_LABEL})"
-                n_de = st.text_input(input_label, c['de'])
-                n_pl = st.text_input("Polski (PL)", c['pl'])
+            if exs and isinstance(exs, list) and len(exs) > 0:
+                st.markdown("**Przykłady użycia:**")
+                for ex in exs:
+                    st.write(f"🔹 **{ex.get('de')}**")
+                    st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;*{ex.get('pl')}*")
+                    example_to_play = ex.get('de') # Bierzemy pierwszy do audio
+            elif c.get('example'):
+                st.markdown("**Przykład użycia:**")
+                st.write(f"🔹 **{c['example']}**")
+                example_to_play = c['example']
+
+            st.write("")
+            
+            # Przycisk Audio
+            if st.button(f"🔊 Odsłuchaj wymowę ({L_LABEL})", key=f"audio_{c['id']}", use_container_width=True):
+                play_audio(c['de'], example_to_play, lang=L_CODE)
+            
+            st.divider()
+            
+            # --- FORMULARZ EDYCJI ---
+            with st.form(f"ed_form_{c['id']}"):
+                st.markdown("🔍 **Edytuj dane słówka:**")
+                n_de = st.text_input(f"Słowo ({current_lang_name})", c['de'])
+                n_pl = st.text_input("Tłumaczenie (PL)", c['pl'])
                 n_ca = st.text_input("Kategorie / Tagi", c.get('category',''))
                 
                 if st.form_submit_button("💾 Zapisz zmiany", use_container_width=True):
-                    # Przy aktualizacji zachowujemy obecny język (L_CODE)
                     update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca, "lang": L_CODE})
                     st.session_state.flashcards = load_flashcards(u)
-                    st.toast("Zapisano! ✅")
+                    st.toast("Zaktualizowano! ✅")
                     st.rerun()
-                    
-            # Usuwanie
-            if st.button("🗑️ Usuń", key=f"del_{c['id']}", type="primary", use_container_width=True):
+            
+            # Przycisk Usuwania
+            if st.button("🗑️ Usuń słówko", key=f"del_btn_{c['id']}", type="primary", use_container_width=True):
                 delete_word(c['id'])
                 st.session_state.flashcards = load_flashcards(u)
-                st.toast("Usunięto! 🗑️")
+                st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
 # --- 25. STATYSTYKI (V231 - Classic Look + Multilang Filter) ---
