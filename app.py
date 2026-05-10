@@ -2779,22 +2779,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V480 - Armor-Plated JSON Parser) ---
+# --- 28. SPARING AI (V490 - Dialogue Intelligence Fix) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Rozmawiaj swobodnie. System zadba o poprawną strukturę i poprawi błędy.")
+    st.write("Rozmawiaj swobodnie. System zadba o poprawną strukturę i pociągnie dialog dalej.")
 
-    # 1. FUNKCJA PARSOWANIA (Wersja Pancerna)
     def mega_parse(raw_text):
-        """Wyciąga dane z JSON-a nawet jeśli AI dodało komentarze lub błędy formatowania."""
         res = {"reply": str(raw_text), "translation": "", "correction": None}
         if not raw_text: return res
-        
         try:
-            # Próba 1: Znalezienie bloku JSON między klamrami
             start = raw_text.find("{")
             end = raw_text.rfind("}") + 1
             if start != -1 and end > 0:
@@ -2803,27 +2799,10 @@ elif choice == "🤖 Sparing AI":
                 res["reply"] = data.get("reply", res["reply"])
                 res["translation"] = data.get("translation", "")
                 c = data.get("correction", "")
-                if c and str(c).lower() not in ["brak uwag", "none", "null", "ok"]:
+                if c and str(c).lower() not in ["brak uwag", "none", "null", "ok", "zdanie jest poprawne", "brak błędów"]:
                     res["correction"] = c
                 return res
-        except:
-            pass
-
-        # Próba 2: Regex (Plan ratunkowy dla kluczy)
-        import re
-        for key in ["reply", "translation", "correction"]:
-            match = re.search(rf'"{key}"\s*:\s*"(.*?)"', raw_text, re.DOTALL)
-            if match:
-                val = match.group(1)
-                if key == "correction" and val.lower() in ["brak uwag", "none", "null"]:
-                    res[key] = None
-                else:
-                    res[key] = val
-        
-        # Jeśli Regex nic nie znalazł w 'reply', a tekst nie jest JSONem, traktujemy go jako surową odpowiedź
-        if len(res["reply"]) < 5 and not raw_text.startswith("{"):
-            res["reply"] = raw_text
-
+        except: pass
         return res
 
     scenarios = {
@@ -2848,11 +2827,10 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history = []
                     st.rerun()
     else:
-        # INICJALIZACJA
         if not st.session_state.chat_history:
-            with st.spinner("Łączenie..."):
+            with st.spinner("Inicjowanie scenariusza..."):
                 details = scenarios[st.session_state.chat_scenario]
-                intro_p = f"Jesteś asystentem w języku {current_lang_name}. Scenariusz: {details[L_CODE]}. Przywitaj się krótko. Zwróć WYŁĄCZNIE JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
+                intro_p = f"Jesteś osobą w sytuacji: {details[L_CODE]}. Przywitaj się i zadaj pytanie jako pierwszy. Język: {current_lang_name}. Zwróć JSON: {{\"reply\": \"...\", \"translation\": \"...\"}}"
                 try:
                     raw = get_openai_response(intro_p)
                     data = mega_parse(raw)
@@ -2861,10 +2839,9 @@ elif choice == "🤖 Sparing AI":
                     })
                     st.rerun()
                 except:
-                    st.error("Błąd połączenia. Kliknij Koniec i spróbuj ponownie.")
+                    st.error("Błąd połączenia.")
                     st.stop()
 
-        # UI
         c_top1, c_top2 = st.columns([4, 1])
         c_top1.info(f"📍 Temat: **{st.session_state.chat_scenario}**")
         if c_top2.button("🏁 Koniec"):
@@ -2874,7 +2851,6 @@ elif choice == "🤖 Sparing AI":
 
         st.divider()
 
-        # CZAT
         for i, msg in enumerate(st.session_state.chat_history):
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
@@ -2888,26 +2864,34 @@ elif choice == "🤖 Sparing AI":
                     if st.button("🔊 Słuchaj", key=f"sp_aud_{i}"):
                         play_audio(msg["content"], lang=L_CODE)
 
-        # INPUT
         u_in = st.chat_input(f"Napisz po {current_lang_name.lower()}...")
         if u_in:
             st.session_state.chat_history.append({"role": "user", "content": u_in})
-            with st.spinner("Analizuję..."):
+            with st.spinner("Rozmówca pisze..."):
+                # --- KLUCZOWA ZMIANA W PROMPTCIE ---
                 prompt = f"""
-                Jesteś nauczycielem {current_lang_name}. Scenariusz: {st.session_state.chat_scenario}.
-                Użytkownik napisał: "{u_in}". Odpowiedz naturalnie i popraw błędy.
-                Zasady: 1. Rzeczowniki w DE dużą literą. 2. Toleruj brak umlautów.
-                Zwróć JSON: {{"reply": "Twoja odpowiedź", "translation": "tłumaczenie PL", "correction": "Poprawa + wyjaśnienie PL"}}
+                SCENARIUSZ: {st.session_state.chat_scenario}.
+                Jesteś ROZMÓWCĄ (np. kelnerem, lekarzem, kolegą) w języku {current_lang_name}.
+                Użytkownik napisał: "{u_in}".
+                
+                TWOJE ZADANIA:
+                1. (REPLY): Zareaguj na słowa użytkownika NATURALNIE. Nie powtarzaj jego zdania. Pociągnij dialog dalej, zadaj pytanie lub skomentuj. Odpowiedz krótkim zdaniem.
+                2. (TRANSLATION): Przetłumacz swoją odpowiedź na polski.
+                3. (CORRECTION): Jeśli użytkownik zrobił błąd (gramatyka, brak umlautów w DE), napisz krótko co poprawić. Jeśli zdanie jest poprawne, wpisz "OK".
+                
+                ZASADY DE: Rzeczowniki wielką literą. Toleruj brak umlautów (ale wspomnij o nich w korekcie).
+                
+                Zwróć JSON: {{"reply": "Twoja reakcja", "translation": "tłumaczenie", "correction": "Poprawa + wyjaśnienie LUB 'OK'"}}
                 """
                 try:
                     raw_res = get_openai_response(prompt)
                     data = mega_parse(raw_res)
+                    # Nie pokazujemy korekty, jeśli AI uznało że jest OK
                     st.session_state.chat_history[-1]["correction"] = data["correction"]
                     st.session_state.chat_history.append({
                         "role": "assistant", "content": data["reply"], "trans": data["translation"]
                     })
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Problem z odpowiedzią AI. Spróbuj wysłać ponownie.")
-                    # Usuwamy ostatnią wiadomość użytkownika, aby mógł spróbować jeszcze raz
+                except Exception:
+                    st.error("Błąd odpowiedzi.")
                     st.session_state.chat_history.pop()
