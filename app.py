@@ -281,11 +281,13 @@ def update_activity(m):
     if needs_save:
         save_user_data(u, st.session_state.user_data)
 
-# --- 6. SIDEBAR (V300 - Pełny kod z kompletem 3 gier) ---
+# --- 6. SIDEBAR (V301 - Pełna synchronizacja z systemem celu) ---
 with st.sidebar:
-    # 1. Nagłówek: Nazwa Wielką Literą + Streak
+    # 1. Nagłówek: Nazwa użytkownika + Ogień (Streak)
     user_display = str(u).capitalize()
-    streak = st.session_state.user_data.get('streak', 0)
+    # Pobieramy świeże dane z session_state (zaktualizowane w Sekcji 3/5)
+    ud = st.session_state.user_data
+    streak = ud.get('streak', 0)
     
     st.markdown(f"""
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
@@ -294,34 +296,41 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. Obliczanie statystyk
+    # 2. Obliczanie Wiedzy (% słówek opanowanych)
     all_c = st.session_state.flashcards
     wiedza_perc = 0
     if all_c:
+        # Silne słówka to te, których powtórka jest za ponad 6 dni
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', date.today())).date() - date.today()).days > 6])
         wiedza_perc = int((strong / len(all_c)) * 100)
     
-    # Cel (Realna nauka - włączając wszystkie moduły gier: Kon, Wan, Bal)
+    # 3. Obliczanie Celu Dziennego (Suma minut z dzisiaj)
+    # Lista wszystkich kodów modułów, które wliczamy do nauki
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
-    current_stats = st.session_state.user_data.get("time_stats", {})
+    current_stats = ud.get("time_stats", {})
+    
+    # Sumujemy sekundy i zamieniamy na pełne minuty
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
-    daily_goal = st.session_state.user_data.get("settings", {}).get("daily_goal", 20)
     
-    # 3. Wyświetlanie pasków postępu
+    # Pobieramy cel z ustawień (domyślnie 20 min)
+    daily_goal = ud.get("settings", {}).get("daily_goal", 20)
+    
+    # 4. Wyświetlanie pasków postępu
     st.caption(f"🧠 Wiedza: {wiedza_perc}%")
-    st.progress(wiedza_perc / 100)
+    st.progress(min(wiedza_perc / 100, 1.0))
     
     st.caption(f"🎯 Cel: {study_minutes}/{daily_goal}m")
     goal_progress = min(study_minutes / daily_goal, 1.0)
     st.progress(goal_progress)
     
+    # Komunikat o sukcesie
     if study_minutes >= daily_goal:
-        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel osiągnięty!</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #4CAF50; font-size: 0.8em; margin-top: -10px; font-weight: bold;'>✅ Cel na dziś osiągnięty!</p>", unsafe_allow_html=True)
 
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-    # 4. MENU (Nawigacja z kompletem wszystkich modułów)
+    # 5. MENU NAWIGACYJNE
     menu_options = [
         "🏠 Start", 
         "📅 Powtórki", 
@@ -333,7 +342,7 @@ with st.sidebar:
         "🛠️ Warsztat",
         "🏗️ Konstruktor", 
         "🐍 Lingwistyczny Wąż",
-        "🎈 Balonowy Wyścig", # <--- NOWOŚĆ!
+        "🎈 Balonowy Wyścig",
         "🏆 Arena Wyzwań",
         "📦 Generator słów", 
         "📸 Skaner AI", 
@@ -346,13 +355,16 @@ with st.sidebar:
     if u == ADMIN_USER:
         menu_options.append("👑 Admin")
 
+    # Radio button jako główne menu
     choice = st.radio("Menu", menu_options, label_visibility="collapsed")
     
     st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
     
-    # 5. Przycisk wylogowania
+    # 6. Przycisk wylogowania
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
+        # Czyścimy parametry URL (tokeny) przy wylogowaniu
+        st.query_params.clear()
         st.rerun()
 
     st.caption(f"{APP_VERSION}")
