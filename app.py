@@ -606,7 +606,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine()
 
-# --- 9. QUIZ (V237 - Poprawione klucze przycisków) ---
+# --- 9. QUIZ (V238 - Rozwiązanie błędu AttributeError i DuplicateKey) ---
 elif choice == "🕹️ Quiz":
     st.header("🕹️ Quiz")
     
@@ -621,7 +621,7 @@ elif choice == "🕹️ Quiz":
     else:
         @st.fragment
         def quiz_engine():
-            # Inicjalizacja nowego pytania
+            # 1. INICJALIZACJA PYTANIA
             if "q_c" not in st.session_state:
                 idx = random.randrange(len(all_c))
                 t = all_c[idx]
@@ -630,15 +630,17 @@ elif choice == "🕹️ Quiz":
                 opts = distractors + [t['pl']]
                 random.shuffle(opts)
                 
-                # Generujemy unikalny seed dla kluczy w tej rundzie
-                st.session_state.update({
-                    "q_c": t, 
-                    "q_a": t['pl'], 
-                    "q_o": opts, 
-                    "q_s": "ask", 
-                    "u_q": None,
-                    "q_key_seed": random.randint(1000, 9999) # Seed zapobiega duplikatom kluczy
-                })
+                # Zapisujemy wszystko do sesji
+                st.session_state.q_c = t
+                st.session_state.q_a = t['pl']
+                st.session_state.q_o = opts
+                st.session_state.q_s = "ask"
+                st.session_state.u_q = None
+                st.session_state.q_key_seed = random.randint(1000, 9999)
+
+            # 2. BEZPIECZNIK DLA SEEDA (Zapobiega AttributeError)
+            if "q_key_seed" not in st.session_state:
+                st.session_state.q_key_seed = random.randint(1000, 9999)
 
             q_c = st.session_state.q_c
             st.write(f"### Jak przetłumaczysz: **{q_c['de']}**")
@@ -648,14 +650,16 @@ elif choice == "🕹️ Quiz":
                     first_letter = st.session_state.q_a[0].upper()
                     st.caption(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**...")
 
-                # RENDEROWANIE PRZYCISKÓW Z UNIKALNYM KLUCZEM
+                # 3. RENDEROWANIE PRZYCISKÓW Z UNIKALNYM SEEDEM
+                current_seed = st.session_state.q_key_seed
                 for i, o in enumerate(st.session_state.q_o):
-                    # Dodajemy indeks i seed, aby klucz był ZAWSZE unikalny w skali całej aplikacji
-                    if st.button(o, key=f"qbtn_{st.session_state.q_key_seed}_{i}", use_container_width=True):
+                    # Klucz składa się z seeda rundy i indeksu przycisku
+                    if st.button(o, key=f"qbtn_{current_seed}_{i}", use_container_width=True):
                         st.session_state.u_q = o
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
             else:
+                # 4. WYNIK I LOGIKA SRS
                 is_correct = st.session_state.u_q == st.session_state.q_a
                 word_id = q_c.get('id')
                 
@@ -664,15 +668,15 @@ elif choice == "🕹️ Quiz":
                     new_date = str(date.today() + timedelta(days=2))
                     update_word(word_id, {"next_review": new_date})
                 else:
-                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}** (Słówko wraca do powtórek)")
+                    st.error(f"❌ Poprawnie: **{st.session_state.q_a}**")
                     payload = {"next_review": str(date.today())}
                     if 'level' in q_c:
                         payload["level"] = 0
                     update_word(word_id, payload)
                 
-                # Odświeżamy bazę w sesji
                 st.session_state.flashcards = load_flashcards(u)
 
+                # Audio i przykłady
                 exs = q_c.get("examples", [])
                 fex_de = exs[0].get("de") if exs and isinstance(exs, list) and len(exs) > 0 else None
                 fex_pl = exs[0].get("pl") if fex_de else None
@@ -683,6 +687,7 @@ elif choice == "🕹️ Quiz":
                 else:
                     if auto_audio: play_audio(q_c['de'])
                 
+                # Przycisk "Następne" czyści stan, co wymusza nową inicjalizację (punkt 1)
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q", "q_key_seed"]:
                         if key in st.session_state: del st.session_state[key]
