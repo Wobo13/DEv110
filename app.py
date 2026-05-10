@@ -1892,14 +1892,13 @@ elif choice == "🏆 Arena Wyzwań":
         # 4. STATUS TWOJEJ POZYCJI
         st.info(f"Rywalizujesz z {len(leaderboard_data)} użytkownikami. Powodzenia!")
 
-# --- 21. GENERATOR SŁÓW (V251 - Multilang + Sidebar Slim Match) ---
+# --- 21. GENERATOR SŁÓW (V252 - Multilang Gender Support) ---
 elif choice == "📦 Generator":
-    # Pobieramy aktualny język i kod z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📦 Generator: {current_lang_name}")
-    st.write(f"Generuj słówka w języku {current_lang_name} na podstawie poziomu lub tematu.")
+    st.write(f"Generuj słówka w języku {current_lang_name}. System automatycznie doda rodzajniki/zaimki.")
 
     # 1. PANEL STEROWANIA
     with st.container(border=True):
@@ -1919,17 +1918,16 @@ elif choice == "📦 Generator":
                     context = f"na poziomie {gen_lvl}" if gen_lvl != "Brak" else ""
                     if gen_topic: context += f" o tematyce: {gen_topic}"
                     
-                    # Instrukcja specyficzna dla języka
-                    lang_instr = ""
+                    # --- KLUCZOWA POPRAWKA INSTRUKCJI JĘZYKOWEJ ---
                     if L_CODE == "de":
-                        lang_instr = "UWAGA: Każdy rzeczownik NIEMIECKI MUSI posiadać rodzajnik (der, die lub das)."
-                    elif L_CODE == "cs":
-                        lang_instr = "UWAGA: Generuj słowa w języku CZESKIM."
+                        lang_instr = "UWAGA: Każdy rzeczownik NIEMIECKI MUSI posiadać rodzajnik określony (der, die lub das) przed słowem."
+                    else: # cs
+                        lang_instr = "UWAGA: Każdy rzeczownik CZESKI MUSI posiadać zaimek wskazujący określający rodzaj (ten, ta lub to) przed słowem. To niezbędne do nauki rodzajów!"
 
                     prompt = f"""Wygeneruj {gen_count} unikalnych słówek/fraz w języku {current_lang_name} {context}.
                     {lang_instr}
                     Dla każdego elementu podaj:
-                    1. de: słowo (w języku {current_lang_name})
+                    1. de: słowo (w języku {current_lang_name} - JEŚLI TO RZECZOWNIK, DODAJ RODZAJNIK/ZAIMEK)
                     2. pl: tłumaczenie na polski
                     3. tags: minimum 3 tagi
                     4. ex_de: przykład użycia (w języku {current_lang_name})
@@ -1950,7 +1948,7 @@ elif choice == "📦 Generator":
         st.subheader("📝 Podgląd i personalizacja")
         
         saved_lvl = st.session_state.get("last_gen_lvl", "Brak")
-        lang_col = "Niemiecki" if L_CODE == "de" else "Czeski"
+        lang_col = "Słowo (Oryginał)"
 
         df_init = []
         for item in st.session_state.temp_generated:
@@ -1971,7 +1969,7 @@ elif choice == "📦 Generator":
             df_init, 
             use_container_width=True, 
             num_rows="dynamic",
-            key="ai_editor_gen_v251"
+            key="ai_editor_gen_v252"
         )
 
         col_save, col_cancel = st.columns(2)
@@ -1993,7 +1991,7 @@ elif choice == "📦 Generator":
                     save_word(u, new_word)
                     success_count += 1
             
-            st.success(f"Dodano {success_count} słówek ({current_lang_name})!")
+            st.success(f"Dodano {success_count} słówek do bazy {current_lang_name}!")
             st.session_state.flashcards = load_flashcards(u)
             if "temp_generated" in st.session_state:
                 del st.session_state.temp_generated
