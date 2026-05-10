@@ -2367,26 +2367,20 @@ elif choice == "📊 Statystyki":
         hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
 
-# --- 26. KONTO (V268 - Multilang + Sidebar Slim Match) ---
+# --- 26. KONTO (V270 - Full Restore + Multilang Safety Zone) ---
 elif choice == "⚙️ Konto":
-    st.header("⚙️ Zarządzanie Kontem")
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    st.header(f"⚙️ Zarządzanie Kontem")
     
-    # --- WYŚWIETLANIE KOMUNIKATÓW PO PRZEŁADOWANIU ---
     if "acc_msg" in st.session_state:
         st.success(st.session_state.acc_msg)
         del st.session_state.acc_msg
 
     # --- 1. PREFERENCJE NAUKI ---
     with st.expander("🛠️ Preferencje nauki", expanded=True):
-        st.write("Dostosuj działanie aplikacji:")
-        
-        # Inicjalizacja ustawień, jeśli ich brakuje
         if "settings" not in st.session_state.user_data:
-            st.session_state.user_data["settings"] = {
-                "auto_audio": True,
-                "show_hints": True,
-                "daily_goal": 20
-            }
+            st.session_state.user_data["settings"] = {"auto_audio": True, "show_hints": True, "daily_goal": 20, "test_questions": 10}
         
         s = st.session_state.user_data["settings"]
         
@@ -2396,12 +2390,14 @@ elif choice == "⚙️ Konto":
             s["show_hints"] = st.toggle("Podpowiedzi PL w Quizie", s.get("show_hints", True))
         with col_pref2:
             s["daily_goal"] = st.slider("Cel dnia (min)", 5, 120, s.get("daily_goal", 20))
+            # PRZYWRÓCONA OPCJA: Domyślna ilość pytań w teście
+            s["test_questions"] = st.number_input("Domyślna ilość pytań w teście", 5, 50, s.get("test_questions", 10))
         
         if st.button("💾 Zapisz preferencje", use_container_width=True):
             save_user_data(u, st.session_state.user_data)
-            st.toast("Zapisano! 💾")
+            st.toast("Zapisano ustawienia! 💾")
 
-    # --- 2. ZMIANA HASŁA ---
+    # --- 2. ZMIANA HASŁA (Bez zmian) ---
     with st.expander("🔑 Zmień hasło"):
         with st.form("pw_change_form"):
             old_p = st.text_input("Stare hasło", type="password")
@@ -2411,89 +2407,67 @@ elif choice == "⚙️ Konto":
                 res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(old_p):
                     db.table("users_auth").update({"password_hash": hash_pw(new_p)}).eq("username", u).execute()
-                    st.success("Hasło zostało zmienione!")
+                    st.success("Hasło zmienione!")
                 else:
                     st.error("Błędne stare hasło!")
 
-    # --- 3. EKSPORT I IMPORT (CSV) ---
-    with st.expander("📥 Dane (Eksport/Import CSV)"):
-        st.subheader("Eksportuj słówka")
+    # --- 3. DANE (Eksport/Import) ---
+    with st.expander("📥 Dane (CSV)"):
         if st.session_state.flashcards:
             df_export = pd.DataFrame(st.session_state.flashcards)
-            # Eksportujemy tylko najważniejsze kolumny włącznie z kodem języka
             csv = df_export[["de", "pl", "category", "lang"]].to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Pobierz bazę .CSV",
-                data=csv,
-                file_name=f"wobo_backup_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            st.download_button("📥 Pobierz bazę .CSV", data=csv, file_name=f"wobo_export.csv", mime="text/csv", use_container_width=True)
         
-        st.divider()
-        st.subheader("Importuj słówka")
-        st.caption("Wymagane kolumny: de, pl, category, lang (opcjonalnie)")
-        up_file = st.file_uploader("Wybierz plik CSV", type="csv")
-        
-        if up_file and st.button("🚀 Rozpocznij import", type="primary"):
+        up_file = st.file_uploader("Importuj CSV (de, pl, category, lang)", type="csv")
+        if up_file and st.button("🚀 Importuj", use_container_width=True):
             try:
                 imp_df = pd.read_csv(up_file)
-                if all(col in imp_df.columns for col in ["de", "pl"]):
-                    new_cards = []
-                    curr_lang = st.session_state.get("current_lang", "Niemiecki")
-                    default_l_code = "de" if curr_lang == "Niemiecki" else "cs"
-                    
-                    for _, row in imp_df.iterrows():
-                        new_cards.append({
-                            "username": u,
-                            "de": str(row["de"]),
-                            "pl": str(row["pl"]),
-                            "category": str(row.get("category", "Import")),
-                            "lang": str(row.get("lang", default_l_code)),
-                            "next_review": str(date.today()),
-                            "level": 0,
-                            "origin": "Import"
-                        })
-                    
-                    if new_cards:
-                        get_db().table("flashcards").insert(new_cards).execute()
-                        st.session_state.flashcards = load_flashcards(u)
-                        st.success(f"Zaimportowano {len(new_cards)} słówek!")
-                        st.rerun()
-                else:
-                    st.error("Brak kolumn 'de' oraz 'pl' w pliku!")
-            except Exception as e:
-                st.error(f"Błąd: {e}")
+                new_cards = []
+                for _, row in imp_df.iterrows():
+                    new_cards.append({
+                        "username": u, "de": str(row["de"]), "pl": str(row["pl"]),
+                        "category": str(row.get("category", "Import")),
+                        "lang": str(row.get("lang", L_CODE)),
+                        "next_review": str(date.today()), "level": 0
+                    })
+                get_db().table("flashcards").insert(new_cards).execute()
+                st.session_state.flashcards = load_flashcards(u)
+                st.success(f"Zaimportowano {len(new_cards)} słówek!")
+            except Exception as e: st.error(f"Błąd: {e}")
 
-    # --- 4. NIEBEZPIECZNA STREFA ---
+    # --- 4. NIEBEZPIECZNA STREFA (NAPRAWIONA I ROZBUDOWANA) ---
     with st.expander("🗑️ Niebezpieczna strefa"):
-        st.warning("Uwaga: Operacje są nieodwracalne.")
-        safety_lock = st.checkbox("Potwierdzam chęć usunięcia danych")
+        st.error(f"Tryb zarządzania dla języka: **{current_lang_name.upper()}**")
+        safety_lock = st.checkbox("Potwierdzam operacje kasowania")
         
-        # Reset Passy
-        if st.button("🔥 Wyzeruj Streak", disabled=not safety_lock, use_container_width=True):
+        # PRZYWRÓCONA OPCJA: Kasowanie poziomów
+        st.subheader("Kasowanie poziomów")
+        col_lvl1, col_lvl2 = st.columns([2, 1])
+        lvl_to_del = col_lvl1.selectbox("Wybierz poziom do wyczyszczenia:", [0, 1, 2, 3, 4, 5], key="lvl_del_sel")
+        
+        if col_lvl2.button(f"Skasuj Lvl {lvl_to_del}", disabled=not safety_lock, use_container_width=True):
+            res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).eq("level", lvl_to_del).execute()
+            count = len(res.data) if res.data else 0
+            st.session_state.flashcards = load_flashcards(u)
+            st.session_state.acc_msg = f"Skasowano {count} słówek z Poziomu {lvl_to_del} ({current_lang_name})."
+            st.rerun()
+
+        st.divider()
+        st.subheader("Resety całkowite")
+        
+        # Reset tylko wybranego języka
+        if st.button(f"💣 USUŃ WSZYSTKIE SŁÓWKA ({current_lang_name.upper()})", type="primary", disabled=not safety_lock, use_container_width=True):
+            res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).execute()
+            count = len(res.data) if res.data else 0
+            st.session_state.flashcards = load_flashcards(u)
+            st.session_state.acc_msg = f"Usunięto całą bazę ({current_lang_name}) - łącznie {count} słówek."
+            st.rerun()
+
+        if st.button("🔥 Wyzeruj Streak (Globalnie)", disabled=not safety_lock, use_container_width=True):
             st.session_state.user_data["streak"] = 0
             st.session_state.user_data["last_date"] = "2000-01-01"
             save_user_data(u, st.session_state.user_data)
             st.session_state.acc_msg = "Passa została wyzerowana."
-            st.rerun()
-
-        # Reset Statystyk
-        if st.button("📊 Resetuj Statystyki Nauki", disabled=not safety_lock, use_container_width=True):
-            st.session_state.user_data["time_stats"] = {}
-            st.session_state.user_data["test_history"] = []
-            save_user_data(u, st.session_state.user_data)
-            # Resetujemy też daty powtórek wszystkich słówek na dzisiaj
-            get_db().table("flashcards").update({"next_review": str(date.today())}).eq("username", u).execute()
-            st.session_state.acc_msg = "Statystyki zostały zresetowane."
-            st.session_state.flashcards = load_flashcards(u)
-            st.rerun()
-
-        # Hard Reset Bazy
-        if st.button("💣 USUŃ WSZYSTKIE SŁÓWKA", type="primary", disabled=not safety_lock, use_container_width=True):
-            get_db().table("flashcards").delete().eq("username", u).execute()
-            st.session_state.flashcards = []
-            st.session_state.acc_msg = "Twoja baza słówek została wyczyszczona."
             st.rerun()
 
 # --- 27. ADMIN PRO (V300 - Pełny rozkład z Wężem i Balonem) ---
