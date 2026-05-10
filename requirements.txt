@@ -6,3 +6,4 @@ postgrest
 gtts
 plotly
 Pillow
+pytz
