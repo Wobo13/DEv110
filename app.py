@@ -989,7 +989,7 @@ elif choice == "📝 Testy":
 
             test_engine()
 
-# --- 12. GRA MEMORY (V286 - Pełna mechanika + Multilang - Bez Audio) ---
+# --- 12. GRA MEMORY (V287 - Fix AttributeError Restart) ---
 elif choice == "🧠 Memory":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -1000,30 +1000,39 @@ elif choice == "🧠 Memory":
     # 1. FILTROWANIE SŁÓWEK POD JĘZYK
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
 
-    # 2. INICJALIZACJA STANU GRY
-    if "mem_grid" not in st.session_state or st.session_state.get("mem_lang_ref") != L_CODE:
+    # 2. FUNKCJA INICJALIZACJI / RESETU
+    def init_memory_game():
         if len(all_c) < 6:
-            st.warning(f"Dodaj przynajmniej 6 słówek w języku {current_lang_name}, aby móc zagrać.")
-            st.stop()
-        
+            return False
         cards_pool = random.sample(all_c, 6)
         grid = []
         for c in cards_pool:
             grid.append({"id": c["id"], "text": c["de"], "type": "foreign"})
             grid.append({"id": c["id"], "text": c["pl"], "type": "pl"})
-        
         random.shuffle(grid)
+        
         st.session_state.mem_grid = grid
         st.session_state.mem_status = ["hidden"] * 12
         st.session_state.mem_first = None
         st.session_state.mem_pairs = 0
         st.session_state.mem_start_time = None
         st.session_state.mem_final_time = None
-        st.session_state.mem_lang_ref = L_CODE # Referencja do resetu przy zmianie języka
+        st.session_state.mem_lang_ref = L_CODE
+        return True
+
+    # Inicjalizacja przy pierwszym wejściu lub zmianie języka
+    if "mem_grid" not in st.session_state or st.session_state.get("mem_lang_ref") != L_CODE:
+        if not init_memory_game():
+            st.warning(f"Dodaj przynajmniej 6 słówek w języku {current_lang_name}, aby móc zagrać.")
+            st.stop()
 
     # 3. SILNIK GRY (FRAGMENT)
     @st.fragment
     def memory_engine():
+        # Bezpiecznik: jeśli klucz zniknął, zainicjuj ponownie zamiast sypać błędem
+        if "mem_grid" not in st.session_state:
+            init_memory_game()
+            
         grid = st.session_state.mem_grid
         status = st.session_state.mem_status
         
@@ -1044,30 +1053,29 @@ elif choice == "🧠 Memory":
             if st.session_state.mem_final_time is None:
                 st.session_state.mem_final_time = round(time.time() - st.session_state.mem_start_time, 2)
                 
-                # ZAPIS REKORDU DO WŁAŚCIWEJ KOLUMNY (_de lub _cs)
+                # ZAPIS REKORDU
                 try:
                     db = get_db()
                     new_score = st.session_state.mem_final_time
                     mem_key = f"memory_scores_{L_CODE}"
-                    
                     ud = st.session_state.user_data
                     current_scores = ud.get(mem_key, [])
                     if not isinstance(current_scores, list): current_scores = []
-                    
                     current_scores.append(new_score)
                     current_scores = sorted([float(s) for s in current_scores])[:10]
                     
                     db.table("user_data").update({mem_key: current_scores}).eq("username", u).execute()
                     st.session_state.user_data[mem_key] = current_scores
-                except Exception as e:
+                except:
                     pass
 
             st.balloons()
-            st.success(f"Brawo! Twój czas w języku {current_lang_name}: {st.session_state.mem_final_time}s")
+            st.success(f"Brawo! Twój czas: {st.session_state.mem_final_time}s")
+            
+            # POPRAWIONY RESTART: Zamiast del, robimy nową inicjalizację
             if st.button("Zagraj jeszcze raz", use_container_width=True):
-                for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
-                    if k in st.session_state: del st.session_state[k]
-                st.rerun(scope="fragment")
+                init_memory_game()
+                st.rerun()
             return
 
         st.write("---")
@@ -1077,6 +1085,9 @@ elif choice == "🧠 Memory":
             cols = st.columns(4)
             for col in range(4):
                 idx = row * 4 + col
+                # Dodatkowe sprawdzenie bezpieczeństwa indeksu
+                if idx >= len(status): continue
+                
                 tile_text = "❓"
                 tile_type = "secondary"
                 tile_disabled = False
@@ -1105,7 +1116,7 @@ elif choice == "🧠 Memory":
         flipped = [i for i, s in enumerate(status) if s == "flipped"]
         if len(flipped) == 2:
             idx1, idx2 = flipped
-            time.sleep(0.6) # Skrócone opóźnienie dla lepszej dynamiki
+            time.sleep(0.6)
             
             if grid[idx1]["id"] == grid[idx2]["id"]:
                 status[idx1] = "matched"
@@ -1120,9 +1131,9 @@ elif choice == "🧠 Memory":
 
     memory_engine()
 
+    # PRZYCISK RESETU NA DOLE
     if st.button("Wygeneruj nową tablicę", type="secondary", use_container_width=True):
-        for k in ["mem_grid", "mem_status", "mem_first", "mem_pairs", "mem_start_time", "mem_final_time"]:
-            if k in st.session_state: del st.session_state[k]
+        init_memory_game()
         st.rerun()
                 
 # --- 13. WARSZTAT SŁÓWEK (ANALIZA BŁĘDÓW - ULTRA FAST) ---
