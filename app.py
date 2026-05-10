@@ -42,7 +42,9 @@ CLEAN_TIME_LABELS = {
     "admin": "Adm"
 }
 
-# --- 2. SILNIK BAZY I POMOCNIKI (V220 - Multilang Audio & AI) ---
+# --- 2. SILNIK BAZY I POMOCNIKI (V221 - Multilang Audio, AI & Diacritics Normalize) ---
+import unicodedata
+
 def get_db():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     return SyncPostgrestClient(f"{SUPABASE_URL}/rest/v1", headers=headers)
@@ -51,14 +53,36 @@ def hash_pw(pw):
     return hashlib.sha256(str.encode(pw)).hexdigest()
 
 def normalize_text(t):
+    """
+    Zaawansowana normalizacja tekstu:
+    1. Małe litery i czyszczenie spacji.
+    2. Zamiana niemieckich umlautów na formy ae/oe/ue/ss.
+    3. Usunięcie wszystkich znaków diakrytycznych (czeskie haczki, polskie ogonki itp.).
+    """
     if not t: return ""
-    return str(t).lower().strip().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    
+    # Podstawowe czyszczenie
+    t = str(t).lower().strip()
+    
+    # Specjalna obsługa niemieckich znaków (zgodnie z Twoim standardem)
+    t = t.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
+    
+    # Deakcentacja - usuwanie haczków, kresek i ogonków (np. č -> c, ł -> l, á -> a)
+    # Rozbijamy znaki na bazę i akcent, a następnie filtrujemy akcenty (kategoria 'Mn')
+    t = "".join(
+        c for c in unicodedata.normalize('NFD', t)
+        if unicodedata.category(c) != 'Mn'
+    )
+    
+    # Obsługa specyficznych znaków, które NFD może pominąć (np. przekreślone L)
+    t = t.replace("ł", "l")
+    
+    return t
 
 def get_openai_response(prompt_text, img_obj=None):
     if not API_KEY: raise Exception("Brak klucza API OpenAI.")
     client = OpenAI(api_key=API_KEY)
     
-    # Dynamiczny system prompt - AI będzie wiedziało o jaki język chodzi z treści promptu użytkownika
     messages = [{"role": "system", "content": "Jesteś ekspertem językowym. Odpowiadaj TYLKO w JSON. Kategorie po polsku, przykłady jako lista {de, pl}."}]
     
     if img_obj:
@@ -82,26 +106,17 @@ def get_openai_response(prompt_text, img_obj=None):
 
 def play_audio(txt, ex_txt=None, lang='de'):
     """
-    Odtwarza wymowę słowa i opcjonalnego przykładu.
-    lang: 'de' dla niemieckiego, 'cs' dla czeskiego, 'en' dla angielskiego itd.
+    Odtwarza wymowę słowa i opcjonalnego przykładu w wybranym języku (de, cs, pl).
     """
     try:
-        # Konstruujemy pełny tekst do przeczytania (z pauzą między słowem a przykładem)
         full_text = f"{txt}. . . . {ex_txt}" if ex_txt else txt
-        
         f = BytesIO()
-        # gTTS używa teraz dynamicznego kodu języka
         tts = gTTS(text=full_text, lang=lang)
         tts.write_to_fp(f)
         f.seek(0)
-        
-        # Odtwarzanie w Streamlit
         st.audio(f, format="audio/mp3", autoplay=True)
     except Exception as e:
-        # Ciche pominięcie błędu audio, aby nie przerywać nauki
         pass
-
-# --- KONIEC SEKCJI 2 ---
 
 # --- 3. FUNKCJE DANYCH (V7 - Polska strefa czasowa + Fix Resetu) ---
 def get_now_pl():
@@ -550,7 +565,7 @@ if choice == "🏠 Start":
             else:
                 st.write("Baza jest pusta.")
 
-# --- 8. POWTÓRKI & TRENING (V262 - Multilang + Fix Stats Sync) ---
+# --- 8. POWTÓRKI & TRENING (V263 - Multilang + Diacritics Insensitive) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -562,13 +577,16 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
+    # 1. FILTROWANIE SŁÓWEK POD AKTUALNY JĘZYK
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
+    # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag or st.session_state.get(f"{pfx}_last_lang") != L_CODE:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         if is_r:
@@ -633,8 +651,9 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
+                # --- KLUCZOWA ZMIANA: Normalizacja odporna na akcenty ---
                 def clean_text(text, is_foreign):
-                    t = normalize_text(text)
+                    t = normalize_text(text) # Używa nowej funkcji z Sekcji 2
                     if is_foreign and L_CODE == "de":
                         t = re.sub(r'^(der|die|das)\s+', '', t)
                     return t.strip()
@@ -642,10 +661,13 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_foreign)
                 correct_synonyms = re.split(r'[/,;]', correct_val)
                 correct_synonyms = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
+                
                 is_correct = user_ans in correct_synonyms
                 
-                if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
-                else: st.error(f"❌ Niepoprawnie. ({correct_val})")
+                if is_correct:
+                    st.success(f"✅ Dobrze! Poprawne znaczenia: {correct_val}")
+                else:
+                    st.error(f"❌ Niepoprawnie. Poprawne znaczenia: {correct_val}")
                 
                 if auto_audio: play_audio(c['de'], lang=L_CODE)
 
@@ -660,11 +682,9 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                     
                     if d:
                         new_date = str(date.today() + timedelta(days=d))
-                        # 1. Aktualizacja w Supabase
                         update_word(c['id'], {"next_review": new_date})
                         
-                        # 2. KLUCZOWY FIX: Aktualizacja lokalnej sesji flashcards
-                        # Dzięki temu Statystyki od razu zobaczą zmianę bez F5
+                        # Synchronizacja statystyk w locie
                         for card in st.session_state.flashcards:
                             if card['id'] == c['id']:
                                 card['next_review'] = new_date
@@ -673,15 +693,13 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
                         if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
-                        
-                        # Jeśli to było ostatnie słowo, robimy pełny rerun dla statystyk
                         if st.session_state[f"{pfx}_idx"] >= len(cards): st.rerun()
                         else: st.rerun(scope="fragment")
                 else:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
-                        if f"{pfx}_dir" in st.session_state: del st.session_state[f"{pfx}_dir"]
+                        if f"{pfx}_dir" in st.session_state: del f"{pfx}_dir"
                         st.rerun() if st.session_state[f"{pfx}_idx"] >= len(cards) else st.rerun(scope="fragment")
 
         flashcard_engine()
