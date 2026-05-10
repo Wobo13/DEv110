@@ -2779,23 +2779,26 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-# --- 28. SPARING AI (V630 - Final Stable & Logical Fix) ---
+# --- 28. SPARING AI (V640 - Fixed Logic Alignment) ---
 elif choice == "🤖 Sparing AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🤖 Sparing AI: {current_lang_name}")
-    st.write("Czysta rozmowa bez błędów technicznych. Skup się na dialogu!")
+    st.write("Rozmawiaj swobodnie. Tłumaczenie znajdziesz pod odpowiedzią AI, a korektę pod Twoją wiadomością.")
 
-    # 1. PARSER ODPORNY NA BŁĘDY
     def parse_stable_response(raw_text):
+        """Precyzyjny parser rozdzielający dane na odpowiednie szufladki."""
         res = {"reply": "", "trans": "", "corr": None}
         raw_text = raw_text.replace("```", "").strip()
         parts = raw_text.split("|||")
         
+        # 1. Reakcja AI
         res["reply"] = parts[0].strip() if len(parts) > 0 else raw_text
+        # 2. Tłumaczenie reakcji AI na PL
         res["trans"] = parts[1].strip() if len(parts) > 1 else ""
         
+        # 3. Korekta błędów użytkownika
         if len(parts) > 2:
             c = parts[2].strip()
             if c.upper() not in ["OK", "BRAK UWAG", "ZDANIE POPRAWNE", "NONE", "NULL", ""]:
@@ -2834,12 +2837,12 @@ elif choice == "🤖 Sparing AI":
 
         # Pierwsza wiadomość
         if not st.session_state.chat_history:
-            with st.spinner("Łączenie z asystentem..."):
+            with st.spinner("Inicjowanie..."):
                 try:
-                    from openai import OpenAI # Import tutaj gwarantuje stabilność
+                    from openai import OpenAI
                     client = OpenAI(api_key=API_KEY)
                     ctx = scenarios[st.session_state.chat_scenario][L_CODE]
-                    intro_p = f"Jesteś {ctx}. Język: {current_lang_name}. Przywitaj się krótko. Format: Reakcja ||| Tłumaczenie_PL"
+                    intro_p = f"Jesteś {ctx}. Język: {current_lang_name}. Przywitaj się krótko. Format: Reakcja ||| Tłumaczenie_reakcji_PL"
                     
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
@@ -2849,53 +2852,59 @@ elif choice == "🤖 Sparing AI":
                     st.session_state.chat_history.append({"role": "assistant", "content": data["reply"], "trans": data["trans"]})
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Błąd połączenia: {e}")
-                    st.stop()
+                    st.error(f"Błąd: {e}"); st.stop()
 
         # Renderowanie czatu
         for i, msg in enumerate(st.session_state.chat_history):
             role_icon = "🤖" if msg["role"] == "assistant" else "👤"
             with st.chat_message(msg["role"], avatar=role_icon):
                 st.write(msg["content"])
-                if msg.get("trans"):
+                
+                # Tłumaczenie pojawia się TYLKO pod dymkiem AI
+                if msg["role"] == "assistant" and msg.get("trans"):
                     with st.expander("👁️ Tłumaczenie"): st.write(msg["trans"])
+                
+                # Korekta pojawia się TYLKO pod dymkiem użytkownika
                 if msg.get("corr"):
                     st.warning(f"📝 {msg['corr']}")
+                
                 if msg["role"] == "assistant":
-                    if st.button("🔊", key=f"v7_aud_{i}"): play_audio(msg["content"], lang=L_CODE)
+                    if st.button("🔊", key=f"v8_aud_{i}"): play_audio(msg["content"], lang=L_CODE)
 
         # Obsługa inputu
         if user_input := st.chat_input(f"Napisz po {current_lang_name.lower()}..."):
             st.session_state.chat_history.append({"role": "user", "content": user_input})
             
-            with st.spinner("Przetwarzanie..."):
+            with st.spinner("AI analizuje..."):
                 try:
                     from openai import OpenAI
                     client = OpenAI(api_key=API_KEY)
                     
-                    messages_for_ai = [
-                        {"role": "system", "content": f"""Jesteś ROZMÓWCĄ w sytuacji: {st.session_state.chat_scenario}. Język: {current_lang_name}.
-                        
-                        STRUKTURA (bezwzględna):
-                        1. Naturalna reakcja (bez pouczania w tym polu!).
-                        2. Tłumaczenie reakcji na PL.
-                        3. Korekta błędów użytkownika (lub OK).
-                        Separator: |||
-                        
-                        ZASADY DE: Rzeczowniki WIELKĄ literą. Literówki (jak 'pomems') poprawiaj surowo."""}
-                    ]
-                    # Bierzemy ostatnie 6 wiadomości dla kontekstu
-                    for m in st.session_state.chat_history[-6:]:
+                    prompt_sys = f"""Jesteś {st.session_state.chat_scenario} ({current_lang_name}).
+                    ODPOWIADAJ ZAWSZE W FORMACIE: Reakcja_AI ||| Tłumaczenie_reakcji_AI_na_PL ||| Korekta_błędów_użytkownika_PL
+                    
+                    WAŻNE: 
+                    1. Tłumaczenie (środkowa część) musi dotyczyć tego, co Ty napisałeś w Reakcji.
+                    2. Korekta (ostatnia część) musi dotyczyć wiadomości użytkownika: "{user_input}".
+                    3. W Niemieckim (de) poprawiaj brak wielkich liter w rzeczownikach i literówki (np. Jaggermeister -> Jägermeister).
+                    4. Jeśli użytkownik napisał poprawnie, w trzeciej części wpisz tylko: OK."""
+
+                    messages_for_ai = [{"role": "system", "content": prompt_sys}]
+                    for m in st.session_state.chat_history[-5:]:
                         messages_for_ai.append({"role": m["role"], "content": m["content"]})
 
                     response = client.chat.completions.create(model="gpt-4o-mini", messages=messages_for_ai)
                     data = parse_stable_response(response.choices[0].message.content)
                     
-                    # Zapisujemy korektę do wiadomości usera
+                    # Przypisujemy korektę do wiadomości, którą user właśnie wysłał
                     st.session_state.chat_history[-1]["corr"] = data["corr"]
-                    # Dodajemy nową wypowiedź AI
-                    st.session_state.chat_history.append({"role": "assistant", "content": data["reply"], "trans": data["trans"]})
+                    
+                    # Dodajemy nową odpowiedź AI do historii
+                    st.session_state.chat_history.append({
+                        "role": "assistant", 
+                        "content": data["reply"], 
+                        "trans": data["trans"]
+                    })
                     st.rerun()
-                except Exception as e:
-                    st.error("Problem z połączeniem. Spróbuj wysłać ponownie.")
-                    st.session_state.chat_history.pop() # Usuń nieudaną próbę
+                except:
+                    st.error("Błąd połączenia."); st.session_state.chat_history.pop()
