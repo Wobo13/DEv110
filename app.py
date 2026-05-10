@@ -476,26 +476,34 @@ with st.sidebar:
 
     st.caption(f"{APP_VERSION}")
 
-# --- 7. START (V1.3 - Dashboard z synchronizacją celu) ---
+# --- 7. START (V1.4 - Multilang Dashboard: DE/CS) ---
 update_activity(choice)
 
 if choice == "🏠 Start":
-    st.header(f"Guten Morgen, {str(u).capitalize()}! ☀️")
+    # Pobieramy aktualny język i kod z sesji
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. ANALIZA DANYCH BIEŻĄCYCH
-    all_c = st.session_state.flashcards
+    # Dynamiczne powitanie
+    hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
+    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
+    
+    # 1. ANALIZA DANYCH BIEŻĄCYCH (Filtrowana pod język)
+    all_cards_full = st.session_state.flashcards
+    # Filtrujemy bazę pod aktualny język dla metryk na dashboardzie
+    all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
+    
     ud = st.session_state.user_data
     today_str = str(date.today())
     
-    # --- SYNCHRONIZACJA CZASU NA DASHBOARDZIE ---
-    # Pobieramy statystyki czasu (które po poprawkach w Sekcji 3 powinny być czyste)
+    # Statystyki czasu (pobierane z globalnych time_stats)
     current_stats = ud.get("time_stats", {})
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # Statystyki słówek
+    # Statystyki słówek dla wybranego języka
     total_words = len(all_c)
     to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
     
@@ -503,12 +511,10 @@ if choice == "🏠 Start":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Słówek w bazie", total_words)
+        st.metric(f"Słówek ({current_lang_name})", total_words)
     with col2:
-        # Pokazuje ile słówek do powtórki
         st.metric("Powtórki na dziś", to_review, delta=-to_review if to_review > 0 else "Gotowe!", delta_color="inverse")
     with col3:
-        # TUTAJ: Pokazuje czas z dzisiaj (study_minutes) zamiast stałej wartości celu
         st.metric("Dzisiejsza nauka", f"{study_minutes} / {daily_goal} m")
 
     st.write("---")
@@ -517,20 +523,19 @@ if choice == "🏠 Start":
     c1, c2 = st.columns(2)
     
     with c1:
-        st.markdown("### 📊 Twój status")
+        st.markdown(f"### 📊 Status: {current_lang_name}")
         if study_minutes >= daily_goal:
             st.success(f"🌟 Cel dzienny osiągnięty! ({study_minutes} min)")
         elif study_minutes > 0:
             st.info(f"📈 Jesteś w trakcie nauki. Jeszcze {daily_goal - study_minutes} min do celu.")
         else:
-            st.warning("🆕 Zaczynamy! Wybierz moduł z menu, aby nabić dzisiejsze minuty.")
+            st.warning(f"🆕 Czas na {current_lang_name}! Wybierz moduł, aby zacząć.")
 
         if to_review > 0:
             st.error(f"⚠️ Masz {to_review} słówek do powtórzenia!")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
-        # Dynamiczne sprawdzanie zadań
         t_done = "✅" if study_minutes >= daily_goal else "❌"
         st.write(f"{t_done} Osiągnij cel czasowy (**{daily_goal} min**)")
         st.write("✅ Przejrzyj sekcję **Warsztat**")
@@ -538,32 +543,40 @@ if choice == "🏠 Start":
 
     st.divider()
 
-    # 4. SEKRETY I OSTATNIE SŁÓWKA
+    # 4. CYTATY I OSTATNIE SŁÓWKA (Dostosowane do języka)
     col_q, col_w = st.columns([2, 1])
     
     with col_q:
-        quotes = [
-            "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
-            "„Każdy nowy język jest jak otwarte okno.”",
-            "„Übung macht den Meister!” – Praktyka czyni mistrza."
-        ]
+        # Pula cytatów zależna od języka
+        if L_CODE == "de":
+            quotes = [
+                "„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.” – Ludwig Wittgenstein",
+                "„Übung macht den Meister!” – Praktyka czyni mistrza.",
+                "„Każdy nowy język jest jak otwarte okno.”"
+            ]
+        else:
+            quotes = [
+                "„Kolik jazyků znáš, tolikrát jsi člověkem.” – Ile języków znasz, tyle razy jesteś człowiekiem.",
+                "„Učení mučení.” – Nauka to męka (ale warto!).",
+                "„Trpělivost přináší růže.” – Cierpliwość przynosi róże (wyniki)."
+            ]
         st.info(random.choice(quotes))
         
-        # PRZYCISK RATUNKOWY (Tylko jeśli dane są ewidentnie błędne)
-        if study_minutes > 500: # Jeśli system zwariuje i pokaże np. 8 godzin nauki w sekundę
+        if study_minutes > 500:
             if st.button("🔄 Resetuj błędny licznik czasu"):
                 st.session_state.user_data["time_stats"] = {}
                 save_user_data(u, st.session_state.user_data)
                 st.rerun()
 
     with col_w:
-        with st.expander("🆕 Ostatnio dodane", expanded=True):
+        with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
             if all_c:
+                # Pokazujemy 3 ostatnio dodane słówka TYLKO z aktualnego języka
                 recent = all_c[-3:]
                 for r in reversed(recent):
                     st.write(f"**{r['de']}**")
             else:
-                st.write("Baza jest pusta.")
+                st.write(f"Baza {current_lang_name} jest pusta.")
 
 # --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
