@@ -370,139 +370,128 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V320 - Grupowanie menu i optymalizacja odstępów) ---
+# --- 6. SIDEBAR (V330 - Prawdziwe Grupowanie Menu) ---
 with st.sidebar:
-    # --- CSS do redukcji odstępów na górze i stylizacji expanderów ---
+    # 1. CSS dla redukcji odstępów i ładniejszego menu
     st.markdown("""
         <style>
-            /* Redukcja białej przestrzeni na górze sidebaru */
-            .block-container { padding-top: 1rem; }
-            .st-emotion-cache-1avcm0n { padding-top: 1rem; }
+            /* Redukcja marginesu na górze sidebaru */
+            .st-emotion-cache-1avcm0n { padding-top: 0rem !important; }
+            .st-emotion-cache-6q9sum { padding-top: 1rem !important; }
             
-            /* Stylizacja nagłówków expanderów, aby pasowały do menu */
-            .st-emotion-cache-p5msec { font-weight: bold; }
+            /* Stylizacja przycisków menu, aby wyglądały jak linki */
+            div.stButton > button {
+                width: 100%;
+                text-align: left;
+                background-color: transparent;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 5px;
+                color: #fafafa;
+            }
+            div.stButton > button:hover {
+                background-color: #31333f;
+                color: #ff4b4b;
+            }
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. Inicjalizacja i Wybór Języka
+    # 2. Inicjalizacja i Język
     if "current_lang" not in st.session_state:
         st.session_state.current_lang = "Niemiecki"
+    if "choice" not in st.session_state:
+        st.session_state.choice = "🏠 Start"
 
     LANG_MAP = {
-        "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki", "emoji": "🚀"},
-        "Czeski": {"code": "cs", "label": "🇨🇿 Czeski", "emoji": "🦁"}
+        "Niemiecki": {"code": "de", "label": "🇩🇪 Niemiecki"},
+        "Czeski": {"code": "cs", "label": "🇨🇿 Czeski"}
     }
 
-    # Profil użytkownika i Streak (kompaktowy układ)
-    user_display = str(u).capitalize()
+    # Nagłówek Użytkownika (Kompaktowy)
     ud = st.session_state.user_data
-    streak = ud.get('streak', 0)
-    
-    st.markdown(f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0px;">
-            <h2 style="margin:0; font-size: 1.5em;">👤 {user_display}</h2>
-            <span style="font-size: 1.2em;">🔥 {streak}d</span>
-        </div>
-    """, unsafe_allow_html=True)
+    c_user, c_fire = st.columns([3, 1])
+    c_user.markdown(f"**👤 {str(u).capitalize()}**")
+    c_fire.markdown(f"🔥 {ud.get('streak', 0)}d")
 
-    st.write("---")
-
-    # Selektor języka
-    selected_lang_name = st.selectbox(
-        "Język nauki:", 
-        options=list(LANG_MAP.keys()),
+    # Wybór Języka (Kompaktowy)
+    selected_lang = st.selectbox(
+        "Język:", options=list(LANG_MAP.keys()), 
         format_func=lambda x: LANG_MAP[x]["label"],
-        key="lang_selector",
-        label_visibility="collapsed"
+        key="lang_sel", label_visibility="collapsed"
     )
 
-    # Logika resetu menu przy zmianie języka
-    if selected_lang_name != st.session_state.current_lang:
-        st.session_state.current_lang = selected_lang_name
-        st.session_state.force_start_page = True
+    if selected_lang != st.session_state.current_lang:
+        st.session_state.current_lang = selected_lang
+        st.session_state.choice = "🏠 Start" # Reset na start przy zmianie języka
         st.rerun()
 
-    # Obsługa wymuszonego powrotu do Start
-    menu_index = None
-    if st.session_state.get("force_start_page", False):
-        menu_index = 0
-        del st.session_state.force_start_page
-
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
+    st.write("---")
 
-    # 2. Filtrowanie i paski postępu
+    # 3. Paski Postępu (Mniejsze podpisy)
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-    
-    # Obliczanie wiedzy
-    wiedza_perc = 0
+    wiedza = 0
     if all_c:
-        today_dt = date.today()
-        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-        wiedza_perc = int((strong / len(all_c)) * 100)
-    
-    # Statystyki czasu
-    study_modules_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+        today = date.today()
+        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
+        wiedza = int((strong / len(all_c)) * 100)
+
     current_stats = ud.get("time_stats", {})
-    study_minutes = int(sum(current_stats.get(code, 0) for code in study_modules_codes) // 60)
-    daily_goal = ud.get("settings", {}).get("daily_goal", 20)
-    
-    st.markdown(f"🧠 <small>Wiedza ({st.session_state.current_lang}): {wiedza_perc}%</small>", unsafe_allow_html=True)
-    st.progress(min(wiedza_perc / 100, 1.0))
-    st.markdown(f"🎯 <small>Cel dnia: {study_minutes}/{daily_goal}m</small>", unsafe_allow_html=True)
-    st.progress(min(study_minutes / daily_goal, 1.0))
-    
-    st.write("---")
+    mins = int(sum(current_stats.get(c, 0) for c in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]) // 60)
+    goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # 6. NOWE GRUPOWANE MENU NAWIGACYJNE
+    st.caption(f"🧠 Wiedza: {wiedza}% | 🎯 Cel: {mins}/{goal}m")
+    st.progress(min(wiedza / 100, 1.0))
+    st.progress(min(mins / goal, 1.0))
+
+    st.write("")
+
+    # --- 4. FUNKCJA POMOCNICZA DO PRZYCISKÓW MENU ---
+    def menu_item(label, target):
+        # Jeśli ta opcja jest wybrana, dodajemy kropkę/podświetlenie
+        is_selected = st.session_state.choice == target
+        style = "color: #ff4b4b; font-weight: bold;" if is_selected else ""
+        if st.button(f"{'🔴' if is_selected else ''} {label}", key=f"btn_{target}"):
+            st.session_state.choice = target
+            st.rerun()
+
+    # --- 5. STRUKTURA MENU ---
     
-    # Opcje zawsze widoczne na górze
-    top_options = ["🏠 Start"]
-    
+    # Zawsze widoczne na górze
+    menu_item("🏠 Start", "🏠 Start")
+
     # Grupa NAUKA
-    study_options = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy"]
-    
+    with st.expander("📚 Nauka", expanded=(st.session_state.choice in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🛠️ Warsztat", "📝 Testy"])):
+        menu_item("📅 Powtórki", "📅 Powtórki")
+        menu_item("🚀 Trening", "🚀 Trening")
+        menu_item("🕹️ Quiz", "🕹️ Quiz")
+        menu_item("🎴 Fiszki", "🎴 Fiszki")
+        menu_item("🛠️ Warsztat", "🛠️ Warsztat")
+        menu_item("📝 Testy", "📝 Testy")
+
     # Grupa GRY
-    game_options = ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"]
-    
-    # Pozostałe opcje
-    bottom_options = ["📦 Generator słów", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Moje Konto"]
-    
+    with st.expander("🎮 Gry", expanded=(st.session_state.choice in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
+        menu_item("🧠 Memory", "🧠 Memory")
+        menu_item("🏗️ Konstruktor", "🏗️ Konstruktor")
+        menu_item("🐍 Lingwistyczny Wąż", "🐍 Lingwistyczny Wąż")
+        menu_item("🎈 Balonowy Wyścig", "🎈 Balonowy Wyścig")
+        menu_item("🏆 Arena Wyzwań", "🏆 Arena Wyzwań")
+
+    # Narzędzia i Statystyki (zawsze widoczne)
+    menu_item("📦 Generator słów", "📦 Generator słów")
+    menu_item("📸 Skaner AI", "📸 Skaner AI")
+    menu_item("➕ Dodaj", "➕ Dodaj")
+    menu_item("📖 Słownik", "📖 Słownik")
+    menu_item("📊 Statystyki", "📊 Statystyki")
+    menu_item("⚙️ Moje Konto", "⚙️ Moje Konto")
+
     if u == ADMIN_USER:
-        bottom_options.append("👑 Admin")
+        menu_item("👑 Admin", "👑 Admin")
 
-    # Budujemy pełną listę wszystkich opcji dla st.radio
-    all_options = top_options + study_options + game_options + bottom_options
-
-    # Logika wyboru - używamy st.radio, ale chowamy go w expanderach
-    # Aby radio działało poprawnie, musi być jedno na cały sidebar
-    
-    # Wyświetlamy radio, ale manipulujemy jego widocznością za pomocą sprytnego grupowania
-    # Ponieważ Streamlit nie pozwala rozbić jednego st.radio na kilka kontenerów,
-    # używamy st.radio jako głównego sterownika, a expandery służą nam do wizualnego podziału.
-
-    # --- KLUCZOWY ELEMENT: Radio sterujące ---
-    # Musimy wiedzieć, w której grupie jest aktualnie wybrana opcja, aby rozwinąć odpowiedni expander
-    
-    current_choice = st.radio(
-        "Nawigacja",
-        all_options,
-        index=menu_index,
-        label_visibility="collapsed"
-    )
-    
-    # Ponieważ radio powyżej wyświetla wszystko na raz, co zepsułoby Twój zamysł expanderów, 
-    # zastosujemy standardowe rozwiązanie Streamlit: "st.radio" wyświetla tylko główne opcje, 
-    # a my tworzymy menu oparte na logice przycisków lub selektora, ALE
-    # aby zachować Twój mechanizm "choice", najlepiej po prostu dodać separatory i nagłówki.
-    
-    # UWAGA: Jeśli chcesz, aby menu faktycznie było rozwijane (expandery), 
-    # najbezpieczniejszą metodą w Streamlit jest użycie st.selectbox lub pozostanie przy liście pionowej.
-    # Ale zróbmy to elegancko z expanderami i przyciskami (opcja Pro):
-    
-    choice = current_choice # To zmienna, która steruje resztą aplikacji
+    # Przypisujemy wybór do głównej zmiennej sterującej aplikacją
+    choice = st.session_state.choice
 
     st.write("---")
-    
     if st.button("🚪 Wyloguj się", use_container_width=True):
         st.session_state.clear()
         st.query_params.clear()
