@@ -2884,7 +2884,7 @@ elif choice == "🤖 Sparing AI":
                     st.error("Problem techniczny. Spróbuj wysłać ponownie.")
                     if u_input: st.session_state.chat_history.pop()
 
-# --- 29. LABORATORIUM RODZAJNIKÓW (V1.1 - Color-Coded Font & Visibility Fix) ---
+# --- 29. LABORATORIUM RODZAJNIKÓW (V1.2 - Anti-Error & Auto-Reset) ---
 elif choice == "🧪 Laboratorium":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2892,10 +2892,10 @@ elif choice == "🧪 Laboratorium":
     st.header(f"🧪 Laboratorium Rodzajników: {current_lang_name}")
     st.write("Rozpoznaj rodzaj. Kolor czcionki po odpowiedzi wskaże Ci właściwą barwę rodzajnika.")
 
-    # 1. KONFIGURACJA KOLORÓW (Barwy narodowe)
+    # 1. KONFIGURACJA KOLORÓW
     GENDER_COLORS = {
-        "de": {"der": "#000000", "die": "#FF0000", "das": "#FFCC00"}, # Czarny, Czerwony, Złoty
-        "cs": {"ten": "#FFFFFF", "ta": "#11457E", "to": "#D71920"}  # Biały, Niebieski, Czerwony
+        "de": {"der": "#000000", "die": "#FF0000", "das": "#FFCC00"},
+        "cs": {"ten": "#FFFFFF", "ta": "#11457E", "to": "#D71920"}
     }
 
     RULES = {
@@ -2931,13 +2931,18 @@ elif choice == "🧪 Laboratorium":
         if gender:
             nouns.append({"full": c["de"], "clean": clean_word, "gender": gender, "pl": c["pl"]})
 
+    # --- BEZPIECZNIK: Reset sesji przy zmianie języka lub braku danych ---
+    if "lab_lang_ref" not in st.session_state or st.session_state.lab_lang_ref != L_CODE:
+        st.session_state.lab_lang_ref = L_CODE
+        st.session_state.lab_idx = 0
+        st.session_state.lab_feedback = None
+
     if len(nouns) < 3:
-        st.warning(f"Dodaj więcej rzeczowników z rodzajnikami (np. 'der Hund' lub 'ten dům'), aby odblokować ten moduł.")
+        st.warning(f"Dodaj więcej rzeczowników z rodzajnikami (np. 'der Hund' lub 'ten dům'), aby odblokować ten moduł dla języka {current_lang_name}.")
     else:
-        if "lab_idx" not in st.session_state:
-            st.session_state.lab_idx = random.randint(0, len(nouns)-1)
-            st.session_state.lab_feedback = None
-            st.session_state.lab_score = 0
+        # Zabezpieczenie przed Indexem poza zakresem (np. po usunięciu słówek)
+        if st.session_state.lab_idx >= len(nouns):
+            st.session_state.lab_idx = 0
 
         curr = nouns[st.session_state.lab_idx]
         
@@ -2947,14 +2952,12 @@ elif choice == "🧪 Laboratorium":
         text_glow = "none"
 
         if st.session_state.lab_feedback:
-            # Ramka: Zielona/Czerwona zależnie od wyniku
             border_color = "#28a745" if st.session_state.lab_feedback["is_correct"] else "#dc3545"
-            # Czcionka: Kolor właściwego rodzajnika
             word_color = GENDER_COLORS[L_CODE].get(curr['gender'], "white")
-            
-            # Specjalny efekt dla czarnego koloru (DER), żeby był widoczny na ciemnym tle
             if L_CODE == "de" and curr['gender'] == "der":
                 text_glow = "0px 0px 10px rgba(255,255,255,0.8), 1px 1px 2px white"
+            if L_CODE == "cs" and curr['gender'] == "ten":
+                text_glow = "0px 0px 8px rgba(0,0,0,0.5)" # Lekki cień dla białego TEN na ciemnym tle
 
         # GŁÓWNA KARTA
         st.markdown(f"""
@@ -2972,7 +2975,6 @@ elif choice == "🧪 Laboratorium":
         cols = st.columns(3)
         
         for i, opt in enumerate(options):
-            # Przycisk staje się 'primary' jeśli jest poprawną odpowiedzią po zakończeniu rundy
             is_correct_btn = opt.lower() == curr['gender']
             btn_type = "secondary"
             if st.session_state.lab_feedback and is_correct_btn:
@@ -2981,8 +2983,6 @@ elif choice == "🧪 Laboratorium":
             if cols[i].button(opt, key=f"lab_btn_{i}", use_container_width=True, type=btn_type):
                 if not st.session_state.lab_feedback:
                     is_correct = opt.lower() == curr['gender']
-                    
-                    # Szukanie reguły
                     rule_found = None
                     for g, endings in RULES[L_CODE].items():
                         for e in endings:
@@ -2994,10 +2994,12 @@ elif choice == "🧪 Laboratorium":
                         "is_correct": is_correct,
                         "rule": rule_found or "To słowo może być wyjątkiem lub rzadszą formą."
                     }
-                    if is_correct: st.session_state.lab_score += 1
+                    if is_correct: 
+                        if "lab_score" not in st.session_state: st.session_state.lab_score = 0
+                        st.session_state.lab_score += 1
                     st.rerun()
 
-        # FEEDBACK I NASTĘPNE SŁOWO
+        # FEEDBACK
         if st.session_state.lab_feedback:
             st.divider()
             if st.session_state.lab_feedback["is_correct"]:
@@ -3012,7 +3014,7 @@ elif choice == "🧪 Laboratorium":
                 st.session_state.lab_feedback = None
                 st.rerun()
 
-    # --- ŚCIĄGA W SIDEBARZE (Zgodna z nowymi kolorami) ---
+    # SIDEBAR
     with st.sidebar:
         st.divider()
         st.subheader("💡 Ściąga końcówek")
