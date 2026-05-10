@@ -72,7 +72,7 @@ def play_audio(txt, ex_txt=None):
         st.audio(f, format="audio/mp3", autoplay=True)
     except: pass
 
-# --- 3. FUNKCJE DANYCH (Zaktualizowana V233 - System Passy) ---
+# --- 3. FUNKCJE DANYCH (V3 - System Passy + Reset Statystyk Dziennych) ---
 def load_user_data(username):
     db = get_db()
     res = db.table("user_data").select("*").eq("username", username).execute()
@@ -83,36 +83,40 @@ def load_user_data(username):
 
     if res.data:
         data = res.data[0]
-        last_date = data.get("last_date") # Pobieramy datę ostatniej nauki z bazy
+        last_date = data.get("last_date")
         current_streak = data.get("streak", 0)
 
-        # LOGIKA NALICZANIA PASSY
-        if last_date == today_str:
-            # Użytkownik już tu dzisiaj był, nic nie zmieniaj
-            pass
-        elif last_date == yesterday_str:
-            # Był wczoraj, dziś jest pierwszy raz -> zwiększamy passę
-            current_streak += 1
+        # 1. LOGIKA RESETU CZASU I NALICZANIA PASSY
+        if last_date != today_str:
+            # Jeśli data w bazie jest inna niż dzisiejsza, to znaczy, że to pierwsze wejście dzisiaj
+            
+            # Czy to kontynuacja passy (wczoraj)?
+            if last_date == yesterday_str:
+                current_streak += 1
+            else:
+                # Przerwa dłuższa niż 1 dzień -> reset passy do 1
+                current_streak = 1
+            
+            # KLUCZOWY FIX: Resetujemy statystyki czasu na nowy dzień
+            # Dzięki temu pasek celu w sidebarze pokaże 0/20m na start dnia
+            data["time_stats"] = {} 
             data["streak"] = current_streak
             data["last_date"] = today_str
-            save_user_data(username, data)
-        else:
-            # Nie było go wczoraj ani dzisiaj -> reset lub start od 1
-            data["streak"] = 1
-            data["last_date"] = today_str
-            save_user_data(username, data)
             
+            # Zapisujemy zmiany od razu, żeby przy przeładowaniu strony nie naliczyło passy ponownie
+            save_user_data(username, data)
+        
         return data
 
-    # Jeśli użytkownik loguje się pierwszy raz w życiu
+    # Jeśli użytkownik loguje się pierwszy raz w historii aplikacji
     init = {
         "username": username, 
         "streak": 1, 
         "historical_cost": 0.0, 
-        "time_stats": {}, 
+        "time_stats": {}, # Puste statystyki na start
         "last_ts": time.time(), 
         "last_seen": datetime.now().strftime("%d.%m %H:%M"),
-        "last_date": today_str, # Przechowuje samą datę YYYY-MM-DD
+        "last_date": today_str,
         "test_history": [],
         "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
     }
@@ -120,12 +124,14 @@ def load_user_data(username):
     return init
 
 def save_user_data(username, data):
-    # Tworzymy kopię, by nie modyfikować oryginału w sesji
+    # Tworzymy kopię danych, aby nie uszkodzić obiektu w sesji Streamlit
     d = data.copy()
-    d.pop("username", None)
-    # Zabezpieczamy typy danych przed wysyłką do Postgresa
+    # Usuwamy klucz główny przed aktualizacją (Postgres nie lubi aktualizowania PK)
+    if "username" in d:
+        del d["username"]
+    
+    # Zabezpieczenie formatu time_stats dla bazy danych (JSON)
     if "time_stats" in d and isinstance(d["time_stats"], dict):
-        # Konwersja kluczy na stringi (na wypadek gdyby AI tam coś namieszało)
         d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
     
     get_db().table("user_data").update(d).eq("username", username).execute()
@@ -146,7 +152,7 @@ def save_word(username, word_obj):
 
 def update_word(word_id, fields):
     try:
-        # Zabezpieczenie typów danych dla bazy
+        # Konwersja typów dla stabilności Supabase
         if "level" in fields and fields["level"] is not None:
             fields["level"] = int(fields["level"])
         if "interval" in fields and fields["interval"] is not None:
@@ -154,7 +160,7 @@ def update_word(word_id, fields):
 
         get_db().table("flashcards").update(fields).eq("id", word_id).execute()
     except Exception as e:
-        st.error(f"⚠️ Błąd bazy danych (update_word): {e}")
+        st.error(f"⚠️ Błąd aktualizacji słówka: {e}")
 
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
