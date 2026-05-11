@@ -173,13 +173,14 @@ def load_user_data(username):
         if not last_visit:
             last_visit = data.get("last_date", "2000-01-01")
         
-        # Jeśli to pierwsze wejście dzisiaj - czyścimy licznik minut
-        if last_visit != today_str:
-            data["time_stats"] = {}
-            data["last_visit_date"] = today_str
-            # Przy okazji aktualizujemy czas ostatniej aktywności na polski
-            data["last_seen"] = get_now_pl()
-            save_user_data(username, data)
+       # NOWA WERSJA (Prawidłowa - zawsze odświeża godzinę przy wejściu)
+data["last_seen"] = get_now_pl() # Aktualizacja czasu przy KAŻDYM ładowaniu danych (logowaniu/odświeżeniu)
+
+if last_visit != today_str:
+    data["time_stats"] = {} # Reset minut tylko raz na dobę
+    data["last_visit_date"] = today_str
+
+save_user_data(username, data) # Zapisuje nową godzinę do bazy
         
         return data
 
@@ -2685,7 +2686,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V317 - Activity Fix & Enhanced Word Stats) ---
+# --- 27. ADMIN PRO (V318 - Activity Fix & Enhanced Word Stats) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -2775,7 +2776,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 batch_size = 20
                 with st.spinner(f"Generuję ciekawostki {total_generated//batch_size + 1}/5 dla: {lang_code.upper()}..."):
                     prompt = f"""Wygeneruj 20 unikalnych, fascynujących ciekawostek o {country}.
-                    Tekst ciekawostki musi być napisany w języku {lang_full} (poziom B1/B2).
+                    Tekst ciekawostki musi być napisany in języku {lang_full} (poziom B1/B2).
                     Zwróć WYŁĄCZNIE JSON w formacie:
                     {{
                       "trivia": [
