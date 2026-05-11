@@ -2711,7 +2711,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V320 - Full Suite + Diverse Master Seeder) ---
+# --- 27. ADMIN PRO (V321 - Hard Article Enforcement & Full Suite) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -2719,12 +2719,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
-    # --- 1. FUNKCJA: SEEDER MASTER_VOCAB (Zróżnicowane części mowy) ---
+    # --- 1. FUNKCJA: SEEDER MASTER_VOCAB (Rygorystyczne Rodzajniki i Poziomy) ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
         import json
         import time
         l_code = "de" if target_lang == "Niemiecki" else "cs"
-        st.info(f"🚀 Rozpoczynam zróżnicowane generowanie {total_goal} słów dla poziomu {target_lvl}...")
+        st.info(f"🚀 Rozpoczynam generowanie {total_goal} słów ({target_lvl}) z rygorystyczną kontrolą rodzajników...")
         
         db = get_db()
         progress_bar = st.progress(0)
@@ -2734,37 +2734,39 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         batch_size = 25 
         
         while current_count < total_goal:
-            # Pobieramy listę słów już istniejących w master_vocab, by uniknąć dubli
+            # Pobieramy listę słów już istniejących w master_vocab (unikanie dubli)
             existing_res = db.table("master_vocab").select("word").eq("lang", l_code).eq("level", target_lvl).execute()
             existing_words = [row['word'] for row in existing_res.data] if existing_res.data else []
             
             status_text.text(f"Paczka {current_count//batch_size + 1}... | W bazie: {len(existing_words)} słów")
             
-            # WZMOCNIONY PROMPT O RÓŻNORODNOŚĆ (V320)
-            prompt = f"""Jesteś ekspertem lingwistycznym. Wygeneruj listę {batch_size} UNIKALNYCH i NAJPOPULARNIEJSZYCH słów/fraz dla poziomu {target_lvl} ({target_lang}).
+            # RYGORYSTYCZNY PROMPT V321
+            prompt = f"""Jesteś rygorystycznym lingwistą. Wygeneruj listę {batch_size} UNIKALNYCH słów/fraz dla poziomu {target_lvl} ({target_lang}).
             
-            Słowa NIE mogą znajdować się na tej liście: {existing_words[-100:]}.
+            NIE używaj słów z tej listy: {existing_words[-100:]}.
 
-            KATEGORYCZNY WYMÓG RÓŻNORODNOŚCI:
-            Zadbaj o to, aby ta paczka zawierała mix części mowy:
-            - ok. 40% Rzeczowniki (Niemiecki: z der/die/das, Czeski: z ten/ta/to).
-            - ok. 30% Czasowniki (w bezokoliczniku, np. 'machen', 'jíst').
-            - ok. 20% Przymiotniki (np. 'schnell', 'rychlý').
-            - ok. 10% Inne (przyimki, przysłówki, frazy).
+            ZASADY KRYTYCZNE DLA RZECZOWNIKÓW:
+            1. KAŻDY rzeczownik w języku NIEMIECKIM musi mieć rodzajnik (der, die lub das). Przykład: "der Tisch", a nie "Tisch".
+            2. KAŻDY rzeczownik w języku CZESKIM musi mieć zaimek (ten, ta lub to). Przykład: "ten dům", a nie "dům".
+            3. Brak rodzajnika/zaimka przy rzeczowniku jest absolutnie niedopuszczalny.
 
-            W polu 'category' wpisz m.in. część mowy po polsku (np. "rzeczownik, dom" lub "czasownik, ruch").
-            Przykład: Krótkie, naturalne zdanie pasujące do poziomu.
+            WYMÓG KATEGORII:
+            - Pole 'category' MUSI zaczynać się od poziomu '{target_lvl}', a następnie zawierać część mowy i tag tematyczny.
+            - Przykład: "{target_lvl}, rzeczownik, biuro".
+
+            ZRÓŻNICOWANIE (Mix części mowy):
+            - ok. 40% Rzeczowniki (Z RODZAJNIKAMI!), 30% Czasowniki, 20% Przymiotniki, 10% Reszta (przysłówki, frazy).
 
             Zwróć WYŁĄCZNIE czysty JSON:
             {{
               "vocab": [
                 {{
-                  "word": "oryginał",
+                  "word": "Rodzajnik + Słowo",
                   "translation": "polski",
                   "level": "{target_lvl}",
                   "lang": "{l_code}",
-                  "category": "część mowy, tag",
-                  "example_orig": "zdanie",
+                  "category": "{target_lvl}, część mowy, tag",
+                  "example_orig": "zdanie użycia",
                   "example_pl": "tłumaczenie zdania"
                 }}
               ]
@@ -2776,6 +2778,11 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 items = data.get("vocab", [])
                 
                 if items:
+                    # Zabezpieczenie: Sprawdzamy czy poziom jest w kategorii
+                    for item in items:
+                        if target_lvl not in str(item['category']):
+                            item['category'] = f"{target_lvl}, {item['category']}"
+                    
                     db.table("master_vocab").insert(items).execute()
                     current_count += len(items)
                     progress_bar.progress(min(current_count / total_goal, 1.0))
@@ -2788,13 +2795,13 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             
             time.sleep(0.5)
             
-        st.success(f"✅ Baza zasilona! Razem: {current_count} zróżnicowanych pozycji.")
+        st.success(f"✅ Baza zasilona! Dodano {current_count} poprawnych rekordów ({target_lvl}).")
 
     # --- 2. FUNKCJE DLA IDIOMÓW ---
     def clear_idioms_library():
         try:
             get_db().table("idioms_library").delete().neq("id", 0).execute()
-            st.success("✅ Biblioteka idiomów wyczyszczona!")
+            st.success("✅ Biblioteka idiomów została wyczyszczona!")
             time.sleep(1); st.rerun()
         except Exception as e: st.error(f"Błąd: {e}")
 
@@ -2806,7 +2813,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             total_generated = 0
             while total_generated < 100:
                 batch_size = 20
-                prompt = f"Wygeneruj {batch_size} idiomów dla języka {lang_code}. Format JSON: idioms: [{{lang, phrase, literal_pl, meaning_pl, origin_pl, example_orig, example_pl, formality, category}}]"
+                prompt = f"Wygeneruj {batch_size} idiomów dla języka {lang_code}. Zwróć JSON: idioms: [{{lang, phrase, literal_pl, meaning_pl, origin_pl, example_orig, example_pl, formality, category}}]"
                 try:
                     res_raw = get_openai_response(prompt)
                     data = json.loads(res_raw)
@@ -2814,7 +2821,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     if items:
                         get_db().table("idioms_library").upsert(items, on_conflict="lang,phrase").execute()
                         total_generated += len(items)
-                        st.toast(f"Paczka zapisana ({lang_code.upper()})")
+                        st.toast(f"Paczka idiomów zapisana ({lang_code.upper()})")
                     else: break
                 except: time.sleep(2); continue
         st.success("✅ Idiomy gotowe!")
@@ -2823,7 +2830,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     def clear_cultural_trivia():
         try:
             get_db().table("cultural_trivia").delete().neq("id", 0).execute()
-            st.success("✅ Ciekawostki wyczyszczone!")
+            st.success("✅ Baza ciekawostek została wyczyszczona!")
             time.sleep(1); st.rerun()
         except Exception as e: st.error(f"Błąd: {e}")
 
@@ -2835,7 +2842,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             total_generated = 0
             while total_generated < 100:
                 batch_size = 20
-                prompt = f"Wygeneruj {batch_size} ciekawostek o kulturze krajów {lang_code}. Format JSON: trivia: [{{lang, title, content_orig, content_pl, source}}]"
+                prompt = f"Wygeneruj {batch_size} ciekawostek o kulturze {lang_code}. Zwróć JSON: trivia: [{{lang, title, content_orig, content_pl, source}}]"
                 try:
                     res_raw = get_openai_response(prompt)
                     data = json.loads(res_raw)
@@ -2854,36 +2861,39 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
     with t_vocab:
         with st.container(border=True):
-            st.write("**🚀 Seeder Biblioteki Głównej (Mix części mowy)**")
+            st.write("**🚀 Seeder Biblioteki Głównej (V321)**")
             col_v1, col_v2, col_v3 = st.columns(3)
-            v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang")
-            v_lvl = col_v2.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1", "C2"], key="v_lvl")
-            v_goal = col_v3.number_input("Ilość", 10, 500, 50)
-            if st.button("🏗️ Generuj i dodaj do Biblioteki", use_container_width=True, type="primary"):
+            v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
+            v_lvl = col_v2.selectbox("Poziom CEFR", ["A1", "A2", "B1", "B2", "C1", "C2"], key="v_lvl_adm")
+            v_goal = col_v3.number_input("Ilość do wygenerowania", 10, 500, 50)
+            
+            if st.button("🏗️ Uruchom Seeder Biblioteki", use_container_width=True, type="primary"):
                 seed_master_vocab(v_lang, v_lvl, v_goal)
+            
+            st.divider()
             if st.button("💣 Wyczyść Master Vocab", use_container_width=True):
                 get_db().table("master_vocab").delete().neq("id", 0).execute()
-                st.success("Tabela wyczyszczona."); st.rerun()
+                st.success("Tabela Master Vocab jest teraz pusta."); st.rerun()
 
     with t_idioms:
-        c_id1, c_id2 = st.columns(2)
-        if c_id1.button("🏗️ Inicjuj Idiomy", use_container_width=True): seed_idioms_library()
-        if c_id2.button("💣 Usuń Idiomy", use_container_width=True): clear_idioms_library()
+        col_id1, col_id2 = st.columns(2)
+        if col_id1.button("🏗️ Inicjuj Idiomy (200)", use_container_width=True): seed_idioms_library()
+        if col_id2.button("💣 Usuń wszystkie Idiomy", use_container_width=True): clear_idioms_library()
 
     with t_trivia:
-        c_tr1, c_tr2 = st.columns(2)
-        if c_tr1.button("🏗️ Inicjuj Ciekawostki", use_container_width=True): seed_cultural_trivia()
-        if c_tr2.button("💣 Usuń Ciekawostki", use_container_width=True): clear_cultural_trivia()
+        col_tr1, col_tr2 = st.columns(2)
+        if col_tr1.button("🏗️ Inicjuj Ciekawostki (200)", use_container_width=True): seed_cultural_trivia()
+        if col_tr2.button("💣 Usuń wszystkie Ciekawostki", use_container_width=True): clear_cultural_trivia()
 
     st.divider()
 
-    # --- 4. ANALIZA DANYCH I STATYSTYKI ---
+    # --- 4. ANALIZA DANYCH I STATYSTYKI KONT ---
     col_adm1, col_adm2 = st.columns(2)
     with col_adm1:
-        if st.button("🔄 Odśwież statystyki", use_container_width=True):
+        if st.button("🔄 Odśwież Dane Analityczne", use_container_width=True):
             st.cache_data.clear(); st.rerun()
     with col_adm2:
-        st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
+        st.link_button("💸 Sprawdź Koszty OpenAI", "https://platform.openai.com/usage", use_container_width=True)
 
     db = get_db()
     ud_data = db.table("user_data").select("*").execute().data
@@ -2899,14 +2909,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     for user in ud_data:
         uname = user["username"]
         u_cards = df_cards_all[df_cards_all["username"] == uname]
+        
+        # Wyliczanie statystyk źródeł (R|G|S)
         oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
-        r_count = sum(1 for x in oc if "Dodaj" in str(x) or "Detektyw" in str(x))
+        r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
         g_count = sum(1 for x in oc if "Generator" in str(x))
         s_count = sum(1 for x in oc if "Skaner" in str(x))
         
+        # Wiedza (Strong cards)
         strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6]) if not u_cards.empty else 0
         wiedza = int((strong / len(u_cards)) * 100) if not u_cards.empty and len(u_cards) > 0 else 0
 
+        # Czas nauki
         u_stats = user.get("time_stats", {})
         merged = {code: 0 for code in tracked_codes}
         total_sec = 0
@@ -2917,15 +2931,20 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             if f_code != "Inn": global_time[f_code] = global_time.get(f_code, 0) + sec
 
         adm_list.append({
-            "Użytkownik": uname, "Aktywność (Data | Czas)": user.get("last_seen", "Brak"),
-            "🔥": user.get("streak", 0), "🧠 %": wiedza,
+            "Użytkownik": uname, 
+            "Aktywność (Data | Czas)": user.get("last_seen", "Brak"),
+            "🔥": user.get("streak", 0), 
+            "🧠 %": wiedza,
             "Słówka (R|G|S)": f"{len(u_cards)} ({r_count}|{g_count}|{s_count})",
-            "Tst": len(user.get("test_history", [])), "Min": int(total_sec // 60),
-            "PLN": round(user.get("historical_cost", 0.0), 2), "__raw_stats": merged
+            "Tst": len(user.get("test_history", [])), 
+            "Min": int(total_sec // 60),
+            "PLN": round(user.get("historical_cost", 0.0), 2), 
+            "__raw_stats": merged
         })
     
     if adm_list:
         df_admin = pd.DataFrame(adm_list)
+        
         st.subheader("📈 Globalny rozkład aktywności")
         total_global = sum(global_time.values())
         if total_global > 0:
@@ -2933,14 +2952,26 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]:
                 v = global_time.get(code, 0)
                 m, _ = divmod(int(v), 60); h, m = divmod(m, 60)
-                analysis.append({"Moduł": display_names[code], "Popularność (%)": f"{round((v/total_global)*100, 1)}%", "Łączny czas": f"{h}h {m}m" if h > 0 else f"{m}m"})
+                analysis.append({
+                    "Moduł": display_names[code], 
+                    "Popularność (%)": f"{round((v/total_global)*100, 1)}%", 
+                    "Łączny czas": f"{h}h {m}m" if h > 0 else f"{m}m"
+                })
             st.table(pd.DataFrame(analysis).set_index("Moduł"))
         
         st.divider()
         st.subheader("📋 Podsumowanie kont")
-        st.dataframe(df_admin.drop(columns=["__raw_stats"]), use_container_width=True, hide_index=True, column_config={"Aktywność (Data | Czas)": st.column_config.TextColumn("Aktywność (Data | Czas)", width=170), "🧠 %": st.column_config.NumberColumn("🧠 %", format="%d%%")})
+        st.dataframe(
+            df_admin.drop(columns=["__raw_stats"]), 
+            use_container_width=True, hide_index=True, 
+            column_config={
+                "Aktywność (Data | Czas)": st.column_config.TextColumn("Aktywność (Data | Czas)", width=170), 
+                "🧠 %": st.column_config.NumberColumn("🧠 %", format="%d%%"),
+                "PLN": st.column_config.NumberColumn("Koszt", format="%.2f zł")
+            }
+        )
         
-        with st.expander("🔍 Szczegółowy podział czasu (minuty)"):
+        with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
