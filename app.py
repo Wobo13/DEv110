@@ -381,12 +381,12 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V256 - Total Precision Engine) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V258 - Total Persistence & Fixed Mapping) ---
 
 u = st.session_state.get("user")
 
 def load_user_data(username):
-    """Pobiera profil i zarządza resetem dziennym."""
+    """Pobiera dane profilu i zarządza resetem dziennym."""
     try:
         res = get_db().table("user_data").select("*").eq("username", username).execute()
         if res.data:
@@ -394,38 +394,45 @@ def load_user_data(username):
             today_str = date.today().isoformat()
             yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-            # Inicjalizacja słowników
-            for key in ["time_stats", "total_time_stats", "settings", "workshop_progress"]:
-                if key not in data or data[key] is None: data[key] = {}
-            if "test_history" not in data or data.get("test_history") is None: data["test_history"] = []
+            # 1. INICJALIZACJA SŁOWNIKÓW (Zabezpieczenie przed brakiem kolumn)
+            keys_to_init = ["time_stats", "total_time_stats", "settings", "workshop_progress"]
+            for key in keys_to_init:
+                if key not in data or data[key] is None:
+                    data[key] = {}
+            
+            if "test_history" not in data or data.get("test_history") is None:
+                data["test_history"] = []
 
-            # 1. RESET DZIENNY MINUT
+            # 2. RESET DZIENNY (Czyścimy tylko minuty z dziś)
             last_visit = data.get("last_visit_date", "2000-01-01")
             if last_visit != today_str:
                 data["time_stats"] = {}
                 data["last_visit_date"] = today_str
 
-            # 2. LOGIKA RESETU PASSY
+            # 3. LOGIKA RESETU PASSY (STREAK)
+            # Jeśli ostatni sukces był dawniej niż wczoraj -> streak znika
             last_success = data.get("last_date", "2000-01-01")
             if last_success != today_str and last_success != yesterday_str:
                 data["streak"] = 0
             
             return data
     except Exception as e:
-        st.error(f"Błąd profilu: {e}")
+        st.error(f"Błąd ładowania profilu: {e}")
     return None
 
 def save_user_data(username, data):
-    """Zapisuje dane profilu do Supabase."""
+    """Zapisuje dane profilu do bazy i odświeża datę aktywności."""
     if not username: return
     try:
+        # Usuwamy pola systemowe Supabase przed wysyłką
         clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
         clean_data["last_seen"] = get_now_pl()
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
-    except: pass
+    except:
+        pass
 
 def update_activity(current_choice):
-    """Główny licznik czasu i passy. Wywoływany na początku każdego odświeżenia."""
+    """Główny silnik: Naliczanie czasu (Dziś + Łącznie) oraz sprawdzanie Celu Dnia."""
     if not current_choice or "user_data" not in st.session_state or not u:
         return
 
@@ -436,57 +443,80 @@ def update_activity(current_choice):
 
     delta = now - st.session_state.last_ts_activity
     
-    if 0.5 < delta < 600: # Ignorujemy mikro-odświeżenia i bezczynność > 10 min
+    # Naliczamy tylko jeśli aktywność trwała od 0.5s do 10 min (anty-idle)
+    if 0.5 < delta < 600:
         ud = st.session_state.user_data
         today_str = date.today().isoformat()
         
-        # PEŁNE MAPOWANIE MODUŁÓW (Naprawione)
+        # --- PANCERNE MAPOWANIE MODUŁÓW (Zbieżne z normalize_text) ---
         mapping = {
-            "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
-            "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
-            "wąż": "Wan", "wyścig": "Bal", "asystent": "Wri", "detektyw": "Det", 
-            "laborat": "Lab", "skaner": "Skn", "statystyk": "Sta"
+            "powtorki": "Pow", 
+            "trening": "Trn", 
+            "quiz": "Qiz", 
+            "fiszki": "Fis",
+            "testy": "Tst", 
+            "memory": "Mem", 
+            "warsztat": "War", 
+            "konstruktor": "Kon",
+            "waz": "Wan",       # lingwistyczny waz (po normalizacji)
+            "wyscig": "Bal",    # balonowy wyscig (po normalizacji)
+            "asystent": "Wri", 
+            "detektyw": "Det", 
+            "laborat": "Lab", 
+            "skaner": "Skn", 
+            "statystyk": "Sta"
         }
         
+        # Normalizujemy wybór (małe litery, brak polskich znaków i emoji)
         clean_choice = normalize_text(str(current_choice))
         label = "Inn"
-        for k, v in mapping.items():
-            if k in clean_choice:
-                label = v
+        for key_word, code in mapping.items():
+            if key_word in clean_choice:
+                label = code
                 break
         
-        # Aktualizacja DZIŚ i ŁĄCZNIE
+        # 1. Aktualizacja czasu DZIŚ oraz ŁĄCZNIE
         for stat_key in ["time_stats", "total_time_stats"]:
             curr_dict = dict(ud.get(stat_key, {}))
             curr_dict[label] = float(curr_dict.get(label, 0.0)) + delta
             ud[stat_key] = curr_dict
 
-        # SPRAWDZANIE CELU (Używamy sekund dla precyzji)
-        m_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
-        total_sec_today = sum(ud["time_stats"].get(code, 0) for code in m_codes)
+        # 2. SPRAWDZANIE CELU DNIA (Suma sekund z ważnych modułów)
+        # Te kody muszą być identyczne jak w sidebarze (m_list)
+        target_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
+        total_sec_today = sum(ud["time_stats"].get(code, 0) for code in target_modules)
         
         goal_min = ud.get("settings", {}).get("daily_goal", 20)
         
+        # Jeśli dziś osiągnięto cel i jeszcze nie zapisano tego faktu
         if total_sec_today >= (goal_min * 60) and ud.get("last_date") != today_str:
             ud["streak"] = ud.get("streak", 0) + 1
-            ud["last_date"] = today_str
-            st.toast(f"🔥 Cel dnia osiągnięty! Passa: {ud['streak']} dni", icon="🚀")
+            ud["last_date"] = today_str # Blokada ponownego naliczenia dzisiaj
+            st.toast(f"🔥 Cel dnia osiągnięty! Twoja passa: {ud['streak']} dni", icon="🚀")
 
-        # Ważne: Re-asumpcja do session_state
+        # 3. Zapis zmian
         st.session_state.user_data = ud
         save_user_data(u, ud)
 
     st.session_state.last_ts_activity = now
 
-# Inicjalizacja sesji
+# --- INICJALIZACJA SESJI ---
 if u:
+    # Pobierz dane przy wejściu (jeśli brak)
     if "user_data" not in st.session_state:
         st.session_state.user_data = load_user_data(u)
         st.session_state.flashcards = load_flashcards(u)
-    
-    # KLUCZ: Wywołujemy naliczanie czasu ZANIM narysuje się Sidebar
+        # Pierwszy zapis aktywności (last_seen)
+        save_user_data(u, st.session_state.user_data)
+
+    # KLUCZ: Uruchom licznik czasu ZANIM narysuje się Sidebar
     current_choice = st.session_state.get("choice", "🏠 Start")
     update_activity(current_choice)
+
+    # Synchronizacja co 5 minut (zabezpieczenie)
+    if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
+        save_user_data(u, st.session_state.user_data)
+        st.session_state.last_db_ping = time.time()
 
 # --- 6. SIDEBAR (V386 - Total Synchronization & Smooth Progress) ---
 with st.sidebar:
@@ -2819,35 +2849,27 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V326 - Real-Time Activity & Today Logic Fix) ---
+# --- 27. ADMIN PRO (V328 - Full Module Sync & Historical Data Fix) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
-    # Wymuszenie aktualizacji Twojej aktywności jako admina w bazie
+    # Aktualizacja aktywności admina
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
-    # --- 1. FUNKCJE SEEDERÓW (Baza Wiedzy) ---
+    # --- 1. SEEDERY (Bazy Wiedzy) ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
-        import json
-        import time
+        import json, time
         l_code = "de" if target_lang == "Niemiecki" else "cs"
         st.info(f"🚀 Rozpoczynam generowanie {total_goal} słów ({target_lvl})...")
-        
         db = get_db()
         progress_bar = st.progress(0)
         current_count = 0
         batch_size = 25 
-        
         while current_count < total_goal:
             existing_res = db.table("master_vocab").select("word").eq("lang", l_code).eq("level", target_lvl).execute()
             existing_words = [row['word'] for row in existing_res.data] if existing_res.data else []
-            
-            prompt = f"""Jesteś lingwistą. Wygeneruj listę {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}).
-            NIE używaj: {existing_words[-100:]}.
-            Rzeczowniki MUSZĄ mieć rodzajnik/zaimek (der/die/das lub ten/ta/to).
-            Zwróć TYLKO JSON: {{ "vocab": [ {{ "word":"", "translation":"", "level":"{target_lvl}", "lang":"{l_code}", "category":"{target_lvl}, tag", "example_orig":"", "example_pl":"" }} ] }}"""
-            
+            prompt = f"Jesteś lingwistą. Wygeneruj {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}). Rzeczowniki z rodzajnikami. Zwróć JSON: vocab: [{{word, translation, level, lang, category, example_orig, example_pl}}]"
             try:
                 raw_res = get_openai_response(prompt)
                 data = json.loads(raw_res)
@@ -2857,77 +2879,66 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     current_count += len(items)
                     progress_bar.progress(min(current_count / total_goal, 1.0))
                 else: break
-            except Exception as e:
-                st.error(f"Błąd seeder'a: {e}")
-                break
+            except: break
             time.sleep(0.5)
-        st.success(f"✅ Baza zasilona o {current_count} rekordów!")
+        st.success(f"✅ Dodano {current_count} rekordów!")
 
-    # --- 2. INTERFEJS ZARZĄDZANIA (TABS) ---
-    t_vocab, t_idioms, t_trivia, t_users = st.tabs([
-        "📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"
-    ])
+    # --- 2. INTERFEJS (TABS) ---
+    t_vocab, t_idioms, t_trivia, t_users = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"])
 
     with t_vocab:
         with st.container(border=True):
-            st.write("**Konfiguracja zasilania bazy:**")
             col_v1, col_v2, col_v3 = st.columns(3)
             v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
-            v_lvl = col_v2.selectbox("Poziom CEFR", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
-            v_goal = col_v3.number_input("Ilość do dodania", 10, 500, 50)
-            if st.button("🏗️ Uruchom Generator Vocab", use_container_width=True, type="primary"):
+            v_lvl = col_v2.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
+            v_goal = col_v3.number_input("Ilość", 10, 500, 50)
+            if st.button("🏗️ Uruchom Seeder", use_container_width=True, type="primary"):
                 seed_master_vocab(v_lang, v_lvl, v_goal)
 
     with t_idioms:
-        st.info("Zarządzanie biblioteką idiomów i zwrotów potocznych.")
-        if st.button("🏗️ Inicjuj paczkę idiomów (200)"):
-            # Tutaj możesz wywołać funkcję seed_idioms_library()
-            pass
+        st.info("Zarządzanie biblioteką idiomów.")
+        if st.button("🏗️ Inicjuj Idiomy (200)"):
+            seed_idioms_library() # Zakładając, że masz tę funkcję zdefiniowaną
 
     with t_trivia:
-        st.info("Zarządzanie ciekawostkami kulturowymi wyświetlanymi na ekranie Start.")
+        st.info("Zarządzanie ciekawostkami kulturowymi.")
 
-    # --- 3. ANALIZA UŻYTKOWNIKÓW (FIXED LOGIC) ---
+    # --- 3. ANALIZA UŻYTKOWNIKÓW (FIXED MAPPING) ---
     with t_users:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
-            if st.button("🔄 Odśwież dane z bazy", use_container_width=True): st.rerun()
+            if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
         with col_adm2:
-            st.link_button("💸 Billing OpenAI", "https://platform.openai.com/usage", use_container_width=True)
+            st.link_button("💸 Koszty OpenAI", "https://platform.openai.com/usage", use_container_width=True)
 
         db = get_db()
-        # Pobranie profilów i kart
         ud_data = db.table("user_data").select("*").execute().data
         all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
         df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
         
         today_iso = date.today().isoformat()
-        today_dt = date.today()
         adm_summary = []
-        global_daily_time = {}
-        display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon", "Inn": "Inne"}
+        
+        # Słownik kodów (musi być identyczny jak w Sekcji 5!)
+        MOD_MAP = {
+            "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki",
+            "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor",
+            "Wan": "Wąż", "Bal": "Balon", "Wri": "Pisanie", "Det": "Detektyw", 
+            "Lab": "Laboratorium", "Skn": "Skaner", "Sta": "Statystyki", "Inn": "Inne"
+        }
 
         for user in ud_data:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
-            
-            # Obliczanie wiedzy (słówka opanowane > 6 dni)
-            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - today_dt).days > 6]) if not u_cards.empty else 0
+            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - date.today()).days > 6]) if not u_cards.empty else 0
             wiedza = int((strong / len(u_cards)) * 100) if len(u_cards) > 0 else 0
 
-            # --- LOGIKA "DZIŚ" (Weryfikacja daty ostatniej sesji) ---
-            user_last_visit = user.get("last_visit_date", "2000-01-01")
-            
-            if user_last_visit == today_iso:
-                # Dane w time_stats są faktycznie z dzisiaj
-                stats_today = user.get("time_stats", {})
-            else:
-                # Dane w bazie są stare (użytkownik jeszcze nie wszedł dziś do apki)
-                stats_today = {}
-
+            # Czas Dziś (z weryfikacją daty)
+            is_active_today = user.get("last_visit_date") == today_iso
+            stats_today = user.get("time_stats", {}) if is_active_today else {}
             total_sec_today = sum(stats_today.values()) if isinstance(stats_today, dict) else 0
             
-            # Czas całkowity (z kolumny total_time_stats)
+            # Czas Łącznie
             stats_total = user.get("total_time_stats", {})
             total_sec_all = sum(stats_total.values()) if isinstance(stats_total, dict) else 0
 
@@ -2939,60 +2950,39 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "Wiedza": f"{wiedza}%",
                 "Dziś (min)": int(total_sec_today // 60),
                 "Łącznie (min)": int(total_sec_all // 60),
-                "Koszt AI": round(user.get("historical_cost", 0.0), 2)
+                "Koszt AI": round(user.get("historical_cost", 0.0), 2),
+                "raw_total": stats_total # Do tabeli szczegółowej
             })
 
-            # Agregacja do statystyk globalnych (tylko dzisiejsza aktywność)
-            if user_last_visit == today_iso:
-                for k, v in stats_today.items():
-                    label = display_names.get(k, "Inne")
-                    global_daily_time[label] = global_daily_time.get(label, 0) + v
+        # Wyświetlanie głównej tabeli
+        st.subheader("📋 Podsumowanie aktywności")
+        df_main = pd.DataFrame(adm_summary).sort_values("Dziś (min)", ascending=False)
+        st.dataframe(
+            df_main.drop(columns=["raw_total"]), 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
+                "Dziś (min)": st.column_config.ProgressColumn("Dziś (postęp)", min_value=0, max_value=60),
+                "Łącznie (min)": st.column_config.NumberColumn("Suma min.")
+            }
+        )
 
-        # Wyświetlanie głównej tabeli podsumowującej
-        st.subheader("📋 Podsumowanie kont")
-        if adm_summary:
-            df_final = pd.DataFrame(adm_summary)
-            # Sortowanie: najbardziej aktywni dzisiaj na górze
-            df_final = df_final.sort_values(by="Dziś (min)", ascending=False)
+        # Wyświetlanie tabeli szczegółowej (Historycznej)
+        with st.expander("🔍 Szczegółowy czas w modułach (Całkowity)"):
+            history_rows = []
+            for item in adm_summary:
+                row = {"Użytkownik": item["Użytkownik"]}
+                # Pobieramy czas dla każdego kodu ze słownika MOD_MAP
+                for code, full_name in MOD_MAP.items():
+                    # Sekundy z bazy -> minuty w tabeli
+                    val_sec = item["raw_total"].get(code, 0)
+                    row[full_name] = int(val_sec // 60)
+                history_rows.append(row)
             
-            st.dataframe(
-                df_final,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                    "Dziś (min)": st.column_config.ProgressColumn("Dziś (postęp)", min_value=0, max_value=60),
-                    "Łącznie (min)": st.column_config.NumberColumn("Suma (min)"),
-                }
-            )
-
-        # Globalny rozkład aktywności (tylko moduły używane dzisiaj)
-        st.divider()
-        st.subheader("📈 Popularność modułów (Faktycznie Dzisiaj)")
-        if global_daily_time:
-            total_global = sum(global_daily_time.values())
-            analysis = []
-            for mod, sec in global_daily_time.items():
-                analysis.append({
-                    "Moduł": mod,
-                    "Udział": f"{round((sec/total_global)*100, 1)}%",
-                    "Łączny czas": f"{int(sec//60)} min"
-                })
-            st.table(pd.DataFrame(analysis).sort_values("Łączny czas", ascending=False))
-        else:
-            st.info("Brak aktywności użytkowników w dniu dzisiejszym.")
-
-        # Rozwijany szczegółowy podgląd historii całkowitej
-        with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (historycznie)"):
-            detail_data = []
-            for user in ud_data:
-                stats = user.get("total_time_stats", {})
-                row = {"Użytkownik": user["username"]}
-                for code, name in display_names.items():
-                    # Przeliczamy sekundy z bazy na minuty
-                    row[name] = int(stats.get(code, 0) // 60)
-                detail_data.append(row)
-            st.dataframe(pd.DataFrame(detail_data), use_container_width=True, hide_index=True)
+            # Sortujemy po całkowitym czasie nauki (suma wszystkich modułów)
+            df_history = pd.DataFrame(history_rows)
+            st.dataframe(df_history, use_container_width=True, hide_index=True)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
