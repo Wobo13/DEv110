@@ -1951,106 +1951,136 @@ elif choice == "🏆 Arena Wyzwań":
         # 4. STATUS TWOJEJ POZYCJI
         st.info(f"Rywalizujesz z {len(leaderboard_data)} użytkownikami. Powodzenia!")
 
-# --- 21. GENERATOR SŁÓW (V253 - Clean Polish & Forced CEFR Levels) ---
+# --- 21. GENERATOR SŁÓW (V2.6 - Library-First & Duplicate Protection) ---
 elif choice == "📦 Generator":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📦 Generator: {current_lang_name}")
-    st.write(f"Generuj słówka. System zadba o czyste tłumaczenia i poziomy trudności.")
+    st.write("System najpierw przeszukuje bibliotekę wzorcową, a potem posiłkuje się AI.")
 
     # 1. PANEL STEROWANIA
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
-            gen_lvl = st.selectbox("Preferowany poziom:", ["Brak", "A1", "A2", "B1", "B2", "C1", "C2"], key="gen_lvl_sel")
+            gen_lvl = st.selectbox("Poziom:", ["A1", "A2", "B1", "B2", "C1", "C2"], key="gen_lvl_sel")
         with c2:
-            gen_topic = st.text_input("Temat (opcjonalnie):", placeholder="np. Dom, Technika...", key="gen_top_in")
+            gen_topic = st.text_input("Temat (opcjonalnie):", key="gen_top_in")
         with c3:
             gen_count = st.number_input("Ilość:", 3, 20, 5, key="gen_cnt_in")
         
         if st.button(f"✨ Generuj listę ({current_lang_name})", use_container_width=True, type="primary"):
-            with st.spinner(f"AI dobiera słownictwo ({current_lang_name})..."):
-                context = f"na poziomie {gen_lvl}" if gen_lvl != "Brak" else ""
-                if gen_topic: context += f" o tematyce: {gen_topic}"
+            with st.spinner("Przeszukuję bibliotekę i konsultuję się z AI..."):
+                db = get_db()
                 
-                # --- PRECYZYJNE INSTRUKCJE DLA AI ---
-                if L_CODE == "de":
-                    lang_instr = """
-                    1. RZECZOWNIKI NIEMIECKIE: Zawsze z rodzajnikiem określonym (der, die, das).
-                    2. TŁUMACZENIE POLSKIE: Podaj czysty polski odpowiednik (BEZ słów ten, ta, to).
-                    """
-                else: # cs
-                    lang_instr = """
-                    1. RZECZOWNIKI CZESKIE: Zawsze z zaimkiem wskazującym (ten, ta, to).
-                    2. TŁUMACZENIE POLSKIE: Podaj czysty polski odpowiednik (BEZ słów ten, ta, to). To bardzo ważne!
-                    """
+                # A. POBIERZ AKTUALNE SŁÓWKA UŻYTKOWNIKA (żeby uniknąć duplikatów)
+                # Normalizujemy do małych liter dla pewności
+                known_words = {normalize_text(c['de']) for c in st.session_state.flashcards if c.get('lang') == L_CODE}
+                
+                final_results = []
 
-                prompt = f"""Wygeneruj {gen_count} unikalnych słówek/fraz w języku {current_lang_name} {context}.
-                {lang_instr}
-                
-                WYMÓG KATEGORII: Do pola 'tags' (kategorie) OBOWIĄZKOWO dodaj poziom trudności (A1, A2, B1, B2, C1 lub C2) pasujący do słowa.
-                
-                Dla każdego elementu podaj:
-                1. de: słowo (oryginał z rodzajnikiem/zaimkiem jeśli to rzeczownik)
-                2. pl: tłumaczenie na polski (czyste, bez rodzajników)
-                3. tags: lista min. 3 kategorii (w tym obowiązkowo poziom CEFR)
-                4. ex_de: przykład użycia w oryginale
-                5. ex_pl: tłumaczenie przykładu na polski
-                
-                Zwróć WYŁĄCZNIE JSON: {{"flashcards": [{{"de":"", "pl":"", "tags":"", "ex_de":"", "ex_pl":""}}]}}"""
-                
+                # B. PRÓBA POBRANIA Z VOCAB_LIBRARY (Supabase)
                 try:
-                    raw_res = get_openai_response(prompt)
-                    data = json.loads(raw_res)
-                    st.session_state.temp_generated = data.get("flashcards", [])
-                    st.session_state["last_gen_lvl"] = gen_lvl
-                except Exception as e:
-                    st.error(f"Błąd AI: {e}")
+                    res_lib = db.table("vocab_library").select("*").eq("lang", L_CODE).eq("level", gen_lvl).execute()
+                    if res_lib.data:
+                        # Filtrujemy słowa, których uczeń NIE ma jeszcze w bazie
+                        available_in_lib = [
+                            w for w in res_lib.data 
+                            if normalize_text(w['word']) not in known_words
+                        ]
+                        
+                        # Jeśli temat jest podany, filtrujemy też po temacie (proste dopasowanie)
+                        if gen_topic:
+                            available_in_lib = [w for w in available_in_lib if gen_topic.lower() in str(w.get('category','')).lower()]
 
-    # --- 2. SEKCJA EDYCJI ---
+                        # Losujemy słowa z biblioteki
+                        random.shuffle(available_in_lib)
+                        picked_from_lib = available_in_lib[:gen_count]
+                        
+                        for p in picked_from_lib:
+                            final_results.append({
+                                "de": p['word'],
+                                "pl": p['translation'],
+                                "tags": f"{gen_lvl}, {p.get('category', '')}",
+                                "ex_de": p.get('example_de', ''),
+                                "ex_pl": p.get('example_pl', '')
+                            })
+                except Exception as e:
+                    st.error(f"Błąd biblioteki: {e}")
+
+                # C. JEŚLI BRAKUJE SŁÓW (Pula wyczerpana lub brak w bibliotece) -> AI
+                needed_more = gen_count - len(final_results)
+                
+                if needed_more > 0:
+                    # Tworzymy listę "wykluczeń" dla AI, żeby nie podało tego co już mamy
+                    # Przekazujemy tylko ostatnie 100 słów, żeby nie przeładować promptu
+                    exclude_list = list(known_words)[:100]
+                    
+                    lang_instr = "Rzeczowniki z der/die/das" if L_CODE == "de" else "Rzeczowniki z ten/ta/to"
+                    
+                    prompt = f"""Wygeneruj {needed_more} UNIKALNYCH słówek w języku {current_lang_name} na poziomie {gen_lvl}.
+                    {f"Tematyka: {gen_topic}" if gen_topic else ""}
+                    ZASADY:
+                    1. {lang_instr}.
+                    2. Tłumaczenie PL: czyste, bez 'ten/ta/to'.
+                    3. ABSOLUTNIE NIE MOŻESZ użyć tych słów: {exclude_list}.
+                    
+                    Zwróć WYŁĄCZNIE JSON: {{"flashcards": [{{"de":"", "pl":"", "tags":"", "ex_de":"", "ex_pl":""}}]}}"""
+                    
+                    try:
+                        raw_res = get_openai_response(prompt)
+                        ai_data = json.loads(raw_res)
+                        ai_words = ai_data.get("flashcards", [])
+                        final_results.extend(ai_words)
+                    except:
+                        st.error("AI miało problem z generowaniem dodatkowych słów.")
+
+                st.session_state.temp_generated = final_results[:gen_count]
+                st.session_state["last_gen_lvl"] = gen_lvl
+
+    # --- 2. SEKCJA EDYCJI I ZAPISU ---
     if "temp_generated" in st.session_state and st.session_state.temp_generated:
         st.divider()
-        st.subheader("📝 Podgląd i personalizacja")
+        st.subheader("📝 Podgląd przed dodaniem")
         
-        lang_col = "Słowo (Oryginał)"
-        df_init = []
+        # Przygotowanie do tabeli
+        df_list = []
         for item in st.session_state.temp_generated:
-            # Upewniamy się, że poziom z selectboxa jest w tagach, jeśli AI by zapomniało
-            tags = item.get("tags", "")
-            current_sel_lvl = st.session_state.get("last_gen_lvl", "Brak")
-            if current_sel_lvl != "Brak" and current_sel_lvl not in tags:
-                tags = f"{current_sel_lvl}, {tags}"
-
-            df_init.append({
-                "Dodaj": True,
-                lang_col: item.get("de", ""),
+            # Sprawdzenie czy słowo przypadkiem nie jest już w bazie (podwójne zabezpieczenie)
+            exists = any(normalize_text(c['de']) == normalize_text(item['de']) for c in st.session_state.flashcards if c.get('lang') == L_CODE)
+            
+            df_list.append({
+                "Dodaj": not exists,
+                "Słowo": item.get("de", ""),
                 "Polski": item.get("pl", ""),
-                "Kategorie": tags,
-                "Przykład (Oryg.)": item.get("ex_de", ""),
-                "Przykład (PL)": item.get("ex_pl", "")
+                "Kategorie": item.get("tags", ""),
+                "Status": "⚠️ Już masz to słowo!" if exists else "✅ Nowe"
             })
 
-        edited_df = st.data_editor(df_init, use_container_width=True, num_rows="dynamic", key="ai_editor_gen_v253")
+        edited_df = st.data_editor(df_list, use_container_width=True, key="gen_editor_v26")
 
-        col_save, col_cancel = st.columns(2)
-        if col_save.button(f"🚀 Zapisz do bazy ({current_lang_name})", use_container_width=True, type="primary"):
-            success_count = 0
-            for row in edited_df:
-                if row.get("Dodaj", False):
+        c_save, c_cancel = st.columns(2)
+        if c_save.button("🚀 Zapisz wybrane", use_container_width=True, type="primary"):
+            added = 0
+            for i, row in enumerate(edited_df):
+                if row["Dodaj"]:
+                    orig_item = st.session_state.temp_generated[i]
                     new_word = {
-                        "de": row[lang_col], "pl": row["Polski"], "category": row["Kategorie"],
+                        "de": orig_item["de"], "pl": orig_item["pl"], 
+                        "category": orig_item["tags"], "lang": L_CODE,
                         "next_review": str(date.today()), "level": 0, "origin": "Generator",
-                        "lang": L_CODE, "examples": [{"de": row["Przykład (Oryg.)"], "pl": row["Przykład (PL)"]}]
+                        "examples": [{"de": orig_item.get("ex_de",""), "pl": orig_item.get("ex_pl","")}]
                     }
                     save_word(u, new_word)
-                    success_count += 1
-            st.success(f"Dodano {success_count} słówek!"); st.session_state.flashcards = load_flashcards(u)
-            if "temp_generated" in st.session_state: del st.session_state.temp_generated
+                    added += 1
+            
+            st.success(f"Dodano {added} nowych słówek!")
+            st.session_state.flashcards = load_flashcards(u)
+            del st.session_state.temp_generated
             st.rerun()
 
-        if col_cancel.button("🗑️ Anuluj", use_container_width=True):
-            if "temp_generated" in st.session_state: del st.session_state.temp_generated
+        if c_cancel.button("🗑️ Anuluj", use_container_width=True):
+            del st.session_state.temp_generated
             st.rerun()
 
 # --- 22. SKANER AI (V270 - Multilang + Vision OCR + Multi-Word Editor) ---
