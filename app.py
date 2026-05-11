@@ -2120,7 +2120,7 @@ elif choice == "📦 Generator":
             del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V270 - Multilang + Vision OCR + Multi-Word Editor) ---
+# --- 22. SKANER AI (V271 - Multilang + Vision OCR + CEFR + Polish Tags) ---
 elif choice == "📸 Skaner AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2139,8 +2139,10 @@ elif choice == "📸 Skaner AI":
         img_obj = Image.open(active_img)
         st.image(img_obj, caption="Podgląd skanu", use_container_width=True)
         
+        # Natywny przycisk primary (automatycznie dostosuje się do jasnego/ciemnego motywu)
         if st.button("🔍 Analizuj obraz przez AI", use_container_width=True, type="primary"):
             with st.spinner(f"Sztuczna inteligencja czyta tekst ({current_lang_name})..."):
+                
                 # Dynamiczna instrukcja zależna od języka
                 lang_instruction = ""
                 if L_CODE == "de":
@@ -2148,23 +2150,30 @@ elif choice == "📸 Skaner AI":
                 elif L_CODE == "cs":
                     lang_instruction = "Analizuj tekst w języku CZESKIM. Zwróć uwagę na znaki diakrytyczne (haczki i kreski)."
 
+                # Wzmocniony prompt z naciskiem na PL tagi, CEFR i przykłady
                 prompt = f"""Przeanalizuj ten obraz. Wyciągnij z niego listę najważniejszych słówek i fraz w języku {current_lang_name}.
                 {lang_instruction}
+                
                 Dla każdego słowa przygotuj:
                 - de: słowo w języku {current_lang_name}
                 - pl: tłumaczenie na polski
-                - tags: kategorie (np. Poziom, Temat)
-                - ex_de: zdanie przykładowe w języku {current_lang_name}
-                - ex_pl: tłumaczenie zdania na polski
+                - tags: kategorie wpisane WYŁĄCZNIE W JĘZYKU POLSKIM. Muszą zawierać szacowany poziom CEFR (np. A1, B2) oraz 1-2 tagi opisowe (np. "A1, jedzenie, restauracja")
+                - ex_de: naturalne zdanie przykładowe w języku {current_lang_name} z użyciem tego słowa
+                - ex_pl: poprawne tłumaczenie tego zdania na język polski
                 
-                Zwróć TYLKO czysty JSON:
+                Zwróć TYLKO czysty JSON bez żadnych znaczników markdown:
                 {{"flashcards": [
                     {{"de": "...", "pl": "...", "tags": "...", "ex_de": "...", "ex_pl": "..."}}
                 ]}}"""
                 
                 try:
                     res_raw = get_openai_response(prompt, img_obj=img_obj)
-                    data = json.loads(res_raw)
+                    # Czasami AI dodaje znaczniki ```json - usuwamy je w razie potrzeby
+                    if res_raw.startswith("
+```json"):
+                        res_raw = res_raw.replace("```json", "", 1).replace("```", "", 1)
+                        
+                    data = json.loads(res_raw.strip())
                     st.session_state.scanner_results = data.get("flashcards", [])
                     st.success(f"Znaleziono {len(st.session_state.scanner_results)} słówek!")
                 except Exception as e:
@@ -2184,7 +2193,7 @@ elif choice == "📸 Skaner AI":
                 "Zapisz": True,
                 lang_col_label: item.get("de", ""),
                 "Polski": item.get("pl", ""),
-                "Kategorie": item.get("tags", "Skaner AI"),
+                "Kategorie (Poziom, Temat)": item.get("tags", "A1, Skaner AI"),
                 "Przykład": item.get("ex_de", ""),
                 "Przykład PL": item.get("ex_pl", "")
             })
@@ -2198,6 +2207,7 @@ elif choice == "📸 Skaner AI":
 
         col_save, col_cancel = st.columns(2)
         
+        # Typy "primary" i "secondary" gwarantują czytelność w obu motywach
         if col_save.button(f"🚀 Dodaj wybrane do bazy ({current_lang_name})", use_container_width=True, type="primary"):
             success_count = 0
             for row in edited_df:
@@ -2205,7 +2215,7 @@ elif choice == "📸 Skaner AI":
                     new_word = {
                         "de": row[lang_col_label],
                         "pl": row["Polski"],
-                        "category": row["Kategorie"],
+                        "category": row["Kategorie (Poziom, Temat)"],
                         "next_review": str(date.today()),
                         "level": 0,
                         "origin": "Skaner AI",
@@ -2220,7 +2230,7 @@ elif choice == "📸 Skaner AI":
             del st.session_state.scanner_results
             st.rerun()
 
-        if col_cancel.button("🗑️ Odrzuć skan", use_container_width=True):
+        if col_cancel.button("🗑️ Odrzuć skan", use_container_width=True, type="secondary"):
             del st.session_state.scanner_results
             st.rerun()
         
