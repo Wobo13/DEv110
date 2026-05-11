@@ -1641,7 +1641,7 @@ elif choice == "🏗️ Konstruktor":
             if st.button("Następne ➡️", key="f_next", type="primary", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V2.1 - Native Mobile & Logic Fix) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V2.2 - Save Stats to Supabase Fix) ---
 elif choice == "🐍 Lingwistyczny Wąż":
     import re
     import random
@@ -1662,19 +1662,37 @@ elif choice == "🐍 Lingwistyczny Wąż":
         return clean
 
     def is_valid_snake_word(card):
-        # Wykluczamy tylko czasowniki
         cat = str(card.get('category', '')).lower()
         return "czasownik" not in cat and "verb" not in cat
 
     # 2. PRZYGOTOWANIE BAZY
-    # Za każdym razem filtrujemy bazę na świeżo, by widzieć nowe słówka
     pool = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE and is_valid_snake_word(c)]
 
     if len(pool) < 3:
         st.warning("Masz za mało słówek (nie-czasowników) w bazie, by zacząć.")
         st.stop()
 
-    # 3. START / RESTART GRY
+    # 3. FUNKCJA ZAPISU STATYSTYK (NOWOŚĆ)
+    def save_snake_game_results(is_win):
+        ud = st.session_state.user_data
+        current_chain = len(st.session_state.snake_chain)
+        
+        # Aktualizacja najlepszej serii
+        old_best = ud.get("snake_best_chain", 0)
+        if current_chain > old_best:
+            ud["snake_best_chain"] = current_chain
+            st.toast(f"🏆 Nowy rekord serii: {current_chain}!", icon="🔥")
+        
+        # Aktualizacja liczników
+        if is_win:
+            ud["snake_wins"] = ud.get("snake_wins", 0) + 1
+        else:
+            ud["snake_losses"] = ud.get("snake_losses", 0) + 1
+            
+        # Zapis do Supabase (korzystamy z Twojej istniejącej funkcji)
+        save_user_data(u, ud)
+
+    # 4. START / RESTART GRY
     if "snake_status" not in st.session_state:
         st.info("Zasady: Dodaj słowo zaczynające się na ostatnią literę poprzedniego. Tylko słowa z Twojej bazy!")
         diff = st.selectbox("Poziom trudności:", ["Łatwy", "Średni", "Trudny"], key="snake_diff_sel")
@@ -1687,19 +1705,15 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
         st.stop()
 
-    # 4. SILNIK GRY
+    # 5. SILNIK GRY
     chain = st.session_state.snake_chain
     last_word_clean = get_clean_text(chain[-1][L_CODE])
     req_letter = last_word_clean[-1] if last_word_clean else ""
 
-    # --- WIZUALIZACJA (NATYWNA - BEZ HTML) ---
     st.write("⛓️ **Łańcuch słów:**")
-    # Pokazujemy 5 ostatnich ruchów w czytelny sposób
     for i, word in enumerate(chain[-5:]):
-        # Sprawdzamy czyj to ruch (co drugie słowo)
         pos = len(chain) - len(chain[-5:]) + i
         is_sys = (pos % 2 == 0)
-        
         with st.chat_message("assistant" if is_sys else "user"):
             st.write(f"**{word[L_CODE]}** — {word['pl']}")
 
@@ -1707,13 +1721,13 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     # --- KOLEJ GRACZA ---
     if st.session_state.snake_status == "player":
-        # SPRAWDZAMY CZY GRACZ MA RUCH (Skaner Przegranej)
         player_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
         
         if not player_moves:
             st.error(f"💀 Koniec gry! Nie masz w bazie żadnego słowa na literę: **{req_letter.upper()}**")
             st.session_state.snake_winner = "System 🤖"
             st.session_state.snake_status = "end"
+            save_snake_game_results(is_win=False) # ZAPIS PRZEGRANEJ
             st.rerun()
         
         st.write(f"👉 Twoja kolej! Słowo na literę: **{req_letter.upper()}**")
@@ -1727,51 +1741,7 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 
                 if not found:
                     st.error("Nie znaleziono słowa w Twojej bazie (lub to czasownik).")
-                elif found[0]['id'] in st.session_state.snake_used_ids:
-                    st.error("To słowo już było!")
-                elif u_clean[0] != req_letter:
-                    st.error(f"Zła litera! Musi być na '{req_letter.upper()}'.")
-                else:
-                    st.session_state.snake_chain.append(found[0])
-                    st.session_state.snake_used_ids.add(found[0]['id'])
-                    st.session_state.snake_status = "system"
-                    st.rerun()
-            
-            if c2.form_submit_button("Poddaję się"):
-                st.session_state.snake_status = "end"
-                st.session_state.snake_winner = "System 🤖"
-                st.rerun()
-
-    # --- KOLEJ SYSTEMU ---
-    elif st.session_state.snake_status == "system":
-        with st.status("System szuka słowa...", expanded=True):
-            time.sleep(1.0)
-            # System szuka odpowiedzi
-            bot_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
-            
-            fail_chance = {"Łatwy": 0.50, "Średni": 0.25, "Trudny": 0.0}.get(st.session_state.snake_diff, 0)
-            
-            if bot_moves and random.random() > fail_chance:
-                bot_choice = random.choice(bot_moves)
-                st.session_state.snake_chain.append(bot_choice)
-                st.session_state.snake_used_ids.add(bot_choice['id'])
-                st.session_state.snake_status = "player"
-                st.rerun()
-            else:
-                st.session_state.snake_status = "end"
-                st.session_state.snake_winner = f"{user_name} 🏆"
-                st.balloons()
-                st.rerun()
-
-    # --- EKRAN KOŃCOWY ---
-    elif st.session_state.snake_status == "end":
-        st.success(f"### 🎉 Zwycięzca: {st.session_state.snake_winner}")
-        if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
-            # Czyścimy stany gry
-            for key in ["snake_status", "snake_chain", "snake_used_ids", "snake_winner", "snake_diff"]:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.rerun()
+                elif found[0]['id'] in st.session_state.snake_used_
 
 
 # --- 16. BALONOWY WYŚCIG (V315 - Performance Edition) ---
