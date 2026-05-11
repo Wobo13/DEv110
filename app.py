@@ -519,7 +519,7 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V2.0 - Dashboard with Dual Teasers: Writing & Detective) ---
+# --- 7. START (V2.1 - Dashboard with Persistent Teasers) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -561,8 +561,6 @@ if current_choice == "🏠 Start":
             st.success(f"🌟 Cel czasowy osiągnięty!")
         else:
             st.info(f"📈 Brakuje {max(0, daily_goal - study_minutes)} min do celu.")
-        
-        # Opcjonalne: Wykres postępu kołowy można by tu dodać w przyszłości
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
@@ -570,12 +568,10 @@ if current_choice == "🏠 Start":
         # --- LOGIKA POBIERANIA DANYCH DO TEASERÓW ---
         try:
             db = get_db()
-            # A. ASYSTENT PISANIA: Sprawdzanie i pobieranie tematu
-            # Musimy mieć dostęp do listy tematów (uproszczona wersja tutaj dla dashboardu)
-            # W wersji produkcyjnej najlepiej przenieść daily_topics do stałych globalnych
+            # A. ASYSTENT PISANIA: Pobieranie tematu
             topics_for_teaser = {
                 "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
-                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 let.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
+                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
             }
             t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser[L_CODE])
             current_writing_topic = topics_for_teaser[L_CODE][t_idx]
@@ -583,7 +579,7 @@ if current_choice == "🏠 Start":
             res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
             writing_done = len(res_w.data) > 0 if res_w.data else False
 
-            # B. KULTUROWY DETEKTYW: Sprawdzanie i pobieranie idiomu
+            # B. KULTUROWY DETEKTYW: Pobieranie idiomu
             res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
             if res_idioms.data:
                 idx_det = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
@@ -597,7 +593,7 @@ if current_choice == "🏠 Start":
             current_writing_topic = "Błąd pobierania tematu"
             daily_phrase = "Błąd bazy"
 
-        # --- UI: WYŚWIETLANIE TEASERÓW ---
+        # --- UI: WYŚWIETLANIE TEASERÓW (Zawsze widoczna treść) ---
         t_icon = "✅" if study_minutes >= daily_goal else "❌"
         st.write(f"{t_icon} Cel czasowy: **{daily_goal} min**")
 
@@ -605,25 +601,25 @@ if current_choice == "🏠 Start":
         with st.container(border=True):
             w_icon = "✅" if writing_done else "✍️"
             st.markdown(f"**{w_icon} Asystent Pisania**")
+            st.markdown(f"📝 *„{current_writing_topic}”*") # Treść zawsze widoczna
             if not writing_done:
-                st.markdown(f"📝 *„{current_writing_topic}”*")
                 if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
                     st.session_state.choice = "✍️ Asystent Pisania"
                     st.rerun()
             else:
-                st.markdown(f"✅ Zadanie wykonane!")
+                st.caption("✨ Zadanie zaliczone!")
 
         # Container 2: KULTUROWY DETEKTYW
         with st.container(border=True):
             d_icon = "✅" if det_done else "🕵️"
             st.markdown(f"**{d_icon} Kulturowy Detektyw**")
+            st.markdown(f"🔍 *„{daily_phrase}”*") # Treść zawsze widoczna
             if not det_done:
-                st.markdown(f"🔍 *„{daily_phrase}”*")
                 if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
                     st.session_state.choice = "🕵️ Kulturowy Detektyw"
                     st.rerun()
             else:
-                st.markdown(f"✅ Sprawa rozwiązana!")
+                st.caption("✨ Sprawa rozwiązana!")
         
         st.write("✅ Rozwiąż min. jeden **Quiz** lub **Test**")
 
@@ -633,8 +629,8 @@ if current_choice == "🏠 Start":
     col_q, col_w = st.columns([2, 1])
     with col_q:
         quotes = {
-            "de": ["„Übung macht den Meister!”", "„Aller Anfang ist schwer.”"],
-            "cs": ["„Trpělivost přináší růže.”", "„Učený nikdo z nebe nespadl.”"]
+            "de": ["„Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.”", "„Übung macht den Meister!”", "„Aller Anfang ist schwer.”"],
+            "cs": ["„Kolik jazyků znáš, tolikrát jsi člověkem.”", "„Trpělivost přináší růže.”", "„Učený nikdo z nebe nespadl.”"]
         }
         st.info(random.choice(quotes.get(L_CODE, ["Lernen macht Spaß!"])))
 
