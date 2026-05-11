@@ -2706,7 +2706,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V315 - Idioms & Cultural Trivia Management) ---
+# --- 27. ADMIN PRO (V316 - Full Analytics + Idioms & Trivia Management) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -2768,7 +2768,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         continue
         st.success("✅ Baza idiomów zainicjowana!")
 
-    # --- FUNKCJE DLA CIEKAWOSTEK (NOWOŚĆ) ---
+    # --- FUNKCJE DLA CIEKAWOSTEK ---
     def clear_cultural_trivia():
         try:
             get_db().table("cultural_trivia").delete().neq("id", 0).execute()
@@ -2781,14 +2781,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     def seed_cultural_trivia():
         import json
         import time
-        st.info("🌍 Rozpoczynam generowanie 200 ciekawostek (100 o Niemczech + 100 o Czechach)...")
+        st.info("🌍 Rozpoczynam generowanie 200 ciekawostek (100 DE + 100 CS)...")
         languages = ["de", "cs"]
-        
         for lang_code in languages:
             total_generated = 0
             country = "Niemczech" if lang_code == "de" else "Czechach"
             lang_full = "niemiecku" if lang_code == "de" else "czesku"
-            
             while total_generated < 100:
                 batch_size = 20
                 with st.spinner(f"Generuję ciekawostki {total_generated//batch_size + 1}/5 dla: {lang_code.upper()}..."):
@@ -2802,7 +2800,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                           "title": "Krótki tytuł PL",
                           "content_orig": "Tekst ciekawostki w języku {lang_full} (2-3 zdania)",
                           "content_pl": "Tłumaczenie ciekawostki na język polski",
-                          "source": "Kultura/Historia/Geografia/Styl życia"
+                          "source": "Kultura"
                         }}
                       ]
                     }}"""
@@ -2821,24 +2819,23 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         break
         st.success("✅ Baza ciekawostek zainicjowana!")
 
-    # --- UI: ZARZĄDZANIE DANYCH ---
-    st.subheader("🕵️ Zarządzanie Biblioteką Idiomów")
-    c_id1, c_id2 = st.columns(2)
-    with c_id1:
-        if st.button("🏗️ Inicjuj Bazę Idiomów (200)", use_container_width=True, type="primary"):
-            seed_idioms_library()
-    with c_id2:
-        if st.button("💣 Usuń bazę idiomów", use_container_width=True):
-            clear_idioms_library()
-
-    st.subheader("🌍 Zarządzanie Ciekawostkami")
-    c_tr1, c_tr2 = st.columns(2)
-    with c_tr1:
-        if st.button("🏗️ Inicjuj Ciekawostki (200)", use_container_width=True, type="primary"):
-            seed_cultural_trivia()
-    with c_tr2:
-        if st.button("💣 Usuń ciekawostki", use_container_width=True):
-            clear_cultural_trivia()
+    # --- UI: ZARZĄDZANIE BIBLIOTEKAMI ---
+    st.subheader("🛠️ Zarządzanie Bazami Danych")
+    col_db1, col_db2 = st.columns(2)
+    with col_db1:
+        with st.container(border=True):
+            st.write("**📚 Biblioteka Idiomów**")
+            if st.button("🏗️ Inicjuj Idiomy", use_container_width=True, type="primary"):
+                seed_idioms_library()
+            if st.button("💣 Usuń Idiomy", use_container_width=True):
+                clear_idioms_library()
+    with col_db2:
+        with st.container(border=True):
+            st.write("**🌍 Biblioteka Ciekawostek**")
+            if st.button("🏗️ Inicjuj Ciekawostki", use_container_width=True, type="primary"):
+                seed_cultural_trivia()
+            if st.button("💣 Usuń Ciekawostki", use_container_width=True):
+                clear_cultural_trivia()
 
     st.divider()
     
@@ -2883,7 +2880,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
-        
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
             f_code = k if k in tracked_codes else "Inn"
@@ -2895,16 +2891,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         raw_seen = user.get("last_seen", "Brak")
         formatted_seen = raw_seen.replace(" ", "  |  ") if " " in raw_seen else raw_seen
         
-        r = int(oc.get("Dodaj", 0))
-        g = int(oc.get("Generator", 0))
-        s = int(oc.get("Skaner", 0))
-            
         adm_list.append({
             "Użytkownik": username,
             "Aktywność (Data | Czas)": formatted_seen,
             "🔥": user.get("streak", 0),
             "🧠 %": wiedza_val,
-            "Słówka (R|G|S)": f"{len(user_cards)} ({r}|{g}|{s})", 
+            "Słówka (R|G|S)": f"{len(user_cards)} ({int(oc.get('Dodaj',0))}|{int(oc.get('Generator',0))}|{int(oc.get('Skaner',0))})", 
             "Tst": len(user.get("test_history", [])),
             "Min": int(total_sec // 60),
             "PLN": round(user.get("historical_cost", 0.0), 2),
@@ -2915,6 +2907,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.warning("Brak danych użytkowników.")
     else:
         df_admin = pd.DataFrame(adm_list)
+        
+        # TABELA: Globalny rozkład czasu
         st.subheader("📈 Globalny rozkład aktywności")
         total_global_study = sum(global_time.values())
         if total_global_study > 0:
@@ -2924,31 +2918,38 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 perc = (val_sec / total_global_study) * 100
                 m, _ = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
-                time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
                 analysis_rows.append({
                     "Moduł": display_names[code],
                     "Popularność (%)": f"{round(perc, 1)}%",
-                    "Łączny czas": time_str
+                    "Łączny czas": f"{h}h {m}m" if h > 0 else f"{m}m"
                 })
             st.table(pd.DataFrame(analysis_rows).set_index("Moduł"))
         
         st.divider()
+
+        # TABELA: Lista kont
         st.subheader("📋 Podsumowanie kont")
         st.dataframe(
             df_admin.drop(columns=["__raw_stats"]), 
-            use_container_width=True, 
-            hide_index=True,
+            use_container_width=True, hide_index=True,
             column_config={
                 "Użytkownik": st.column_config.TextColumn("Użytkownik", width=100),
                 "Aktywność (Data | Czas)": st.column_config.TextColumn("Aktywność (Data | Czas)", width=170),
-                "🔥": st.column_config.NumberColumn("🔥", width=45),
-                "🧠 %": st.column_config.NumberColumn("🧠 %", width=55, format="%d%%"),
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", width=130),
-                "Tst": st.column_config.NumberColumn("Tst", width=45),
-                "Min": st.column_config.NumberColumn("Min", width=55),
-                "PLN": st.column_config.NumberColumn("PLN", width=80, format="%.2f zł"),
+                "🧠 %": st.column_config.NumberColumn("🧠 %", format="%d%%"),
+                "PLN": st.column_config.NumberColumn("PLN", format="%.2f zł"),
             }
         )
+        
+        # TABELA: Szczegółowy podział czasu (Przywrócone!)
+        with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
+            detail_rows = []
+            valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
+            for _, row in df_admin.iterrows():
+                d_row = {"Użytkownik": row["Użytkownik"]}
+                for code in valid_codes:
+                    d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
+                detail_rows.append(d_row)
+            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
