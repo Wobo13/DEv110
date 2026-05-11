@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V266 - Pancerny JSON Parser dla Przykładów) ---
+# --- 8. POWTÓRKI & TRENING (V267 - Ultra JSON Parser & Audio Fix) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -760,7 +760,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn"):
             for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
                 full_key = f"{pfx}_{k}" if k != "list" and k != "idx" and k != "mode" else f"{pfx}_{k}"
-                # Bezpieczne czyszczenie kluczy
                 if f"{pfx}_{k}" in st.session_state: 
                     del st.session_state[f"{pfx}_{k}"]
             st.rerun()
@@ -773,7 +772,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 return
             c = cards[idx]
             
-            # Klucz kierunku (losowanie DE->PL lub PL->DE)
+            # Klucz kierunku
             dir_key = f"{pfx}_dir"
             if dir_key not in st.session_state:
                 st.session_state[dir_key] = random.choice([0, 1])
@@ -820,28 +819,37 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU (PANCERNY PARSER) ---
+                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU (ULTRA PANCERNY PARSER) ---
                 raw_exs = c.get("examples")
-                
-                # Jeśli Supabase zwróciło JSON jako string, wymuszamy parsowanie
-                if isinstance(raw_exs, str):
-                    try:
-                        raw_exs = json.loads(raw_exs)
-                    except:
-                        raw_exs = []
-                
-                if not isinstance(raw_exs, list):
-                    raw_exs = []
-                
                 ex_foreign = None
                 ex_pl = None
-                
-                if len(raw_exs) > 0 and isinstance(raw_exs[0], dict):
-                    ex_foreign = raw_exs[0].get("de")
-                    ex_pl = raw_exs[0].get("pl")
-                elif c.get("example"): # Wsparcie dla starych danych
-                    ex_foreign = c["example"]
 
+                try:
+                    # Krok 1: Jeśli Supabase rzuciło wszystko jako jeden string, parsujemy
+                    if isinstance(raw_exs, str):
+                        raw_exs = json.loads(raw_exs)
+                    
+                    # Krok 2: Jeśli to lista, dobieramy się do środka
+                    if isinstance(raw_exs, list) and len(raw_exs) > 0:
+                        first_item = raw_exs[0]
+                        
+                        # Krok 3: Czasami wewnątrz listy nadal siedzi string, znów parsujemy
+                        if isinstance(first_item, str):
+                            first_item = json.loads(first_item)
+                            
+                        # Krok 4: Jeśli to w końcu słownik (dict), wyciągamy dane
+                        if isinstance(first_item, dict):
+                            # Zauważ, że zapisujesz "de" nawet dla języka czeskiego (zgodnie z logiką w Dodaj/Skanerze)
+                            ex_foreign = first_item.get("de")
+                            ex_pl = first_item.get("pl")
+                except Exception:
+                    pass # Ciche połykanie błędu parsowania, fallback zadziała niżej
+
+                # Fallback dla starszych słówek
+                if not ex_foreign and c.get('example'):
+                    ex_foreign = c.get('example')
+
+                # Wyświetlanie na ekranie
                 if ex_foreign:
                     st.info(f"📖 **Przykład:** {ex_foreign}" + (f"\n\n🇵🇱 *{ex_pl}*" if ex_pl else ""))
                 
@@ -862,7 +870,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         new_date = str(date.today() + timedelta(days=d))
                         update_word(c['id'], {"next_review": new_date})
                         
-                        # Synchronizacja statystyk
                         for card in st.session_state.flashcards:
                             if card['id'] == c['id']:
                                 card['next_review'] = new_date
