@@ -459,111 +459,115 @@ if u:
 
 # --- 6. SIDEBAR (V383 - VIP Fan-Zone Integration) ---
 with st.sidebar:
-    st.markdown("""
-        <style>
-            [data-testid="stSidebarNav"] {display: none;}
-            .st-emotion-cache-1avcm0n {padding: 0rem 0.4rem !important;}
-            div.stButton > button {
-                width: 100%; text-align: left; background-color: transparent;
-                border: none; padding: 1px 6px !important; margin: 0px !important;
-                border-radius: 4px; font-size: 0.88rem; height: auto; min-height: 28px;
-            }
-            hr { margin: 0.4rem 0 !important; opacity: 0.3; }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+            [data-testid="stSidebarNav"] {display: none;}
+            .st-emotion-cache-1avcm0n {padding: 0rem 0.4rem !important;}
+            
+            /* KLUCZOWA POPRAWKA: Selektor ograniczony TYLKO do sidebaru */
+            [data-testid="stSidebar"] div.stButton > button {
+                width: 100%; text-align: left; background-color: transparent !important;
+                border: none; padding: 1px 6px !important; margin: 0px !important;
+                border-radius: 4px; font-size: 0.88rem; height: auto; min-height: 28px;
+                color: var(--text-color) !important;
+            }
+            
+            hr { margin: 0.4rem 0 !important; opacity: 0.3; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # Pobranie danych użytkownika (z zabezpieczeniem przed brakiem klucza)
-    if "user_data" not in st.session_state:
-        st.rerun()
-    
-    ud = st.session_state.user_data
-    
-    # Nagłówek profilu
-    st.markdown(f"""
-        <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
-            <span style='font-size:0.9rem;'><b>👤 {str(u).capitalize()}</b></span>
-            <span style='color:#FF4B4B; font-size:0.85rem;'>🔥 {ud.get('streak', 0)}d</span>
-        </div>
-    """, unsafe_allow_html=True)
+    # Pobranie danych użytkownika (z zabezpieczeniem przed brakiem klucza)
+    if "user_data" not in st.session_state:
+        st.rerun()
+    
+    ud = st.session_state.user_data
+    
+    # Nagłówek profilu
+    st.markdown(f"""
+        <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
+            <span style='font-size:0.9rem;'><b>👤 {str(u).capitalize()}</b></span>
+            <span style='color:#FF4B4B; font-size:0.85rem;'>🔥 {ud.get('streak', 0)}d</span>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Wybór Języka
-    if "current_lang" not in st.session_state: st.session_state.current_lang = "Niemiecki"
-    selected_lang = st.selectbox("Język", options=list(LANG_MAP.keys()), 
-                                   format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
+    # Wybór Języka
+    if "current_lang" not in st.session_state: st.session_state.current_lang = "Niemiecki"
+    selected_lang = st.selectbox("Język", options=list(LANG_MAP.keys()), 
+                                   format_func=lambda x: LANG_MAP[x]["label"], key="lang_sel", label_visibility="collapsed")
 
-    if selected_lang != st.session_state.current_lang:
-        st.session_state.current_lang = selected_lang
-        st.session_state.choice = "🏠 Start"
-        st.rerun()
+    if selected_lang != st.session_state.current_lang:
+        st.session_state.current_lang = selected_lang
+        st.session_state.choice = "🏠 Start"
+        st.rerun()
 
-    L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
+    L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
 
-    # --- Paski postępu ---
-    all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-    wiedza = 0
-    if all_c:
-        today = date.today()
-        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
-        wiedza = int((strong / len(all_c)) * 100)
+    # --- Paski postępu ---
+    all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    wiedza = 0
+    if all_c:
+        today = date.today()
+        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
+        wiedza = int((strong / len(all_c)) * 100)
 
-    current_stats = ud.get("time_stats", {})
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
-    mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
-    goal = ud.get("settings", {}).get("daily_goal", 20)
+    current_stats = ud.get("time_stats", {})
+    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
+    mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
+    goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🧠 Wiedza ({L_CODE.upper()}): {wiedza}%</div>", unsafe_allow_html=True)
-    st.progress(min(wiedza / 100, 1.0))
-    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🎯 Cel dnia: {mins}/{goal}m</div>", unsafe_allow_html=True)
-    st.progress(min(mins / goal, 1.0))
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🧠 Wiedza ({L_CODE.upper()}): {wiedza}%</div>", unsafe_allow_html=True)
+    st.progress(min(wiedza / 100, 1.0))
+    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🎯 Cel dnia: {mins}/{goal}m</div>", unsafe_allow_html=True)
+    st.progress(min(mins / goal, 1.0))
+    st.markdown("<hr>", unsafe_allow_html=True)
 
-    # Funkcja menu
-    def menu_item(label, target):
-        is_selected = st.session_state.get("choice") == target
-        btn_label = f"{'▶ ' if is_selected else ''}{label}"
-        if st.button(btn_label, key=f"btn_{target}"):
-            st.session_state.choice = target
-            st.rerun()
+    # Funkcja menu
+    def menu_item(label, target):
+        is_selected = st.session_state.get("choice") == target
+        btn_label = f"{'▶ ' if is_selected else ''}{label}"
+        if st.button(btn_label, key=f"btn_{target}"):
+            st.session_state.choice = target
+            st.rerun()
 
-    # Struktura Menu
-    choice_now = st.session_state.get("choice", "🏠 Start")
-    menu_item("🏠 Start", "🏠 Start")
+    # Struktura Menu
+    choice_now = st.session_state.get("choice", "🏠 Start")
+    menu_item("🏠 Start", "🏠 Start")
 
-    with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"])):
-        for item in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]:
-            menu_item(item, item)
+    with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"])):
+        for item in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]:
+            menu_item(item, item)
 
-    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
-        for item in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"]:
-            menu_item(item, item)
+    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
+        for item in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"]:
+            menu_item(item, item)
 
-    with st.expander("🗂️ Baza słów", expanded=(choice_now in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"])):
-        for item in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"]:
-            menu_item(item, item)
+    with st.expander("🗂️ Baza słów", expanded=(choice_now in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"])):
+        for item in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"]:
+            menu_item(item, item)
 
-    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
-    for opt in ["📊 Statystyki", "⚙️ Konto"]:
-        menu_item(opt, opt)
+    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
+    for opt in ["📊 Statystyki", "⚙️ Konto"]:
+        menu_item(opt, opt)
 
-    # --- NOWA SEKCJA VIP DLA ADMINA ---
-    if u == ADMIN_USER:
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.write("🏁 **STREFA VIP**")
-        menu_item("👑 Admin", "👑 Admin")
-        menu_item("🏟️ Dynamo Fan-Zone", "🏟️ Dynamo Fan-Zone")
+    # --- NOWA SEKCJA VIP DLA ADMINA ---
+    if u == ADMIN_USER:
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.write("🏁 **STREFA VIP**")
+        menu_item("👑 Admin", "👑 Admin")
+        menu_item("🏟️ Dynamo Fan-Zone", "🏟️ Dynamo Fan-Zone")
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
-    # --- PRZYCISK WYLOGOWANIA ---
-    if st.button("🚪 Wyloguj", use_container_width=True, key="logout_btn"):
-        st.query_params.clear()
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+    st.markdown("<hr>", unsafe_allow_html=True)
+    
+    # --- PRZYCISK WYLOGOWANIA ---
+    if st.button("🚪 Wyloguj", use_container_width=True, key="logout_btn"):
+        st.query_params.clear()
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
 # --- DEFINICJA ZMIENNEJ CHOICE (POZA SIDEBAREM) ---
 if "choice" not in st.session_state:
-    st.session_state.choice = "🏠 Start"
+    st.session_state.choice = "🏠 Start"
 choice = st.session_state.choice
 
 # --- 7. START (V3.0 - Mobile First + Persistent Workshop Fix) ---
