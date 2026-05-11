@@ -513,30 +513,30 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
+# --- 7. START (V1.7 - Multilang + Writing Task Tracker) ---
 
-# Pobieramy aktualny wybór z sesji, aby uniknąć błędu NameError
+# Pobieramy aktualny wybór z sesji
 current_choice = st.session_state.get("choice", "🏠 Start")
 
-# Aktualizacja czasu aktywności (naliczanie minut)
+# Aktualizacja czasu aktywności
 update_activity(current_choice)
 
 if current_choice == "🏠 Start":
-    # Pobieramy aktualny język i kod z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. ANALIZA DANYCH BIEŻĄCYCH (Filtrowana pod język)
+    # 1. ANALIZA DANYCH BIEŻĄCYCH
     all_cards_full = st.session_state.flashcards
-    # Wybieramy tylko słówka z aktualnego języka do statystyk na kafelkach
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     
     ud = st.session_state.user_data
     today_str = str(date.today())
+    today_iso = date.today().isoformat()
     
-    # Statystyki czasu nauki
+    # Statystyki czasu
     current_stats = ud.get("time_stats", {})
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]
+    # Uwzględniamy Wri (Writing) w ogólnym czasie dnia
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
@@ -545,7 +545,7 @@ if current_choice == "🏠 Start":
     total_words = len(all_c)
     to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
     
-    # Dynamiczne powitanie zależne od języka
+    # Powitanie
     hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
     st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
     
@@ -573,16 +573,28 @@ if current_choice == "🏠 Start":
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
+        
+        # --- LOGIKA SPRAWDZANIA ASYSTENTA PISANIA ---
+        try:
+            db = get_db()
+            # Sprawdzamy czy istnieje wpis z dzisiaj dla tego usera i języka
+            res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_iso).execute()
+            writing_done = len(res_w.data) > 0 if res_w.data else False
+        except:
+            writing_done = False
+            
         t_done = "✅" if study_minutes >= daily_goal else "❌"
+        w_done = "✅" if writing_done else "❌"
+        
         st.write(f"{t_done} Cel czasowy: **{daily_goal} min**")
+        st.write(f"{w_done} Asystent Pisania: **Zadanie Dnia**")
         st.write("✅ Sprawdź sekcję **Warsztat**")
         st.write("✅ Rozwiąż jeden **Quiz** lub **Test**")
 
     st.divider()
 
-    # 4. CYTATY I OSTATNIE SŁÓWKA (Poprawione filtrowanie)
+    # 4. CYTATY I OSTATNIE SŁÓWKA
     col_q, col_w = st.columns([2, 1])
-    
     with col_q:
         if L_CODE == "de":
             quotes = [
@@ -592,17 +604,15 @@ if current_choice == "🏠 Start":
             ]
         else:
             quotes = [
-                "„Kolik jazyků znáš, tolikrát jsi člověkem.” – Ile języků znasz, tyle razy jesteś człowiekiem.",
+                "„Kolik jazyků znáš, tolikrát jsi člověkem.” – Ile języków znasz, tyle razy jesteś człowiekiem.",
                 "„Trpělivost přináší růže.” – Cierpliwość przynosi róże.",
                 "„Učený nikdo z nebe nespadl.” – Nikt uczony z nieba nie spadł."
             ]
         st.info(random.choice(quotes))
 
     with col_w:
-        # Sekcja wyświetlająca 3 ostatnio dodane słówka TYLKO dla wybranego języka
         with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
             if all_c:
-                # Wybieramy 3 ostatnie słówka z przefiltrowanej listy all_c
                 recent = all_c[-3:]
                 for r in reversed(recent):
                     st.write(f"**{r['de']}**")
