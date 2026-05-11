@@ -2500,7 +2500,7 @@ elif choice == "➕ Dodaj":
                 del st.session_state.single_temp
                 st.rerun()
 
-# --- 24. SŁOWNIK (V275 - Multilang + Examples Display + Audio Fix) ---
+# --- 24. SŁOWNIK (V276 - Multilang + Duplicate Finder) ---
 elif choice == "📖 Słownik":
     # Pobieramy aktualny język i kody z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -2517,40 +2517,67 @@ elif choice == "📖 Słownik":
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    # 3. UI Wyszukiwarki
-    col1, col2 = st.columns([1, 2])
-    f_tag = col1.selectbox(f"Kategorie ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)))
-    search = col2.text_input("Szukaj słowa (ENTER ⏎):", placeholder=f"Szukaj w {current_lang_name} lub PL...")
+    # --- UI WYSZUKIWARKI I DUBLE ---
+    col1, col2, col3 = st.columns([1, 2, 1])
+    f_tag = col1.selectbox(f"Kategorie:", ["Wszystkie"] + sorted(list(all_tags)))
+    search = col2.text_input("Szukaj słowa:", placeholder=f"Szukaj w {current_lang_name} lub PL...")
     
-    # 4. Logika wyszukiwania
-    filtered = [
-        c for c in lang_cards 
-        if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) 
-        and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())
-    ]
+    # Przycisk trybu dubli
+    if "show_dupes" not in st.session_state:
+        st.session_state.show_dupes = False
     
+    dupe_btn_label = "🔙 Pokaż wszystko" if st.session_state.show_dupes else "👯 Znajdź duble"
+    if col3.button(dupe_btn_label, use_container_width=True):
+        st.session_state.show_dupes = not st.session_state.show_dupes
+        st.rerun()
+
+    # 3. Logika wyszukiwania / Wykrywania dubli
+    if st.session_state.show_dupes:
+        # Grupowanie słówek po znormalizowanym tekście
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for c in lang_cards:
+            norm = normalize_text(c['de'])
+            groups[norm].append(c)
+        
+        # Zostawiamy tylko te grupy, które mają więcej niż 1 element
+        filtered = []
+        for norm, cards in groups.items():
+            if len(cards) > 1:
+                filtered.extend(cards)
+        
+        st.warning(f"Tryb wyszukiwania duplikatów włączony. Znaleziono {len(filtered)} powtórzonych wpisów.")
+    else:
+        # Standardowe wyszukiwanie
+        filtered = [
+            c for c in lang_cards 
+            if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) 
+            and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())
+        ]
+
     st.write("---")
-    st.subheader(f"Znaleziono słówek: {len(filtered)}")
+    st.subheader(f"Liczba słówek: {len(filtered)}")
     
     # Zabezpieczenie wydajności
-    MAX_DISPLAY = 50
+    MAX_DISPLAY = 100 if st.session_state.show_dupes else 50
     display_list = filtered[:MAX_DISPLAY]
     
     if len(filtered) > MAX_DISPLAY:
-        st.warning(f"Wyświetlam pierwsze {MAX_DISPLAY} wyników. Zawęź wyszukiwanie.")
+        st.warning(f"Wyświetlam pierwsze {MAX_DISPLAY} wyników.")
         
     if not display_list:
-        st.info(f"Brak słówek w języku {current_lang_name} spełniających kryteria.")
+        st.info(f"Brak słówek spełniających kryteria.")
         
     # 5. Renderowanie listy wyników
     for c in display_list:
         flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
-        with st.expander(f"{flag} {c['de']} ➔ 🇵🇱 {c['pl']}"):
+        # Jeśli jesteśmy w trybie dubli, kolorujemy nagłówek na żółto dla widoczności
+        header_color = "⚠️" if st.session_state.show_dupes else flag
+        
+        with st.expander(f"{header_color} {c['de']} ➔ 🇵🇱 {c['pl']}"):
+            st.caption(f"🗓️ Powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')} | ID: {c['id']}")
             
-            # --- SEKCJA SZCZEGÓŁÓW I PRZYKŁADÓW ---
-            st.caption(f"🗓️ Powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')}")
-            
-            # Pobieranie tekstu przykładu (obsługa starego pola i nowej listy)
+            # Pobieranie tekstu przykładu
             exs = c.get("examples", [])
             example_to_play = None
             
@@ -2559,7 +2586,7 @@ elif choice == "📖 Słownik":
                 for ex in exs:
                     st.write(f"🔹 **{ex.get('de')}**")
                     st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;*{ex.get('pl')}*")
-                    example_to_play = ex.get('de') # Bierzemy pierwszy do audio
+                    if not example_to_play: example_to_play = ex.get('de')
             elif c.get('example'):
                 st.markdown("**Przykład użycia:**")
                 st.write(f"🔹 **{c['example']}**")
@@ -2587,9 +2614,10 @@ elif choice == "📖 Słownik":
                     st.rerun()
             
             # Przycisk Usuwania
-            if st.button("🗑️ Usuń słówko", key=f"del_btn_{c['id']}", type="primary", use_container_width=True):
+            if st.button("🗑️ Usuń to słówko", key=f"del_btn_{c['id']}", type="primary", use_container_width=True):
                 delete_word(c['id'])
-                st.session_state.flashcards = load_flashcards(u)
+                # Aktualizujemy lokalną bazę
+                st.session_state.flashcards = [card for card in st.session_state.flashcards if card['id'] != c['id']]
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
