@@ -2703,9 +2703,14 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V316 - Full Analytics + Idioms & Trivia Management) ---
+# --- 27. ADMIN PRO (V317 - Activity Fix & Enhanced Word Stats) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
+
+    # --- FIX: WYMUSZENIE AKTUALIZACJI TWOJEJ AKTYWNOŚCI ---
+    # Dzięki temu jako Admin zawsze widzisz swój aktualny czas w tabeli
+    st.session_state.user_data["last_seen"] = get_now_pl()
+    save_user_data(u, st.session_state.user_data)
 
     # --- FUNKCJE DLA IDIOMÓW ---
     def clear_idioms_library():
@@ -2844,7 +2849,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     with col_adm2:
         st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
 
-    # --- ANALIZA DANYCH (STAŁA CZĘŚĆ PANELU) ---
+    # --- ANALIZA DANYCH ---
     db = get_db()
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
@@ -2865,7 +2870,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     for user in ud_data:
         username = user["username"]
         user_cards = df_cards_all[df_cards_all["username"] == username]
-        oc = user_cards["origin"].value_counts() if not user_cards.empty else {}
+        
+        # Poprawiona logika liczenia źródeł (uwzględnia warianty nazw)
+        oc = user_cards["origin"].fillna("Dodaj").tolist() if not user_cards.empty else []
+        r_count = sum(1 for x in oc if "Dodaj" in str(x) or "Detektyw" in str(x))
+        g_count = sum(1 for x in oc if "Generator" in str(x))
+        s_count = sum(1 for x in oc if "Skaner" in str(x))
         
         strong_cards = 0
         if not user_cards.empty:
@@ -2893,7 +2903,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             "Aktywność (Data | Czas)": formatted_seen,
             "🔥": user.get("streak", 0),
             "🧠 %": wiedza_val,
-            "Słówka (R|G|S)": f"{len(user_cards)} ({int(oc.get('Dodaj',0))}|{int(oc.get('Generator',0))}|{int(oc.get('Skaner',0))})", 
+            "Słówka (R|G|S)": f"{len(user_cards)} ({r_count}|{g_count}|{s_count})", 
             "Tst": len(user.get("test_history", [])),
             "Min": int(total_sec // 60),
             "PLN": round(user.get("historical_cost", 0.0), 2),
@@ -2905,7 +2915,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     else:
         df_admin = pd.DataFrame(adm_list)
         
-        # TABELA: Globalny rozkład czasu
         st.subheader("📈 Globalny rozkład aktywności")
         total_global_study = sum(global_time.values())
         if total_global_study > 0:
@@ -2913,8 +2922,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]:
                 val_sec = global_time.get(code, 0)
                 perc = (val_sec / total_global_study) * 100
-                m, _ = divmod(int(val_sec), 60)
-                h, m = divmod(m, 60)
+                m, _ = divmod(int(val_sec), 60); h, m = divmod(m, 60)
                 analysis_rows.append({
                     "Moduł": display_names[code],
                     "Popularność (%)": f"{round(perc, 1)}%",
@@ -2923,8 +2931,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             st.table(pd.DataFrame(analysis_rows).set_index("Moduł"))
         
         st.divider()
-
-        # TABELA: Lista kont
         st.subheader("📋 Podsumowanie kont")
         st.dataframe(
             df_admin.drop(columns=["__raw_stats"]), 
@@ -2937,7 +2943,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             }
         )
         
-        # TABELA: Szczegółowy podział czasu (Przywrócone!)
         with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
             valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
