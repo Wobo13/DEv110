@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V265 - Fix SyntaxError + Multilang + Audio Examples) ---
+# --- 8. POWTÓRKI & TRENING (V266 - Pancerny JSON Parser dla Przykładów) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -820,16 +820,27 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU ---
-                exs = c.get("examples", [])
+                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU (PANCERNY PARSER) ---
+                raw_exs = c.get("examples")
+                
+                # Jeśli Supabase zwróciło JSON jako string, wymuszamy parsowanie
+                if isinstance(raw_exs, str):
+                    try:
+                        raw_exs = json.loads(raw_exs)
+                    except:
+                        raw_exs = []
+                
+                if not isinstance(raw_exs, list):
+                    raw_exs = []
+                
                 ex_foreign = None
                 ex_pl = None
                 
-                if exs and isinstance(exs, list) and len(exs) > 0:
-                    ex_foreign = exs[0].get("de")
-                    ex_pl = exs[0].get("pl")
-                elif c.get('example'): # Fallback dla starych danych
-                    ex_foreign = c['example']
+                if len(raw_exs) > 0 and isinstance(raw_exs[0], dict):
+                    ex_foreign = raw_exs[0].get("de")
+                    ex_pl = raw_exs[0].get("pl")
+                elif c.get("example"): # Wsparcie dla starych danych
+                    ex_foreign = c["example"]
 
                 if ex_foreign:
                     st.info(f"📖 **Przykład:** {ex_foreign}" + (f"\n\n🇵🇱 *{ex_pl}*" if ex_pl else ""))
