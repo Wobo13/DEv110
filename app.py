@@ -519,7 +519,7 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V1.9 - Dashboard with Detective Teaser) ---
+# --- 7. START (V2.0 - Dashboard with Dual Teasers: Writing & Detective) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -558,55 +558,74 @@ if current_choice == "🏠 Start":
     with c1:
         st.markdown(f"### 📊 Status: {current_lang_name}")
         if study_minutes >= daily_goal:
-            st.success(f"🌟 Cel dzienny osiągnięty!")
+            st.success(f"🌟 Cel czasowy osiągnięty!")
         else:
             st.info(f"📈 Brakuje {max(0, daily_goal - study_minutes)} min do celu.")
+        
+        # Opcjonalne: Wykres postępu kołowy można by tu dodać w przyszłości
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         
-        # LOGIKA TRACKERA I TEASERA
+        # --- LOGIKA POBIERANIA DANYCH DO TEASERÓW ---
         try:
             db = get_db()
-            # Sprawdzanie Asystenta Pisania
+            # A. ASYSTENT PISANIA: Sprawdzanie i pobieranie tematu
+            # Musimy mieć dostęp do listy tematów (uproszczona wersja tutaj dla dashboardu)
+            # W wersji produkcyjnej najlepiej przenieść daily_topics do stałych globalnych
+            topics_for_teaser = {
+                "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
+                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 let.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
+            }
+            t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser[L_CODE])
+            current_writing_topic = topics_for_teaser[L_CODE][t_idx]
+            
             res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
             writing_done = len(res_w.data) > 0 if res_w.data else False
-            
-            # Pobieranie idiomu dnia do teasera
+
+            # B. KULTUROWY DETEKTYW: Sprawdzanie i pobieranie idiomu
             res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
             if res_idioms.data:
-                idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
-                daily_phrase = res_idioms.data[idx]['phrase']
+                idx_det = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
+                daily_phrase = res_idioms.data[idx_det]['phrase']
             else:
                 daily_phrase = "Brak spraw w archiwum"
 
-            # Sprawdzanie czy detektyw "zaliczony" (czy dodano dzisiejszy idiom do bazy)
-            det_done = any(
-                c.get("de") == daily_phrase and c.get("lang") == L_CODE
-                for c in all_cards_full
-            )
+            det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
         except:
-            writing_done = False
-            det_done = False
-            daily_phrase = "Problem z bazą dowodową"
-            
+            writing_done = det_done = False
+            current_writing_topic = "Błąd pobierania tematu"
+            daily_phrase = "Błąd bazy"
+
+        # --- UI: WYŚWIETLANIE TEASERÓW ---
         t_icon = "✅" if study_minutes >= daily_goal else "❌"
-        w_icon = "✅" if writing_done else "❌"
-        d_icon = "✅" if det_done else "❌"
-        
         st.write(f"{t_icon} Cel czasowy: **{daily_goal} min**")
-        st.write(f"{w_icon} Asystent Pisania: **Zadanie Dnia**")
-        
-        # --- KOMPAKTOWY TEASER DETEKTYWA ---
+
+        # Container 1: ASYSTENT PISANIA
         with st.container(border=True):
-            st.markdown(f"{d_icon} **Kulturowy Detektyw:**")
+            w_icon = "✅" if writing_done else "✍️"
+            st.markdown(f"**{w_icon} Asystent Pisania**")
+            if not writing_done:
+                st.markdown(f"📝 *„{current_writing_topic}”*")
+                if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
+                    st.session_state.choice = "✍️ Asystent Pisania"
+                    st.rerun()
+            else:
+                st.markdown(f"✅ Zadanie wykonane!")
+
+        # Container 2: KULTUROWY DETEKTYW
+        with st.container(border=True):
+            d_icon = "✅" if det_done else "🕵️"
+            st.markdown(f"**{d_icon} Kulturowy Detektyw**")
             if not det_done:
                 st.markdown(f"🔍 *„{daily_phrase}”*")
-                if st.button("Rozwiąż zagadkę 🕵️", key="go_to_det"):
+                if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
                     st.session_state.choice = "🕵️ Kulturowy Detektyw"
                     st.rerun()
             else:
-                st.markdown(f"✅ Sprawa rozwiązana: *„{daily_phrase}”*")
+                st.markdown(f"✅ Sprawa rozwiązana!")
+        
+        st.write("✅ Rozwiąż min. jeden **Quiz** lub **Test**")
 
     st.divider()
 
