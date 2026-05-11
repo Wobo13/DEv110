@@ -242,30 +242,82 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V291 - Mobile Responsive Title) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V292 - Bezpieczna Autoryzacja HMAC) ---
+import hmac
+import base64
+import time
+import hashlib
+
+# Pomocnicze funkcje do generowania i weryfikacji bezpiecznego tokena
+def generate_secure_token(username, days_valid=30):
+    """Tworzy bezpieczny token z datą ważności i kryptograficznym podpisem."""
+    # Używamy SUPABASE_KEY jako sekretu. Jeśli go nie ma, dajemy bezpieczny fallback.
+    secret = SUPABASE_KEY if SUPABASE_KEY else "fallback-secret-key-123"
+    expires = int(time.time()) + (days_valid * 86400) # 86400 sekund = 1 dzień
+    message = f"{username}.{expires}"
+    
+    # Tworzymy cyfrowy podpis
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    token_raw = f"{message}.{signature}"
+    
+    # Kodujemy do Base64, żeby URL ładnie wyglądał i nie miał znaków specjalnych
+    return base64.urlsafe_b64encode(token_raw.encode()).decode()
+
+def verify_secure_token(token_b64):
+    """Weryfikuje token, jego podpis i datę ważności."""
+    try:
+        secret = SUPABASE_KEY if SUPABASE_KEY else "fallback-secret-key-123"
+        # Dekodujemy z Base64
+        token_raw = base64.urlsafe_b64decode(token_b64.encode()).decode()
+        parts = token_raw.split('.')
+        
+        if len(parts) != 3: return None
+        username, expires, signature = parts
+        
+        # Sprawdzamy czy token nie wygasł
+        if int(time.time()) > int(expires): 
+            return None 
+            
+        # Generujemy podpis po naszej stronie i porównujemy (ochrona przed fałszerstwem)
+        expected_sig = hmac.new(secret.encode(), f"{username}.{expires}".encode(), hashlib.sha256).hexdigest()
+        
+        if hmac.compare_digest(signature, expected_sig):
+            return username
+    except Exception:
+        return None
+    return None
+
+
 if "auth" not in st.session_state:
     st.session_state.auth = False
+    
+    # --- BEZPIECZNE SPRAWDZANIE TOKENA Z URL ---
     if "token" in st.query_params:
-        u_tk = st.query_params["token"]
-        st.session_state.auth, st.session_state.user = True, u_tk
+        secure_token = st.query_params["token"]
+        verified_user = verify_secure_token(secure_token)
+        
+        if verified_user:
+            st.session_state.auth, st.session_state.user = True, verified_user
+        else:
+            # Jeśli token jest sfałszowany lub wygasł, usuwamy go z URL
+            st.query_params.clear()
+
 
 if not st.session_state.auth:
-    # --- NOWY, RESPNSYWNY TYTUŁ ---
-    # Używamy markdown z HTML/CSS, aby czcionka skalowała się (vw) i nie łamała (white-space)
+    # --- RESPNSYWNY TYTUŁ ---
     st.markdown("""
         <style>
             .mobile-title {
-                font-size: 8vw; /* Skaluje się zależnie od szerokości ekranu */
+                font-size: 8vw;
                 font-weight: bold;
-                white-space: nowrap; /* Wymusza jedną linijkę */
+                white-space: nowrap;
                 overflow: hidden;
-                text-overflow: ellipsis; /* Dodaje wielokropek, gdyby jednak było za ciasno */
+                text-overflow: ellipsis;
                 margin-bottom: 20px;
                 display: flex;
                 align-items: center;
                 gap: 10px;
             }
-            /* Dla większych ekranów (tablet/PC) ustalamy stały, ładny rozmiar */
             @media (min-width: 768px) {
                 .mobile-title {
                     font-size: 40px;
@@ -277,7 +329,6 @@ if not st.session_state.auth:
             <span>Niemiecki Master</span>
         </div>
     """, unsafe_allow_html=True)
-    # ---------------------------------
 
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
@@ -291,13 +342,17 @@ if not st.session_state.auth:
             res = db.table("users_auth").select("*").eq("username", un).execute()
             if res.data and res.data[0]["password_hash"] == hash_pw(pw):
                 st.session_state.auth, st.session_state.user = True, un
+                
                 if remember_me:
-                    st.query_params["token"] = un
+                    # --- TWORZENIE BEZPIECZNEGO TOKENA ---
+                    st.query_params["token"] = generate_secure_token(un)
                 else:
                     st.query_params.clear()
+                    
                 st.rerun()
             else:
                 st.error("Błędne dane logowania")
+                
     with t2:
         rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
         rp = st.text_input("Hasło", type="password", key="r_p")
