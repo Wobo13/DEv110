@@ -1440,52 +1440,67 @@ elif choice == "🛠️ Warsztat":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 14. KONSTRUKTOR SŁÓW (V313 - CSS Isolation & Sidebar Fix) ---
+# --- 14. KONSTRUKTOR SŁÓW (V314 - Mobile & Theme Optimized) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.markdown(f"<h1 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center;'>🏗️ Konstruktor: {current_lang_name}</h2>", unsafe_allow_html=True)
 
-    # 1. POPRAWIONY CSS - Izolacja stylu (nie dotyka Sidebaru)
+    # 1. CSS - OPTYMALIZACJA MOBILNA I MOTYWÓW
     st.markdown("""
         <style>
-            /* Stylizujemy przyciski TYLKO w głównej sekcji (Main Content) */
-            [data-testid="stMain"] div.stButton > button {
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                background: rgba(255, 255, 255, 0.05) !important;
-                border-radius: 8px !important;
-                height: 50px !important;
-                font-weight: bold !important;
-                font-size: 1.2rem !important;
-                margin-bottom: 0px !important;
+            /* Kontener na zadanie i sloty */
+            .task-panel {
+                background: rgba(128, 128, 128, 0.1);
+                padding: 15px;
+                border-radius: 15px;
+                text-align: center;
+                margin-bottom: 10px;
+                color: var(--text-color);
             }
             
-            /* Specyficzny styl dla slotu na odpowiedź */
             .slot-box {
-                font-size: 2.5rem;
-                letter-spacing: 10px;
+                font-size: 1.8rem; /* Nieco mniejszy na mobile */
+                letter-spacing: 5px;
                 text-align: center;
                 color: #ff4b4b;
-                font-family: 'Courier New', monospace;
-                padding: 20px;
+                font-family: monospace;
+                padding: 10px;
                 background: rgba(255, 75, 75, 0.05);
-                border: 1px dashed #ff4b4b;
-                border-radius: 15px;
-                margin: 20px 0;
-                min-height: 100px;
+                border: 2px dashed #ff4b4b;
+                border-radius: 12px;
+                margin: 10px 0;
+                min-height: 60px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                word-break: break-all;
+            }
+
+            /* KLUCZ DO MOBILE: Wymuszamy małe przyciski liter obok siebie */
+            [data-testid="stMain"] div.stButton > button {
+                padding: 2px 5px !important;
+                height: 45px !important;
+                min-width: 40px !important;
+                font-size: 1.1rem !important;
+                background: rgba(128, 128, 128, 0.1) !important;
+                color: var(--text-color) !important;
+                border: 1px solid rgba(128, 128, 128, 0.3) !important;
+                margin: 2px !important;
+            }
+
+            /* Specyficzne wymuszenie braku pionowego stackowania kolumn na mobile */
+            [data-testid="column"] {
+                min-width: 0px !important;
+                flex: 1 1 0% !important;
             }
             
-            /* Resetujemy ewentualne konflikty dla przycisków w sidebarze w tej sekcji */
-            [data-testid="stSidebar"] div.stButton > button {
-                height: auto !important;
-                min-height: 28px !important;
-                font-size: 0.88rem !important;
-                border: none !important;
-                padding: 1px 6px !important;
+            .label-hint {
+                text-align: center;
+                color: #888;
+                font-size: 0.8rem;
+                margin-top: 10px;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -1499,7 +1514,7 @@ elif choice == "🏗️ Konstruktor":
         # Inicjalizacja gry
         if "konstr_word" not in st.session_state or st.session_state.get("konstr_lang_ref") != L_CODE:
             card = random.choice(lang_cards)
-            word = str(card['de']).strip()
+            word = str(card[L_CODE]).strip()
             letters = list(word)
             random.shuffle(letters)
             
@@ -1512,9 +1527,9 @@ elif choice == "🏗️ Konstruktor":
 
         # Panel Zadania
         st.markdown(f"""
-            <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; text-align: center;">
-                <div style="color: #888; font-size: 0.9rem; text-transform: uppercase;">Przetłumacz na {current_lang_name}:</div>
-                <div style="font-size: 2rem; font-weight: bold; color: white;">{st.session_state.konstr_pl}</div>
+            <div class="task-panel">
+                <div style="opacity: 0.7; font-size: 0.8rem;">PRZETŁUMACZ:</div>
+                <div style="font-size: 1.4rem; font-weight: bold;">{st.session_state.konstr_pl}</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -1528,11 +1543,12 @@ elif choice == "🏗️ Konstruktor":
                 display_ans += "_"
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # 3. SIATKA LITER
-        st.write("<div style='text-align:center; color: #888; margin-bottom:10px;'>DOSTĘPNE LITERY:</div>", unsafe_allow_html=True)
-        cols = st.columns(6)
+        # 3. SIATKA LITER (Zoptymalizowana: więcej kolumn = mniejsze guziki)
+        # Używamy 8 kolumn, co na telefonie wymusi 2-3 rzędy zamiast długiej listy
+        NUM_COLS = 8
+        cols = st.columns(NUM_COLS)
         for idx, char in enumerate(st.session_state.konstr_pool):
-            col_idx = idx % 6
+            col_idx = idx % NUM_COLS
             with cols[col_idx]:
                 label = "␣" if char == " " else char
                 is_used = idx in st.session_state.konstr_used_indices
@@ -1541,24 +1557,25 @@ elif choice == "🏗️ Konstruktor":
                     st.session_state.konstr_used_indices.append(idx)
                     st.rerun()
 
-        st.divider()
+        st.markdown("<div class='label-hint'>WYBIERZ LITERY</div>", unsafe_allow_html=True)
 
-        # 4. PRZYCISKI FUNKCYJNE
-        c1, c2, c3 = st.columns(3)
+        # 4. PRZYCISKI FUNKCYJNE (Małe i w jednym rzędzie)
+        st.write("")
+        f1, f2, f3 = st.columns(3)
         
-        if c1.button("🔄 Reset", use_container_width=True):
+        if f1.button("🔄 Reset", use_container_width=True):
             st.session_state.konstr_ans = ""
             st.session_state.konstr_used_indices = []
             st.rerun()
             
         can_undo = len(st.session_state.konstr_used_indices) > 0
-        if c2.button("⬅️ Cofnij", use_container_width=True, disabled=not can_undo):
+        if f2.button("⬅️ Cofnij", use_container_width=True, disabled=not can_undo):
             if st.session_state.konstr_ans:
                 st.session_state.konstr_ans = st.session_state.konstr_ans[:-1]
                 st.session_state.konstr_used_indices.pop()
                 st.rerun()
             
-        if c3.button("⏭️ Pomiń", use_container_width=True):
+        if f3.button("⏭️ Pomiń", use_container_width=True):
             del st.session_state.konstr_word
             st.rerun()
 
@@ -1566,7 +1583,7 @@ elif choice == "🏗️ Konstruktor":
         if st.session_state.konstr_ans == target_word:
             st.balloons()
             st.success(f"Brawo! Poprawnie: **{target_word}**")
-            if st.button("Następne ➡️", type="primary", use_container_width=True):
+            if st.button("Następne zadanie ➡️", type="primary", use_container_width=True):
                 del st.session_state.konstr_word
                 st.rerun()
 
