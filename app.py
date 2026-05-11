@@ -3592,75 +3592,113 @@ elif choice == "🕵️ Kulturowy Detektyw":
         st.write("🔴 **Uliczny:** Tylko w bardzo luźnych sytuacjach.")
         st.caption("Każdy idiom dodany do słownika otrzymuje tag #idiom.")
 
-# --- 32. DYNAMO FAN-ZONE (ADMIN ONLY) ---
+# --- 32. DYNAMO FAN-ZONE (V2 - KARAOKE MODE) ---
 elif choice == "🏟️ Dynamo Fan-Zone" and u == ADMIN_USER:
     st.markdown("""
         <style>
-            .stApp { background-color: #000000; } /* Tło stadionu */
-            h1, h2, h3, p { color: #f9d71c !important; } /* Żółte napisy */
+            .stApp { background-color: #000000; }
+            h1, h2, h3, p, span { color: #f9d71c !important; }
+            .lyrics-container {
+                height: 300px; overflow-y: auto; 
+                background: #111; padding: 20px; 
+                border: 2px solid #f9d71c; border-radius: 10px;
+                text-align: center; font-family: 'Arial Black', sans-serif;
+            }
+            .line { opacity: 0.3; transition: all 0.3s; margin: 10px 0; font-size: 1.2rem; }
+            .active { opacity: 1; transform: scale(1.1); color: #fff !important; text-shadow: 0 0 10px #f9d71c; }
         </style>
     """, unsafe_allow_html=True)
 
-    st.title("🏟️ SGD Fan-Zone")
-    st.subheader("Ucz się tekstów i melodii Dynama!")
-
-    db = get_db()
+    st.title("🏟️ SGD Karaoke Player")
     
-    # Pobieranie przyśpiewek z bazy
-    try:
-        res = db.table("fan_chants").select("*").execute()
-        chants = res.data if res.data else []
-    except:
-        chants = []
+    db = get_db()
+    res = db.table("fan_chants").select("*").execute()
+    chants = res.data if res.data else []
 
     if not chants:
-        st.warning("Baza przyśpiewek jest pusta. Dodaj coś w bazie danych!")
+        st.warning("Brak przyśpiewek w K-Blocku.")
     else:
-        # Wybór przyśpiewki
-        chant_names = [c['title'] for c in chants]
-        sel_name = st.selectbox("Wybierz przyśpiewkę:", chant_names)
+        sel_name = st.selectbox("Wybierz hymn:", [c['title'] for c in chants])
         chant = next(item for item in chants if item["title"] == sel_name)
-
-        col1, col2 = st.columns([2, 1])
         
-        with col1:
-            st.markdown(f"### 🎤 {chant['title']}")
-            # Tekst w ładnej ramce
-            st.markdown(f"""
-                <div style='background: #1a1a1a; padding: 20px; border-radius: 10px; border: 2px solid #f9d71c; font-family: monospace; white-space: pre-wrap; font-size: 1.1rem;'>
-                {chant['lyrics']}
+        timed_data = chant.get('lyrics_timed', "")
+        audio_url = chant.get('audio_url', "")
+
+        if timed_data and audio_url:
+            # --- SILNIK KARAOKE (JS + HTML) ---
+            # Parsujemy dane: "0|Tekst\n5|Kolejny" -> Listy dla JS
+            lines = []
+            for l in timed_data.split('\n'):
+                if '|' in l:
+                    t, txt = l.split('|', 1)
+                    lines.append({"time": float(t), "text": txt.strip()})
+            
+            import json
+            lines_json = json.dumps(lines)
+
+            # Komponent Karaoke w HTML/JS
+            st.components.v1.html(f"""
+                <div id="lyrics-box" class="lyrics-container" style="height: 250px; overflow-y: auto; background: #111; padding: 20px; border: 2px solid #f9d71c; border-radius: 10px; text-align: center; font-family: sans-serif;">
+                    <div id="display" style="color: #f9d71c;">Rozpocznij audio, aby śpiewać...</div>
                 </div>
-            """, unsafe_allow_html=True)
-            
-            with st.expander("🇵🇱 Tłumaczenie"):
-                st.write(chant.get('translation_pl', 'Brak tłumaczenia.'))
+                <br>
+                <audio id="player" controls style="width: 100%; filter: invert(100%) hue-rotate(180deg);">
+                    <source src="{audio_url}" type="audio/mpeg">
+                </audio>
 
-        with col2:
-            st.markdown("### 🔊 Melodia")
-            if chant.get('audio_url'):
-                st.audio(chant['audio_url'])
-            else:
-                st.info("Brak pliku audio dla tej przyśpiewki.")
-            
-            st.divider()
-            st.markdown("""
-                **Zasady treningu:**
-                1. Włącz audio.
-                2. Czytaj tekst rytmicznie.
-                3. Powtórz 3 razy bez podglądania!
-            """)
+                <script>
+                    const lines = {lines_json};
+                    const audio = document.getElementById('player');
+                    const display = document.getElementById('display');
+                    const box = document.getElementById('lyrics-box');
 
-    # Szybki formularz dodawania (tylko dla Admina)
-    with st.expander("➕ Dodaj nową przyśpiewkę"):
-        with st.form("add_chant"):
-            n_title = st.text_input("Tytuł")
-            n_lyrics = st.text_area("Tekst")
-            n_audio = st.text_input("URL do MP3 (opcjonalnie)")
-            n_pl = st.text_input("Tłumaczenie PL")
-            if st.form_submit_button("Zapisz w archiwum K-Block"):
-                db.table("fan_chants").insert({
-                    "title": n_title, "lyrics": n_lyrics, 
-                    "audio_url": n_audio, "translation_pl": n_pl
-                }).execute()
-                st.success("Dodano! Rozgrzewaj gardło!")
+                    audio.ontimeupdate = () => {{
+                        const cur = audio.currentTime;
+                        let activeIndex = -1;
+                        
+                        // Znajdź aktualny wers
+                        for (let i = 0; i < lines.length; i++) {{
+                            if (cur >= lines[i].time) {{
+                                activeIndex = i;
+                            }}
+                        }}
+
+                        if (activeIndex !== -1) {{
+                            // Generuj HTML z podświetleniem
+                            let html = "";
+                            lines.forEach((l, idx) => {{
+                                const cls = idx === activeIndex ? "color: #fff; font-size: 1.5rem; font-weight: bold; text-shadow: 0 0 10px #f9d71c;" : "opacity: 0.3;";
+                                html += `<div id="line-${{idx}}" style="margin: 10px 0; transition: 0.3s; ${{cls}}">${{l.text}}</div>`;
+                            }});
+                            display.innerHTML = html;
+                            
+                            // Scroll do aktywnego wersu
+                            const activeEl = document.getElementById("line-" + activeIndex);
+                            if (activeEl) {{
+                                box.scrollTo({{ top: activeEl.offsetTop - 100, behavior: 'smooth' }});
+                            }}
+                        }}
+                    }};
+                </script>
+            """, height=450)
+        else:
+            st.info("Aby uruchomić Karaoke, dodaj URL do audio i zsynchronizowany tekst.")
+
+    # Formularz edycji (z instrukcją formatu)
+    with st.expander("🛠️ Edytuj / Dodaj przyśpiewkę"):
+        with st.form("edit_sgd"):
+            f_title = st.text_input("Tytuł", value=chant['title'] if chants else "")
+            f_audio = st.text_input("URL do pliku MP3", value=chant.get('audio_url', '') if chants else "")
+            f_timed = st.text_area("Tekst ZSYNCHRONIZOWANY (Format: sekunda|tekst)", 
+                                   placeholder="0|Wir sind die Fans\n5|Aus Elbflorenz\n10|SGD!")
+            f_pl = st.text_input("Tłumaczenie PL")
+            
+            if st.form_submit_button("Zapisz w K-Blocku"):
+                data_obj = {
+                    "title": f_title, "audio_url": f_audio, 
+                    "lyrics_timed": f_timed, "translation_pl": f_pl,
+                    "lyrics": f_timed # uproszczenie
+                }
+                db.table("fan_chants").upsert(data_obj, on_conflict="title").execute()
+                st.success("Zsynchronizowano! Schwarz-Gelbe Grüße!")
                 st.rerun()
