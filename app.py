@@ -1785,7 +1785,7 @@ elif choice == "🎈 Balonowy Wyścig":
             if "bal_target" not in st.session_state:
                 target = random.choice(lang_cards)
                 other_options = [c['pl'] for c in lang_cards if c['id'] != target['id']]
-                wrong = random.sample(other_options, min(len(other_options), 3))
+                wrong = random.sample(other_options, min(len(other_options), 2))
                 options = [target['pl']] + wrong
                 random.shuffle(options)
                 st.session_state.bal_target = target
