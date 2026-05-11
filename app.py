@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V269 - Ostateczny Fix Cache'u Słówek) ---
+# --- 8. POWTÓRKI & TRENING (V275 - Permissive Text & Fresh Cache Fix) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -771,11 +771,13 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 st.rerun()
                 return
             
-            # --- KLUCZOWA ZMIANA: OMIJANIE CACHE'U ---
-            c_cached = cards[idx]
-            # Pobieramy najświeższą wersję karty na podstawie ID, żeby mieć w 100% pewność, że przykłady tam są!
-            c = next((card for card in st.session_state.flashcards if card['id'] == c_cached['id']), c_cached)
-            # -----------------------------------------
+            # --- KLUCZOWY FIX PAMIĘCI (CACHE) ---
+            # Zawsze bierzemy najświeższą wersję słówka z głównej bazy po jego ID!
+            # Dzięki temu omijamy "zapchaną" kolejkę bez przykładów.
+            cached_c = cards[idx]
+            fresh_match = [x for x in st.session_state.flashcards if x['id'] == cached_c['id']]
+            c = fresh_match[0] if fresh_match else cached_c
+            # ------------------------------------
             
             # Klucz kierunku
             dir_key = f"{pfx}_dir"
@@ -810,21 +812,30 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                def clean_text(text, is_foreign):
-                    t = normalize_text(text)
-                    if is_foreign and L_CODE == "de":
-                        t = re.sub(r'^(der|die|das)\s+', '', t)
+                # --- BARDZO TOLERANCYJNE SPRAWDZANIE (IGNORUJE BRAK UMLAUTÓW I ZNAKÓW DIKRYTYCZNYCH) ---
+                def permissive_clean(text):
+                    import unicodedata
+                    t = str(text).lower().strip()
+                    # Usuwamy rodzajniki
+                    t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
+                    # Spłaszczamy niemieckie umlauty do zwykłych liter (ä->a), aby tolerować błędy klawiatury
+                    t = t.replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
+                    # Usuwamy czeskie/polskie znaki diakrytyczne (NFD)
+                    t = "".join(char for char in unicodedata.normalize('NFD', t) if unicodedata.category(char) != 'Mn')
+                    t = t.replace("ł", "l")
                     return t.strip()
 
-                user_ans = clean_text(st.session_state.get(f"{pfx}_user_ans", ""), is_target_foreign)
+                user_ans_clean = permissive_clean(st.session_state.get(f"{pfx}_user_ans", ""))
+                
                 correct_synonyms = re.split(r'[/,;]', correct_val)
-                correct_synonyms = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
-                is_correct = user_ans in correct_synonyms
+                correct_synonyms_clean = [permissive_clean(s) for s in correct_synonyms if s.strip()]
+                
+                is_correct = user_ans_clean in correct_synonyms_clean
                 
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- OBSŁUGA PRZYKŁADÓW (Skopiowane z 9, teraz w pełni odświeżone) ---
+                # --- OBSŁUGA PRZYKŁADÓW I AUDIO (Dokładnie skopiowane z Sekcji 9) ---
                 exs = c.get("examples", [])
                 example_foreign = None
                 example_pl = None
@@ -838,6 +849,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if example_foreign:
                     st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
                 
+                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
                 if auto_audio:
                     play_audio(c['de'], example_foreign, lang=L_CODE)
 
