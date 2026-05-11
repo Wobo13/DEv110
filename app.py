@@ -3023,7 +3023,7 @@ elif choice == "🧪 Laboratorium":
             st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
             st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
 
-# --- 30. ASYSTENT PISANIA (V1.6 - Empty Input Fix & Topic Translation) ---
+# --- 30. ASYSTENT PISANIA (V1.7 - Robust AI Parser & Evaluation Fix) ---
 elif choice == "✍️ Asystent Pisania":
     import openai
     import hashlib
@@ -3045,7 +3045,7 @@ elif choice == "✍️ Asystent Pisania":
             return res.data if res.data else []
         except: return []
 
-    # --- ROZBUDOWANA BAZA TEMATÓW DNIA Z TŁUMACZENIAMI ---
+    # --- BAZA TEMATÓW ---
     daily_topics = {
         "de": [
             {"orig": "Beschreibe deinen Morgen.", "pl": "Opisz swój poranek."},
@@ -3069,7 +3069,6 @@ elif choice == "✍️ Asystent Pisania":
 
     # --- TABS ---
     tab_daily, tab_custom, tab_history = st.tabs(["📅 Zadanie Dnia", "🎯 Wyzwanie Własne", "📖 Moje Archiwum"])
-
     show_eval = "writing_result" in st.session_state
 
     with tab_daily:
@@ -3079,31 +3078,28 @@ elif choice == "✍️ Asystent Pisania":
             with st.expander("👁️ Pokaż tłumaczenie tematu"):
                 st.write(daily_obj['pl'])
             
-            user_text_daily = st.text_area("Twoja wypowiedź (min. 3 zdania):", key="daily_area", height=200, placeholder="Zacznij pisać tutaj...")
+            user_text_daily = st.text_area("Twoja wypowiedź (min. 3 zdania):", key="daily_area", height=200)
             
-            # Walidacja przed wysłaniem
-            if st.button("🚀 Wyślij do oceny", key="btn_daily", disabled=len(user_text_daily.strip()) < 10):
+            if st.button("🚀 Wyślij do oceny", key="btn_daily_v17", disabled=len(user_text_daily.strip()) < 10):
                 s_count = len(re.findall(r'[^.!?]+[.!?]', user_text_daily))
                 if s_count < 3: 
-                    st.warning(f"Twój tekst jest za krótki ({s_count}/3 zdania). Rozwiń swoją myśl!")
+                    st.warning(f"Zbyt krótki tekst ({s_count}/3 zdania).")
                 else:
                     st.session_state.writing_action = ("eval", user_text_daily, daily_obj['orig'])
                     st.rerun()
-            elif len(user_text_daily.strip()) < 10:
-                st.caption("✍️ Napisz coś, aby odblokować przycisk oceny.")
         else:
-            st.warning("Masz otwartą aktywną ocenę. Zamknij ją na dole strony.")
+            st.warning("Przeglądasz teraz wynik oceny. Zamknij go na dole, aby napisać nowy tekst.")
 
     with tab_custom:
         if not show_eval:
             st.subheader("Własne zadanie")
             c1, c2 = st.columns([3, 1])
-            custom_t = c1.text_input("Temat:", placeholder="np. Wycieczka w góry / losowy temat", key="custom_t_in")
+            custom_t = c1.text_input("Temat:", placeholder="np. Mój ulubiony film", key="custom_t_in_v17")
             min_s = c2.number_input("Zdania:", 3, 15, 3)
             
-            if st.button("🎲 Losuj / Ustaw temat"):
+            if st.button("🎲 Losuj / Ustaw temat", key="btn_custom_gen"):
                 if not custom_t or custom_t.lower() == "losowy temat":
-                    with st.spinner("Losowanie tematu..."):
+                    with st.spinner("AI losuje..."):
                         client = openai.OpenAI(api_key=API_KEY)
                         res = client.chat.completions.create(
                             model="gpt-4o-mini", 
@@ -3117,28 +3113,20 @@ elif choice == "✍️ Asystent Pisania":
                 t_parts = st.session_state.custom_topic_active.split("|||")
                 t_pl = t_parts[0].strip()
                 t_orig = t_parts[1].strip() if len(t_parts) > 1 else t_pl
-                
-                st.markdown(f"📍 Aktywny temat: **{t_orig}**")
-                with st.expander("👁️ Pokaż tłumaczenie"):
-                    st.write(t_pl)
-                    
-                user_text_custom = st.text_area("Pisz tutaj:", key="custom_area", height=200)
-                
-                if st.button("🚀 Oceń wyzwanie", disabled=len(user_text_custom.strip()) < 10):
+                st.markdown(f"📍 Temat: **{t_orig}**")
+                user_text_custom = st.text_area("Pisz tutaj:", key="custom_area_v17", height=200)
+                if st.button("🚀 Oceń wyzwanie", key="btn_custom_eval", disabled=len(user_text_custom.strip()) < 10):
                     s_count = len(re.findall(r'[^.!?]+[.!?]', user_text_custom))
-                    if s_count < min_s: 
-                        st.warning(f"Zbyt mało zdań ({s_count}/{min_s}).")
+                    if s_count < min_s: st.warning(f"Zbyt mało zdań ({s_count}/{min_s}).")
                     else: 
                         st.session_state.writing_action = ("eval", user_text_custom, t_orig)
                         st.rerun()
-        else:
-            st.info("Dokończ przeglądanie obecnej oceny.")
 
     with tab_history:
-        st.subheader(f"Twoja historia ({current_lang_name})")
+        st.subheader("Archiwum prac")
         history = load_writing_history(u, L_CODE)
         if not history:
-            st.write("Twoje archiwum jest jeszcze puste.")
+            st.write("Brak zapisanych prac w tym języku.")
         else:
             for item in history:
                 with st.expander(f"📅 {item['created_at'][:10]} | {item['topic'][:40]}..."):
@@ -3146,33 +3134,38 @@ elif choice == "✍️ Asystent Pisania":
                     st.caption("Twoja praca:")
                     st.write(item['user_text'])
                     st.divider()
-                    st.warning(f"**Analiza i poprawki:**\n{item['corrections']}")
-                    st.success(f"**Wersja Mistrzowska (C1):**\n{item['master_version']}")
+                    st.warning(f"**Korekta:**\n{item['corrections']}")
+                    st.success(f"**Wersja Mistrzowska:**\n{item['master_version']}")
                     st.info(f"💡 {item['motivation']}")
 
-    # --- LOGIKA PRZETWARZANIA PRZEZ AI ---
+    # --- LOGIKA PRZETWARZANIA PRZEZ AI (V1.7 - Robust) ---
     if "writing_action" in st.session_state:
         action, text, topic = st.session_state.writing_action
-        if not text.strip(): # Dodatkowe zabezpieczenie
-            del st.session_state.writing_action
-            st.rerun()
-            
-        with st.spinner("Nauczyciel AI analizuje Twój tekst..."):
+        with st.spinner("Nauczyciel AI analizuje tekst..."):
             try:
                 client = openai.OpenAI(api_key=API_KEY)
-                prompt = f"""Jesteś nauczycielem języka {current_lang_name}.
-                Temat: {topic}. Tekst ucznia: {text}.
-                ZADANIA:
-                1. Oceń poziom CEFR.
-                2. Wypunktuj błędy gramatyczne i ortograficzne.
-                3. Przedstaw wersję tego tekstu na poziomie C1.
-                4. Jedno zdanie motywacji.
-                ODPOWIADAJ ŚCIŚLE W FORMACIE: POZIOM ||| KOREKTA ||| MISTRZ ||| MOTYWACJA"""
+                prompt = f"""Jesteś nauczycielem {current_lang_name}. Oceń tekst ucznia.
+                Temat: {topic}
+                Tekst: {text}
+                
+                WYMAGANY FORMAT (bezwzględnie 4 części oddzielone |||):
+                Poziom (np. A2) ||| Lista błędów i poprawki ||| Wersja C1 tego tekstu ||| Krótka motywacja
+                
+                ZASADA: Nie pisz żadnych wstępów. Tylko te 4 części."""
                 
                 resp = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-                res_parts = resp.choices[0].message.content.split("|||")
                 
-                if len(res_parts) < 4: raise Exception("AI zwróciło niepełny format.")
+                # CZYSZCZENIE ODPOWIEDZI
+                raw_res = resp.choices[0].message.content.strip()
+                raw_res = raw_res.replace("```", "").replace("JSON", "").strip()
+                
+                res_parts = raw_res.split("|||")
+                
+                if len(res_parts) < 4:
+                    # Próba ratunkowa: jeśli AI użyło nowych linii zamiast |||
+                    res_parts = raw_res.split("\n\n")
+                    if len(res_parts) < 4:
+                        raise Exception("AI zwróciło błędny format. Spróbuj wysłać ponownie.")
 
                 final_res = {
                     "username": u, "lang": L_CODE, "topic": topic,
@@ -3194,19 +3187,18 @@ elif choice == "✍️ Asystent Pisania":
         res = st.session_state.writing_result
         st.divider()
         st.balloons()
-        st.success("🎉 Praca oceniona i zapisana w Archiwum!")
+        st.success("✅ Praca oceniona i zapisana!")
         
         c1, c2 = st.columns([1, 3])
-        c1.metric("Osiągnięty Poziom", res["level"])
-        c2.info(f"**Nauczyciel mówi:** {res['motivation']}")
+        c1.metric("Poziom", res["level"])
+        c2.info(res['motivation'])
         
         st.subheader("🔍 Szczegółowa korekta")
         st.warning(res["corrections"])
         
-        with st.expander("✨ Jak napisałby to Native Speaker? (Wersja C1)"):
+        with st.expander("✨ Wersja Mistrzowska (Native C1)"):
             st.write(res["master_version"])
             
-        if st.button("✅ Rozumiem, wróć do zadań", use_container_width=True):
+        if st.button("Wróć do zadań", use_container_width=True):
             del st.session_state.writing_result
-            if "custom_topic_active" in st.session_state: del st.session_state.custom_topic_active
             st.rerun()
