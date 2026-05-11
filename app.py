@@ -2849,7 +2849,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V328 - Full Module Sync & Historical Data Fix) ---
+# --- 27. ADMIN PRO (V330 - Full Suite + Word Origin Stats + Global Analytics) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -2869,7 +2869,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         while current_count < total_goal:
             existing_res = db.table("master_vocab").select("word").eq("lang", l_code).eq("level", target_lvl).execute()
             existing_words = [row['word'] for row in existing_res.data] if existing_res.data else []
-            prompt = f"Jesteś lingwistą. Wygeneruj {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}). Rzeczowniki z rodzajnikami. Zwróć JSON: vocab: [{{word, translation, level, lang, category, example_orig, example_pl}}]"
+            prompt = f"Wygeneruj {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}). Rzeczowniki z rodzajnikami. Zwróć JSON: vocab: [{{word, translation, level, lang, category, example_orig, example_pl}}]"
             try:
                 raw_res = get_openai_response(prompt)
                 data = json.loads(raw_res)
@@ -2884,9 +2884,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.success(f"✅ Dodano {current_count} rekordów!")
 
     # --- 2. INTERFEJS (TABS) ---
-    t_vocab, t_idioms, t_trivia, t_users = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"])
+    tabs = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"])
 
-    with t_vocab:
+    with tabs[0]:
         with st.container(border=True):
             col_v1, col_v2, col_v3 = st.columns(3)
             v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
@@ -2895,16 +2895,16 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             if st.button("🏗️ Uruchom Seeder", use_container_width=True, type="primary"):
                 seed_master_vocab(v_lang, v_lvl, v_goal)
 
-    with t_idioms:
+    with tabs[1]:
         st.info("Zarządzanie biblioteką idiomów.")
         if st.button("🏗️ Inicjuj Idiomy (200)"):
-            seed_idioms_library() # Zakładając, że masz tę funkcję zdefiniowaną
+            seed_idioms_library()
 
-    with t_trivia:
+    with tabs[2]:
         st.info("Zarządzanie ciekawostkami kulturowymi.")
 
-    # --- 3. ANALIZA UŻYTKOWNIKÓW (FIXED MAPPING) ---
-    with t_users:
+    # --- 3. ANALIZA UŻYTKOWNIKÓW (PRZYWRÓCONY KOMPLET STATYSTYK) ---
+    with tabs[3]:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
@@ -2913,30 +2913,44 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         db = get_db()
         ud_data = db.table("user_data").select("*").execute().data
-        all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
+        all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
         
         today_iso = date.today().isoformat()
         adm_summary = []
+        global_daily_time = {}
         
-        # Słownik kodów (musi być identyczny jak w Sekcji 5!)
         MOD_MAP = {
-            "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki",
-            "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor",
-            "Wan": "Wąż", "Bal": "Balon", "Wri": "Pisanie", "Det": "Detektyw", 
-            "Lab": "Laboratorium", "Skn": "Skaner", "Sta": "Statystyki", "Inn": "Inne"
+            "Pow": "📅 Powtórki", "Trn": "🚀 Trening", "Qiz": "🕹️ Quiz", "Fis": "🎴 Fiszki",
+            "Tst": "📝 Testy", "Mem": "🧠 Memory", "War": "🛠️ Warsztat", "Kon": "🏗️ Konstruktor",
+            "Wan": "🐍 Wąż", "Bal": "🎈 Balon", "Wri": "✍️ Pisanie", "Det": "🕵️ Detektyw", 
+            "Lab": "🧪 Laboratorium", "Skn": "📸 Skaner", "Sta": "📊 Statystyki", "Inn": "Inne"
         }
 
         for user in ud_data:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
-            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - date.today()).days > 6]) if not u_cards.empty else 0
-            wiedza = int((strong / len(u_cards)) * 100) if len(u_cards) > 0 else 0
+            
+            # --- PRZYWRÓCONA LOGIKA ROZKŁADU SŁÓWEK (R|G|S) ---
+            total_words = len(u_cards)
+            oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
+            r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
+            g_count = sum(1 for x in oc if "Generator" in str(x))
+            s_count = sum(1 for x in oc if "Skaner" in str(x))
+            # -------------------------------------------------
 
-            # Czas Dziś (z weryfikacją daty)
+            # Wiedza %
+            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - date.today()).days > 6]) if not u_cards.empty else 0
+            wiedza = int((strong / total_words) * 100) if total_words > 0 else 0
+
+            # Czas Dziś
             is_active_today = user.get("last_visit_date") == today_iso
             stats_today = user.get("time_stats", {}) if is_active_today else {}
             total_sec_today = sum(stats_today.values()) if isinstance(stats_today, dict) else 0
+            
+            if is_active_today:
+                for code, sec in stats_today.items():
+                    global_daily_time[code] = global_daily_time.get(code, 0) + sec
             
             # Czas Łącznie
             stats_total = user.get("total_time_stats", {})
@@ -2946,43 +2960,56 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "Użytkownik": uname,
                 "Ostatnio": user.get("last_seen", "Brak"),
                 "🔥": user.get("streak", 0),
-                "Słówka": len(u_cards),
+                "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})",
                 "Wiedza": f"{wiedza}%",
                 "Dziś (min)": int(total_sec_today // 60),
                 "Łącznie (min)": int(total_sec_all // 60),
                 "Koszt AI": round(user.get("historical_cost", 0.0), 2),
-                "raw_total": stats_total # Do tabeli szczegółowej
+                "raw_total": stats_total
             })
 
-        # Wyświetlanie głównej tabeli
-        st.subheader("📋 Podsumowanie aktywności")
+        # --- TABELA 1: PODSUMOWANIE KONT (Z PRZYWRÓCONĄ KOLUMNĄ) ---
+        st.subheader("📋 Podsumowanie kont")
         df_main = pd.DataFrame(adm_summary).sort_values("Dziś (min)", ascending=False)
         st.dataframe(
             df_main.drop(columns=["raw_total"]), 
             use_container_width=True, 
             hide_index=True,
             column_config={
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R - Ręczne, G - Generator, S - Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                "Dziś (min)": st.column_config.ProgressColumn("Dziś (postęp)", min_value=0, max_value=60),
-                "Łącznie (min)": st.column_config.NumberColumn("Suma min.")
+                "Dziś (min)": st.column_config.ProgressColumn("Dziś", min_value=0, max_value=60),
             }
         )
 
-        # Wyświetlanie tabeli szczegółowej (Historycznej)
-        with st.expander("🔍 Szczegółowy czas w modułach (Całkowity)"):
+        # --- TABELA 2: GLOBALNY ROZKŁAD AKTYWNOŚCI ---
+        st.divider()
+        st.subheader("📈 Globalny rozkład aktywności (Dzisiaj)")
+        total_global_sec = sum(global_daily_time.values())
+        if total_global_sec > 0:
+            analysis = []
+            for code, full_name in MOD_MAP.items():
+                v = global_daily_time.get(code, 0)
+                if v > 0:
+                    analysis.append({
+                        "Moduł": full_name,
+                        "Popularność (%)": f"{round((v/total_global_sec)*100, 1)}%",
+                        "Łączny czas": f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
+                    })
+            st.table(pd.DataFrame(analysis).set_index("Moduł"))
+        else:
+            st.info("Brak aktywności użytkowników w dniu dzisiejszym.")
+
+        # --- TABELA 3: SZCZEGÓŁY HISTORYCZNE ---
+        with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (historycznie)"):
             history_rows = []
             for item in adm_summary:
                 row = {"Użytkownik": item["Użytkownik"]}
-                # Pobieramy czas dla każdego kodu ze słownika MOD_MAP
                 for code, full_name in MOD_MAP.items():
-                    # Sekundy z bazy -> minuty w tabeli
                     val_sec = item["raw_total"].get(code, 0)
                     row[full_name] = int(val_sec // 60)
                 history_rows.append(row)
-            
-            # Sortujemy po całkowitym czasie nauki (suma wszystkich modułów)
-            df_history = pd.DataFrame(history_rows)
-            st.dataframe(df_history, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(history_rows), use_container_width=True, hide_index=True)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
