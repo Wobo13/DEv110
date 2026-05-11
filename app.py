@@ -1570,47 +1570,76 @@ elif choice == "🏗️ Konstruktor":
             if st.button("Następne ➡️", key="f_next", type="primary", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V1.6 - Multilang + Difficulty Levels + Logic Fix) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V1.7 - Logic & Theme Fix) ---
 elif choice == "🐍 Lingwistyczny Wąż":
+    import re
+    import random
+    import time
+    
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    user_name = st.session_state.get("user_name", "Gracz")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.header("🐍 Lingwistyczny Wąż")
-    st.write("Rywalizuj z systemem! Wygrywa ten, kto doda ostatnie możliwe słowo z Twojej bazy.")
+    st.markdown(f"<h2 style='text-align: center;'>🐍 Lingwistyczny Wąż: {current_lang_name}</h2>", unsafe_allow_html=True)
 
-    # 1. FUNKCJE POMOCNICZE LOGIKI
-    def is_noun(card):
-        """Sprawdza czy słowo jest rzeczownikiem na podstawie kategorii lub rodzajnika."""
-        c = str(card.get('category', '')).lower()
-        d = str(card.get('de', '')).lower()
-        return "rzeczownik" in c or "noun" in c or d.startswith(("der ", "die ", "das "))
+    # 1. CSS - DOPASOWANIE DO TRYBU JASNEGO I MOBILNEGO
+    st.markdown("""
+        <style>
+            .snake-box {
+                padding: 12px;
+                border-radius: 12px;
+                text-align: center;
+                margin: 5px;
+                min-width: 100px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                color: white !important; /* Tekst na kafelkach zawsze biały dla kontrastu */
+            }
+            .snake-info {
+                background: rgba(128, 128, 128, 0.1);
+                padding: 15px;
+                border-radius: 15px;
+                border: 1px solid rgba(128, 128, 128, 0.2);
+                color: var(--text-color);
+                margin-bottom: 20px;
+            }
+            /* Wymuszenie rzędu dla łańcucha na mobile */
+            .snake-container {
+                display: flex;
+                overflow-x: auto;
+                padding-bottom: 10px;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    def get_first_letter(text):
-        """Wyciąga pierwszą literę słowa, ignorując niemieckie rodzajniki."""
+    # 2. FUNKCJE POMOCNICZE
+    def is_valid_word(card):
+        """Wyklucza czasowniki, pozwala na resztę."""
+        cat = str(card.get('category', '')).lower()
+        # Wykluczamy czasowniki (verb)
+        if "czasownik" in cat or "verb" in cat:
+            return False
+        return True
+
+    def get_clean_text(text):
+        """Usuwa rodzajniki i znaki niebędące literami do logiki pierwszej/ostatniej litery."""
         clean = text.lower().strip()
         clean = re.sub(r'^(der|die|das)\s+', '', clean)
         clean = "".join(filter(str.isalpha, clean))
-        return clean[0] if clean else ""
+        return clean
 
-    def get_last_letter(text):
-        """Wyciąga ostatnią literę słowa, ignorując niemieckie rodzajniki."""
-        clean = text.lower().strip()
-        clean = re.sub(r'^(der|die|das)\s+', '', clean)
-        clean = "".join(filter(str.isalpha, clean))
-        return clean[-1] if clean else ""
-
-    # 2. PRZYGOTOWANIE BAZY
-    # Filtrujemy tylko rzeczowniki dla aktualnego języka
-    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE and is_noun(c)]
+    # 3. PRZYGOTOWANIE BAZY
+    lang_cards = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE and is_valid_word(c)]
 
     if len(lang_cards) < 5:
-        st.warning(f"Masz za mało rzeczowników w bazie ({current_lang_name}), aby zacząć grę (wymagane min. 5).")
+        st.warning(f"Masz za mało słówek (nie-czasowników) w bazie {current_lang_name}, aby zacząć.")
         st.stop()
 
-    # 3. EKRAN STARTOWY (WYBÓR TRUDNOŚCI)
+    # 4. INICJALIZACJA
     if "snake_active" not in st.session_state:
         st.subheader("Wybierz poziom trudności:")
-        diff = st.radio("Poziom:", ["Łatwy", "Średni", "Trudny"], horizontal=True, label_visibility="collapsed")
+        diff = st.radio("Poziom:", ["Łatwy", "Średni", "Trudny"], horizontal=True)
         if st.button("Zacznij grę 🚀", use_container_width=True):
             first_word = random.choice(lang_cards)
             st.session_state.snake_active = True
@@ -1622,53 +1651,59 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
         st.stop()
 
-    # 4. SILNIK GRY (FRAGMENT)
+    # 5. SILNIK GRY (FRAGMENT)
     @st.fragment
     def snake_engine():
         chain = st.session_state.snake_chain
-        last_word_obj = chain[-1]
-        req_letter = get_last_letter(last_word_obj['de'])
+        last_word_val = get_clean_text(chain[-1]['de'])
+        req_letter = last_word_val[-1] if last_word_val else ""
 
-        # UI: Łańcuch
-        st.markdown("### Łańcuch:")
-        display_chain = chain[-6:]
-        cols = st.columns(len(display_chain))
-        for i, word in enumerate(display_chain):
-            with cols[i]:
-                # Logika kolorów: parzystość od początku łańcucha
-                is_system = (len(chain) - len(display_chain) + i) % 2 == 0
-                color = "#1E88E5" if is_system else "#4CAF50"
-                st.markdown(f"""
-                    <div style="background:{color}; padding:15px; border-radius:10px; text-align:center; color:white; min-height:100px; display:flex; flex-direction:column; justify-content:center; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <div style="font-weight:bold; font-size:1.1em;">{word['de']}</div>
-                        <div style="font-size:0.8em; opacity:0.8;">{word['pl']}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+        # Wyświetlanie łańcucha (poziomy scroll na mobile)
+        st.write("⛓️ **Ostatnie ogniwa:**")
+        display_chain = chain[-5:] # Pokazujemy 5 ostatnich
         
-        st.write("")
+        # Generujemy HTML dla łańcucha, żeby uniknąć rozjeżdżania się kolumn st.columns
+        chain_html = '<div class="snake-container">'
+        for i, word in enumerate(display_chain):
+            # System (niebieski) vs Gracz (zielony)
+            is_system = (len(chain) - len(display_chain) + i) % 2 == 0
+            bg = "#1E88E5" if is_system else "#4CAF50"
+            chain_html += f"""
+                <div class="snake-box" style="background:{bg};">
+                    <div style="font-weight:bold;">{word['de']}</div>
+                    <div style="font-size:0.75rem; opacity:0.9;">{word['pl']}</div>
+                </div>
+            """
+        chain_html += '</div>'
+        st.markdown(chain_html, unsafe_allow_html=True)
+
         if st.session_state.snake_status != "end":
-            st.info(f"Ostatnie słowo: **{last_word_obj['de']}**. Czekamy na słowo na literę: **{req_letter.upper()}**")
+            st.markdown(f"""
+                <div class="snake-info">
+                    Ostatnie słowo: <b>{chain[-1]['de']}</b><br>
+                    Twoje słowo musi zaczynać się na: <span style="font-size:1.5rem; color:#ff4b4b;"><b>{req_letter.upper()}</b></span>
+                </div>
+            """, unsafe_allow_html=True)
 
-        # KOLEJ GRACZA
+        # --- KOLEJ GRACZA ---
         if st.session_state.snake_status == "player":
-            with st.form("snake_input_form", clear_on_submit=True):
-                u_in = st.text_input(f"Twoja kolej ({L_CODE.upper()}):").strip().lower()
-                c1, c2 = st.columns([3, 1])
-                submit = c1.form_submit_button("Dodaj ogniwo 🔗", use_container_width=True)
-                give_up = c2.form_submit_button("🏳️ Poddaję się", use_container_width=True)
+            with st.form("snake_input", clear_on_submit=True):
+                u_in = st.text_input("Twoja odpowiedź:").strip()
+                col1, col2 = st.columns([2, 1])
+                submit = col1.form_submit_button("Dodaj 🔗", use_container_width=True)
+                give_up = col2.form_submit_button("Poddaję się 🏳️", use_container_width=True)
 
-                if submit:
-                    # Szukamy słowa w przefiltrowanej bazie rzeczowników
-                    found = [c for c in lang_cards if 
-                             normalize_text(c['de']) == normalize_text(u_in) or 
-                             normalize_text(re.sub(r'^(der|die|das)\s+', '', c['de'].lower())) == normalize_text(u_in)]
+                if submit and u_in:
+                    u_clean = get_clean_text(u_in)
+                    # Szukamy słowa w bazie
+                    found = [c for c in lang_cards if get_clean_text(c['de']) == u_clean]
                     
                     if not found:
-                        st.error("Nie znaleziono takiego rzeczownika w Twojej bazie!")
+                        st.error("Nie znaleziono takiego słowa w Twojej bazie (lub jest czasownikiem)!")
                     elif found[0]['id'] in st.session_state.snake_used_ids:
-                        st.error("To słowo zostało już użyte!")
-                    elif get_first_letter(u_in) != req_letter:
-                        st.error(f"Słowo musi zaczynać się na literę '{req_letter.upper()}'!")
+                        st.error("To słowo już było!")
+                    elif u_clean[0] != req_letter:
+                        st.error(f"Słowo musi zaczynać się na '{req_letter.upper()}'!")
                     else:
                         st.session_state.snake_chain.append(found[0])
                         st.session_state.snake_used_ids.add(found[0]['id'])
@@ -1680,15 +1715,14 @@ elif choice == "🐍 Lingwistyczny Wąż":
                     st.session_state.snake_winner = "System 🤖"
                     st.rerun(scope="fragment")
 
-        # KOLEJ SYSTEMU
+        # --- KOLEJ SYSTEMU ---
         elif st.session_state.snake_status == "system":
-            with st.spinner("System myśli..."):
-                time.sleep(1.5)
-                # System szuka odpowiedzi w bazie gracza (pierwsza litera = wymagana litera)
-                possible = [c for c in lang_cards if get_first_letter(c['de']) == req_letter and c['id'] not in st.session_state.snake_used_ids]
+            with st.spinner("System szuka słowa..."):
+                time.sleep(1.2)
+                possible = [c for c in lang_cards if get_clean_text(c['de']).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
                 
-                # Szansa na błąd zależna od poziomu
-                fail_chance = {"Łatwy": 0.40, "Średni": 0.15, "Trudny": 0.0}.get(st.session_state.snake_diff, 0)
+                # SZANSA NA POMYŁKĘ (zgodnie z prośbą)
+                fail_chance = {"Łatwy": 0.50, "Średni": 0.25, "Trudny": 0.0}.get(st.session_state.snake_diff, 0)
                 
                 if possible and random.random() > fail_chance:
                     bot_choice = random.choice(possible)
@@ -1698,20 +1732,19 @@ elif choice == "🐍 Lingwistyczny Wąż":
                     st.rerun(scope="fragment")
                 else:
                     st.session_state.snake_status = "end"
-                    st.session_state.snake_winner = f"{u.capitalize()} 🏆"
+                    st.session_state.snake_winner = f"{user_name} 🏆"
                     st.balloons()
                     st.rerun(scope="fragment")
 
-        # KONIEC GRY
+        # --- KONIEC ---
         if st.session_state.snake_status == "end":
-            st.success(f"### Koniec gry! Zwycięzca: {st.session_state.snake_winner}")
+            st.success(f"### Zwycięzca: {st.session_state.snake_winner}")
             if st.button("Zagraj jeszcze raz", use_container_width=True, type="primary"):
                 for k in ["snake_active", "snake_chain", "snake_used_ids", "snake_status", "snake_winner", "snake_diff"]:
                     if k in st.session_state: del st.session_state[k]
                 st.rerun()
 
     snake_engine()
-
 # --- 16. BALONOWY WYŚCIG (V315 - Performance Edition) ---
 elif choice == "🎈 Balonowy Wyścig":
     import time
