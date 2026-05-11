@@ -2174,7 +2174,7 @@ elif choice == "🎲 Językowa Ruletka":
 
         survival_engine()
 
-# --- 20. ARENA WYZWAŃ (V2.6 - Fixed Query Logic & Score Sync) ---
+# --- 20. ARENA WYZWAŃ (V2.7 - Fix RLS & Query Debug) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2183,49 +2183,46 @@ elif choice == "🏆 Arena Wyzwań":
     st.markdown(f"<h1 style='text-align: center;'>🏆 Arena Wyzwań</h1>", unsafe_allow_html=True)
     st.markdown(f"<p style='text-align: center;'>Ranking dla języka: <b>{current_lang_name}</b></p>", unsafe_allow_html=True)
 
-    # --- 0. PRZYGOTOWANIE DAT DLA FILTRÓW (UTC dla zgodności z DB) ---
+    # --- 0. DATY ---
     now_pl = datetime.now(pytz.timezone('Europe/Warsaw'))
-    start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    # Używamy formatu kompatybilnego z Postgres (bez strefy czasowej w stringu dla uproszczenia)
+    start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
+    start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
 
     # --- 1. FUNKCJA POBIERAJĄCA REKORDY ---
     def get_game_leaderboard(game_id, lang_code, start_date=None):
         try:
             db = get_db()
-            # Budujemy zapytanie
             query = db.table("game_scores").select("username, score, created_at").eq("game_name", game_id).eq("lang", lang_code)
             
             if start_date:
                 query = query.gte("created_at", start_date)
             
-            # Sortowanie: Memory (czas) -> rosnąco | Inne (punkty) -> malejąco
             is_asc = True if game_id == "memory" else False
             res = query.order("score", ascending=is_asc).limit(10).execute()
             
             return res.data if res.data else []
         except Exception as e:
-            # st.error(f"Błąd zapytania {game_id}: {e}") # Debugging
+            # Jeśli jest błąd, wyświetl go (tylko w trybie debug)
+            # st.error(f"DEBUG: Błąd tabeli {game_id}: {e}")
             return []
 
     # --- 2. POBIERANIE DANYCH STAŁYCH (STREAK I WIEDZA) ---
     try:
         db = get_db()
-        res_users = db.table("user_data").select("username, streak").execute()
-        raw_users = res_users.data if res_users.data else []
-        
-        # Pobieramy info o kartach wszystkich użytkowników
-        res_cards = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute()
-        all_cards_global = res_cards.data if res_cards.data else []
+        raw_users = db.table("user_data").select("username, streak").execute().data or []
+        all_cards_global = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute().data or []
         
         cards_per_user = {}
         for c in all_cards_global:
             un = c['username']
             if un not in cards_per_user: cards_per_user[un] = []
             cards_per_user[un].append(c)
-    except:
+    except Exception as e:
+        st.error(f"Błąd profilu: {e}")
         raw_users, cards_per_user = [], {}
 
-    # --- 3. FUNKCJA POMOCNICZA DO MEDALI ---
+    # --- 3. MEDALE ---
     def assign_medals(df):
         medals = ["🥇", "🥈", "🥉"]
         new_indices = []
@@ -2237,21 +2234,20 @@ elif choice == "🏆 Arena Wyzwań":
         df.index.name = "Miejsce"
         return df
 
-    # --- 4. RENDEROWANIE REKORDÓW GIER ---
+    # --- 4. RENDEROWANIE GIER ---
     st.subheader("🎮 Rekordy Gier")
-    
     t_mem, t_bal, t_surv, t_snake = st.tabs(["⏱️ Memory", "🎈 Balony", "🎲 Ruletka", "🐍 Wąż"])
 
-    # Konfiguracja wyświetlania dla każdej gry
     games_config = [
-        {"tab": t_mem, "id": "memory", "unit": "s", "label": "Czas"},
-        {"tab": t_bal, "id": "balloons", "unit": " pkt", "label": "Wynik"},
-        {"tab": t_surv, "id": "survival", "unit": " popr.", "label": "Seria"},
-        {"tab": t_snake, "id": "snake", "unit": " słów", "label": "Łańcuch"}
+        {"tab": t_mem, "id": "memory", "unit": "s"},
+        {"tab": t_bal, "id": "balloons", "unit": " pkt"},
+        {"tab": t_surv, "id": "survival", "unit": " popr."},
+        {"tab": t_snake, "id": "snake", "unit": " słów"}
     ]
 
     for g in games_config:
         with g["tab"]:
+            # Pod-zakładki czasowe
             st_all, st_month, st_week = st.tabs(["🏆 Wszech czasów", "📅 Ten miesiąc", "⏳ Ten tydzień"])
             
             periods = [
@@ -2265,36 +2261,31 @@ elif choice == "🏆 Arena Wyzwań":
                     data = get_game_leaderboard(g["id"], L_CODE, p["date"])
                     if data:
                         df_game = pd.DataFrame(data)
-                        # Formatowanie wyniku z jednostką
                         df_game["Rekord"] = df_game["score"].apply(lambda x: f"{x}{g['unit']}")
                         df_game = df_game.rename(columns={"username": "Użytkownik"})
-                        
-                        # Wyświetlanie tabeli z medalami
-                        df_final = assign_medals(df_game[["Użytkownik", "Rekord"]].head(10))
-                        st.table(df_final)
+                        st.table(assign_medals(df_game[["Użytkownik", "Rekord"]].head(10)))
                     else:
-                        st.caption(f"Brak rekordów w tej kategorii ({current_lang_name}).")
+                        st.caption(f"Brak rekordów.")
 
     st.divider()
 
     # --- 5. PASSA I WIEDZA ---
     col1, col2 = st.columns(2)
-    
     leaderboard_data = []
     today_dt = date.today()
     for u_row in raw_users:
         uname = u_row.get("username", "Anonim")
-        user_cards = cards_per_user.get(uname, [])
+        u_cards = cards_per_user.get(uname, [])
         w_raw = 0
-        if user_cards:
-            strong = len([c for c in user_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-            w_raw = int((strong / len(user_cards)) * 100)
+        if u_cards:
+            strong = len([c for c in u_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
+            w_raw = int((strong / len(u_cards)) * 100)
         
         leaderboard_data.append({
             "Użytkownik": uname,
             "Ogień 🔥": int(u_row.get("streak", 0)),
             "w_raw": w_raw,
-            "Wiedza 🧠": f"{w_raw}%" if user_cards else "---"
+            "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"
         })
 
     with col1:
@@ -2310,9 +2301,9 @@ elif choice == "🏆 Arena Wyzwań":
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
             if not df_w.empty:
                 st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
-            else: st.caption("Brak danych o wiedzy.")
+            else: st.caption("Brak danych.")
 
-    # Stopka
+    # Podświetlenie pozycji aktualnego gracza
     st.write("---")
     my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
     if my_stats:
