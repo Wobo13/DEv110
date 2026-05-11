@@ -154,7 +154,7 @@ def play_audio(txt, ex_txt=None, lang='de'):
     except Exception as e:
         pass
 
-# --- 3. FUNKCJE DANYCH (V7 - Polska strefa czasowa + Fix Resetu) ---
+# --- 3. FUNKCJE DANYCH (V8 - Indentation Fix & Always Update Activity) ---
 def get_now_pl():
     """Pomocnik zwracający aktualny czas w Polsce jako string."""
     tz_pl = pytz.timezone('Europe/Warsaw')
@@ -173,28 +173,29 @@ def load_user_data(username):
         if not last_visit:
             last_visit = data.get("last_date", "2000-01-01")
         
-       # NOWA WERSJA (Prawidłowa - zawsze odświeża godzinę przy wejściu)
-data["last_seen"] = get_now_pl() # Aktualizacja czasu przy KAŻDYM ładowaniu danych (logowaniu/odświeżeniu)
+        # AKTUALIZACJA AKTYWNOŚCI: Zawsze odświeżamy godzinę przy ładowaniu
+        data["last_seen"] = get_now_pl()
 
-if last_visit != today_str:
-    data["time_stats"] = {} # Reset minut tylko raz na dobę
-    data["last_visit_date"] = today_str
+        # Reset statystyk czasu (tylko przy pierwszej wizycie danego dnia)
+        if last_visit != today_str:
+            data["time_stats"] = {} 
+            data["last_visit_date"] = today_str
 
-save_user_data(username, data) # Zapisuje nową godzinę do bazy
-        
+        save_user_data(username, data)
         return data
 
-    # INICJALIZACJA NOWEGO UŻYTKOWNIKA
+    # INICJALIZACJA NOWEGO UŻYTKOWNIKA (jeśli nie istnieje w user_data)
     init = {
         "username": username, 
         "streak": 0, 
         "historical_cost": 0.0, 
         "time_stats": {}, 
         "last_ts": time.time(), 
-        "last_seen": get_now_pl(), # Czas PL
+        "last_seen": get_now_pl(),
         "last_date": "2000-01-01", 
         "last_visit_date": today_str,
         "test_history": [],
+        "workshop_progress": {},
         "settings": {"daily_goal": 20, "auto_audio": True, "show_hints": True}
     }
     db.table("user_data").insert(init).execute()
@@ -208,10 +209,7 @@ def save_user_data(username, data):
     if "time_stats" in d and isinstance(d["time_stats"], dict):
         d["time_stats"] = {str(k): float(v) for k, v in d["time_stats"].items()}
     
-    if not d.get("last_date"):
-        d["last_date"] = "2000-01-01"
-    
-    # Zawsze aktualizujemy datę wizyty i czas aktywności (czas PL) przy zapisie
+    # Przy zapisie również upewniamy się, że data wizyty jest aktualna
     d["last_visit_date"] = date.today().isoformat()
     d["last_seen"] = get_now_pl()
 
