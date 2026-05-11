@@ -402,7 +402,7 @@ if u:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
 
-# --- 6. SIDEBAR (V382 - Logout Fix with Query Params Clear) ---
+# --- 6. SIDEBAR (V383 - VIP Fan-Zone Integration) ---
 with st.sidebar:
     st.markdown("""
         <style>
@@ -490,21 +490,20 @@ with st.sidebar:
     for opt in ["📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
+    # --- NOWA SEKCJA VIP DLA ADMINA ---
     if u == ADMIN_USER:
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.write("🏁 **STREFA VIP**")
         menu_item("👑 Admin", "👑 Admin")
+        menu_item("🏟️ Dynamo Fan-Zone", "🏟️ Dynamo Fan-Zone")
 
     st.markdown("<hr>", unsafe_allow_html=True)
     
-    # --- POPRAWIONY PRZYCISK WYLOGOWANIA ---
+    # --- PRZYCISK WYLOGOWANIA ---
     if st.button("🚪 Wyloguj", use_container_width=True, key="logout_btn"):
-        # 1. Czyścimy parametry URL (usuwamy token "Zapamiętaj mnie")
         st.query_params.clear()
-        
-        # 2. Usuwamy wszystkie klucze sesji
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-            
-        # 3. Wymuszamy restart - aplikacja zatrzyma się na Sekcji 4 (ekran logowania)
         st.rerun()
 
 # --- DEFINICJA ZMIENNEJ CHOICE (POZA SIDEBAREM) ---
@@ -3592,3 +3591,76 @@ elif choice == "🕵️ Kulturowy Detektyw":
         st.write("🟡 **Potoczny:** Do znajomych i rodziny.")
         st.write("🔴 **Uliczny:** Tylko w bardzo luźnych sytuacjach.")
         st.caption("Każdy idiom dodany do słownika otrzymuje tag #idiom.")
+
+# --- 32. DYNAMO FAN-ZONE (ADMIN ONLY) ---
+elif choice == "🏟️ Dynamo Fan-Zone" and u == ADMIN_USER:
+    st.markdown("""
+        <style>
+            .stApp { background-color: #000000; } /* Tło stadionu */
+            h1, h2, h3, p { color: #f9d71c !important; } /* Żółte napisy */
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.title("🏟️ SGD Fan-Zone")
+    st.subheader("Ucz się tekstów i melodii Dynama!")
+
+    db = get_db()
+    
+    # Pobieranie przyśpiewek z bazy
+    try:
+        res = db.table("fan_chants").select("*").execute()
+        chants = res.data if res.data else []
+    except:
+        chants = []
+
+    if not chants:
+        st.warning("Baza przyśpiewek jest pusta. Dodaj coś w bazie danych!")
+    else:
+        # Wybór przyśpiewki
+        chant_names = [c['title'] for c in chants]
+        sel_name = st.selectbox("Wybierz przyśpiewkę:", chant_names)
+        chant = next(item for item in chants if item["title"] == sel_name)
+
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown(f"### 🎤 {chant['title']}")
+            # Tekst w ładnej ramce
+            st.markdown(f"""
+                <div style='background: #1a1a1a; padding: 20px; border-radius: 10px; border: 2px solid #f9d71c; font-family: monospace; white-space: pre-wrap; font-size: 1.1rem;'>
+                {chant['lyrics']}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            with st.expander("🇵🇱 Tłumaczenie"):
+                st.write(chant.get('translation_pl', 'Brak tłumaczenia.'))
+
+        with col2:
+            st.markdown("### 🔊 Melodia")
+            if chant.get('audio_url'):
+                st.audio(chant['audio_url'])
+            else:
+                st.info("Brak pliku audio dla tej przyśpiewki.")
+            
+            st.divider()
+            st.markdown("""
+                **Zasady treningu:**
+                1. Włącz audio.
+                2. Czytaj tekst rytmicznie.
+                3. Powtórz 3 razy bez podglądania!
+            """)
+
+    # Szybki formularz dodawania (tylko dla Admina)
+    with st.expander("➕ Dodaj nową przyśpiewkę"):
+        with st.form("add_chant"):
+            n_title = st.text_input("Tytuł")
+            n_lyrics = st.text_area("Tekst")
+            n_audio = st.text_input("URL do MP3 (opcjonalnie)")
+            n_pl = st.text_input("Tłumaczenie PL")
+            if st.form_submit_button("Zapisz w archiwum K-Block"):
+                db.table("fan_chants").insert({
+                    "title": n_title, "lyrics": n_lyrics, 
+                    "audio_url": n_audio, "translation_pl": n_pl
+                }).execute()
+                st.success("Dodano! Rozgrzewaj gardło!")
+                st.rerun()
