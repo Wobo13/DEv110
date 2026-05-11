@@ -1322,7 +1322,7 @@ elif choice == "📝 Testy":
 
             test_engine()
 
-# --- 12. GRA MEMORY (V287 - Fix AttributeError Restart) ---
+# --- 12. GRA MEMORY (V288 - SQL Scores Integration) ---
 elif choice == "🧠 Memory":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -1362,7 +1362,6 @@ elif choice == "🧠 Memory":
     # 3. SILNIK GRY (FRAGMENT)
     @st.fragment
     def memory_engine():
-        # Bezpiecznik: jeśli klucz zniknął, zainicjuj ponownie zamiast sypać błędem
         if "mem_grid" not in st.session_state:
             init_memory_game()
             
@@ -1381,31 +1380,42 @@ elif choice == "🧠 Memory":
             
         c2.metric("🧩 Pary", f"{st.session_state.mem_pairs}/6")
         
-        # LOGIKA KOŃCA GRY
+        # --- LOGIKA KOŃCA GRY ---
         if st.session_state.mem_pairs == 6:
             if st.session_state.mem_final_time is None:
-                st.session_state.mem_final_time = round(time.time() - st.session_state.mem_start_time, 2)
+                final_t = round(time.time() - st.session_state.mem_start_time, 2)
+                st.session_state.mem_final_time = final_t
                 
-                # ZAPIS REKORDU
+                # ZAPIS DO BAZY (Dual Write: user_data + game_scores)
                 try:
                     db = get_db()
-                    new_score = st.session_state.mem_final_time
+                    
+                    # A. Nowy System: Centralna tabela wyników (dla Areny Tydzień/Miesiąc)
+                    db.table("game_scores").insert({
+                        "username": u,
+                        "game_name": "memory",
+                        "lang": L_CODE,
+                        "score": final_t
+                    }).execute()
+
+                    # B. Stary System: Top 10 w profilu (dla kompatybilności statystyk)
                     mem_key = f"memory_scores_{L_CODE}"
                     ud = st.session_state.user_data
                     current_scores = ud.get(mem_key, [])
                     if not isinstance(current_scores, list): current_scores = []
-                    current_scores.append(new_score)
+                    current_scores.append(final_t)
+                    # Sortujemy rosnąco (najlepsze czasy) i bierzemy top 10
                     current_scores = sorted([float(s) for s in current_scores])[:10]
                     
                     db.table("user_data").update({mem_key: current_scores}).eq("username", u).execute()
                     st.session_state.user_data[mem_key] = current_scores
-                except:
-                    pass
+                    
+                except Exception as e:
+                    pass # Cichy błąd, żeby nie psuć zabawy użytkownikowi
 
             st.balloons()
             st.success(f"Brawo! Twój czas: {st.session_state.mem_final_time}s")
             
-            # POPRAWIONY RESTART: Zamiast del, robimy nową inicjalizację
             if st.button("Zagraj jeszcze raz", use_container_width=True):
                 init_memory_game()
                 st.rerun()
@@ -1418,7 +1428,6 @@ elif choice == "🧠 Memory":
             cols = st.columns(4)
             for col in range(4):
                 idx = row * 4 + col
-                # Dodatkowe sprawdzenie bezpieczeństwa indeksu
                 if idx >= len(status): continue
                 
                 tile_text = "❓"
@@ -2165,25 +2174,44 @@ elif choice == "🎲 Językowa Ruletka":
 
         survival_engine()
 
-# --- 20. ARENA WYZWAŃ (V2.4 - Full Games Leaderboard + Knowledge) ---
+# --- 20. ARENA WYZWAŃ (V2.5 - Multi-Period Leaderboards) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     u_name = st.session_state.get("user", "Anonim") 
     
     st.markdown(f"<h1 style='text-align: center;'>🏆 Arena Wyzwań</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align: center;'>Język rankingu: <b>{current_lang_name}</b></p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center;'>Ranking dla języka: <b>{current_lang_name}</b></p>", unsafe_allow_html=True)
 
-    # 1. POBIERANIE DANYCH (Rozszerzone o Ruletkę i Węża)
+    # --- 0. PRZYGOTOWANIE DAT DLA FILTRÓW ---
+    now = datetime.now()
+    # Początek tygodnia (poniedziałek)
+    start_of_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    # Początek miesiąca
+    start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    # --- 1. FUNKCJA POBIERAJĄCA REKORDY Z NOWEJ TABELI ---
+    def get_game_leaderboard(game_id, lang_code, start_date=None, limit=10):
+        try:
+            query = get_db().table("game_scores").select("username, score, created_at").eq("game_name", game_id).eq("lang", lang_code)
+            
+            if start_date:
+                query = query.gte("created_at", start_date)
+            
+            # Dla Memory mniejszy czas = lepiej (ascending=True)
+            # Dla innych gier więcej punktów = lepiej (ascending=False)
+            is_asc = True if game_id == "memory" else False
+            res = query.order("score", ascending=is_asc).limit(limit).execute()
+            return res.data if res.data else []
+        except:
+            return []
+
+    # --- 2. POBIERANIE DANYCH STAŁYCH (STREAK I WIEDZA) ---
     try:
         db = get_db()
-        # Pobieramy dane o profilach z nowymi kolumnami
-        res_users = db.table("user_data").select(
-            f"username, streak, snake_best_chain, memory_scores_{L_CODE}, top_balloons_{L_CODE}, survival_scores_{L_CODE}"
-        ).execute()
+        res_users = db.table("user_data").select("username, streak").execute()
         raw_users = res_users.data if res_users.data else []
         
-        # Pobieramy dane o kartach wszystkich, aby wyliczyć ich wiedzę %
         res_cards = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute()
         all_cards_global = res_cards.data if res_cards.data else []
         
@@ -2192,154 +2220,99 @@ elif choice == "🏆 Arena Wyzwań":
             un = c['username']
             if un not in cards_per_user: cards_per_user[un] = []
             cards_per_user[un].append(c)
-            
-    except Exception as e:
-        st.error(f"Błąd bazy: {e}")
-        raw_users = []
-        cards_per_user = {}
+    except:
+        raw_users, cards_per_user = [], {}
 
-    leaderboard_data = []
-    today_dt = date.today()
-
-    for u_row in raw_users:
-        uname = u_row.get("username", "Anonim")
-        streak = u_row.get("streak", 0)
-        
-        # Obliczanie Wiedzy
-        user_cards = cards_per_user.get(uname, [])
-        w_raw = 0
-        wiedza_str = "0%"
-        if user_cards:
-            strong = len([c for c in user_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-            w_raw = int((strong / len(user_cards)) * 100)
-            wiedza_str = f"{w_raw}%"
-        else:
-            wiedza_str = "---"
-
-        leaderboard_data.append({
-            "Użytkownik": uname,
-            "Ogień 🔥": int(streak),
-            "Wiedza 🧠": wiedza_str,
-            "w_raw": w_raw,
-            "memory": u_row.get(f"memory_scores_{L_CODE}", []),
-            "balloons": u_row.get(f"top_balloons_{L_CODE}", []),
-            "survival": u_row.get(f"survival_scores_{L_CODE}", []),
-            "snake_best": u_row.get("snake_best_chain", 0)
-        })
-
-    # FUNKCJA POMOCNICZA DO MEDALI
+    # --- 3. FUNKCJA POMOCNICZA DO MEDALI ---
     def assign_medals(df):
         medals = ["🥇", "🥈", "🥉"]
         new_indices = []
         for i in range(len(df)):
             place = i + 1
-            if i < 3:
-                new_indices.append(f"{medals[i]} {place}")
-            else:
-                new_indices.append(str(place))
+            if i < 3: new_indices.append(f"{medals[i]} {place}")
+            else: new_indices.append(str(place))
         df.index = new_indices
         df.index.name = "Miejsce"
         return df
 
-    if not leaderboard_data:
-        st.info("Ranking jest pusty.")
-    else:
-        # --- [SEKCJA GÓRNA] REKORDY GIER (Rozszerzona) ---
-        st.subheader("🎮 Rekordy Gier")
-        t_mem, t_bal, t_surv, t_snake = st.tabs([
-            "⏱️ Memory", "🎈 Balony", "🎲 Ruletka", "🐍 Wąż"
-        ])
+    # --- 4. RENDEROWANIE REKORDÓW GIER ---
+    st.subheader("🎮 Rekordy Gier")
+    
+    # Główne zakładki gier
+    t_mem, t_bal, t_surv, t_snake = st.tabs(["⏱️ Memory", "🎈 Balony", "🎲 Ruletka", "🐍 Wąż"])
 
-        with t_mem:
-            mem_rank = []
-            for entry in leaderboard_data:
-                scores = entry["memory"]
-                if scores and isinstance(scores, list):
-                    v_scores = [float(s) for s in scores if str(s).replace('.','',1).isdigit()]
-                    if v_scores:
-                        best = min(v_scores)
-                        mem_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best}s", "val": best})
+    games_config = [
+        {"tab": t_mem, "id": "memory", "unit": "s"},
+        {"tab": t_bal, "id": "balloons", "unit": " pkt"},
+        {"tab": t_surv, "id": "survival", "unit": " popr."},
+        {"tab": t_snake, "id": "snake", "unit": " słów"}
+    ]
+
+    for g in games_config:
+        with g["tab"]:
+            # Pod-zakładki czasowe
+            st_all, st_month, st_week = st.tabs(["Wszech czasów", "Ten miesiąc", "Ten tydzień"])
             
-            if mem_rank:
-                df_m = pd.DataFrame(mem_rank).sort_values("val", ascending=True).head(10)
-                df_m = assign_medals(df_m.reset_index(drop=True))
-                st.table(df_m[["Użytkownik", "Rekord"]])
-            else: st.caption("Brak rekordów.")
-
-        with t_bal:
-            bal_rank = []
-            for entry in leaderboard_data:
-                scores = entry["balloons"]
-                if scores and isinstance(scores, list):
-                    v_scores = [int(s) for s in scores if str(s).isdigit()]
-                    if v_scores:
-                        best = max(v_scores)
-                        bal_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best} pkt", "val": best})
+            periods = [
+                {"tab": st_all, "date": None},
+                {"tab": st_month, "date": start_of_month},
+                {"tab": st_week, "date": start_of_week}
+            ]
             
-            if bal_rank:
-                df_b = pd.DataFrame(bal_rank).sort_values("val", ascending=False).head(10)
-                df_b = assign_medals(df_b.reset_index(drop=True))
-                st.table(df_b[["Użytkownik", "Rekord"]])
-            else: st.caption("Brak rekordów.")
+            for p in periods:
+                with p["tab"]:
+                    data = get_game_leaderboard(g["id"], L_CODE, p["date"])
+                    if data:
+                        df_game = pd.DataFrame(data)
+                        df_game["Rekord"] = df_game["score"].apply(lambda x: f"{x}{g['unit']}")
+                        df_game = df_game.rename(columns={"username": "Użytkownik"})
+                        df_game = assign_medals(df_game[["Użytkownik", "Rekord"]])
+                        st.table(df_game)
+                    else:
+                        st.caption("Brak rekordów w tym okresie.")
 
-        with t_surv:
-            surv_rank = []
-            for entry in leaderboard_data:
-                scores = entry["survival"]
-                if scores and isinstance(scores, list):
-                    v_scores = [int(s) for s in scores if str(s).isdigit()]
-                    if v_scores:
-                        best = max(v_scores)
-                        surv_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best} poprawnych", "val": best})
-            
-            if surv_rank:
-                df_sv = pd.DataFrame(surv_rank).sort_values("val", ascending=False).head(10)
-                df_sv = assign_medals(df_sv.reset_index(drop=True))
-                st.table(df_sv[["Użytkownik", "Rekord"]])
-            else: st.caption("Brak rekordów w Ruletce.")
+    st.divider()
 
-        with t_snake:
-            snake_rank = []
-            for entry in leaderboard_data:
-                if entry["snake_best"] > 0:
-                    snake_rank.append({
-                        "Użytkownik": entry["Użytkownik"], 
-                        "Rekord": f"{entry['snake_best']} słów", 
-                        "val": entry["snake_best"]
-                    })
-            
-            if snake_rank:
-                df_sn = pd.DataFrame(snake_rank).sort_values("val", ascending=False).head(10)
-                df_sn = assign_medals(df_sn.reset_index(drop=True))
-                st.table(df_sn[["Użytkownik", "Rekord"]])
-            else: st.caption("Brak rekordów w Węża.")
-
-        st.divider()
-
-        # --- [SEKCJA DOLNA] PASSA I WIEDZA ---
-        col1, col2 = st.columns(2)
+    # --- 5. PASSA I WIEDZA (POBIERANE Z USER_DATA) ---
+    col1, col2 = st.columns(2)
+    
+    leaderboard_data = []
+    today_dt = date.today()
+    for u_row in raw_users:
+        uname = u_row.get("username", "Anonim")
+        user_cards = cards_per_user.get(uname, [])
+        w_raw = 0
+        if user_cards:
+            strong = len([c for c in user_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
+            w_raw = int((strong / len(user_cards)) * 100)
         
-        with col1:
-            st.subheader("🔥 Top 10: Passa (Streak)")
+        leaderboard_data.append({
+            "Użytkownik": uname,
+            "Ogień 🔥": int(u_row.get("streak", 0)),
+            "w_raw": w_raw,
+            "Wiedza 🧠": f"{w_raw}%" if user_cards else "---"
+        })
+
+    with col1:
+        st.subheader("🔥 Top 10: Passa")
+        if leaderboard_data:
             df_s = pd.DataFrame(leaderboard_data).sort_values("Ogień 🔥", ascending=False).head(10)
-            df_s = assign_medals(df_s.reset_index(drop=True))
-            st.table(df_s[["Użytkownik", "Ogień 🔥"]])
+            st.table(assign_medals(df_s.reset_index(drop=True))[["Użytkownik", "Ogień 🔥"]])
             
-        with col2:
-            st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
+    with col2:
+        st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
+        if leaderboard_data:
             df_w = pd.DataFrame(leaderboard_data)
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
-            
             if not df_w.empty:
-                df_w = assign_medals(df_w.reset_index(drop=True))
-                st.table(df_w[["Użytkownik", "Wiedza 🧠"]])
-            else: st.caption("Brak danych o postępach.")
+                st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
+            else: st.caption("Brak danych.")
 
-        # Podświetlenie pozycji aktualnego gracza
-        st.write("---")
-        my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
-        if my_stats:
-            st.info(f"Twoja aktualna wiedza ({current_lang_name}): **{my_stats['Wiedza 🧠']}** | Twoja passa: **{my_stats['Ogień 🔥']} dni**. Powodzenia!")
+    # Stopka z info dla gracza
+    st.write("---")
+    my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
+    if my_stats:
+        st.info(f"Twoje statystyki ({current_lang_name}): Wiedza: **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
