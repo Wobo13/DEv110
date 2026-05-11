@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V267 - Ultra JSON Parser & Audio Fix) ---
+# --- 8. POWTÓRKI & TRENING (V268 - Skopiowana logika z Quizu) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -819,43 +819,23 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU (ULTRA PANCERNY PARSER) ---
-                raw_exs = c.get("examples")
-                ex_foreign = None
-                ex_pl = None
-
-                try:
-                    # Krok 1: Jeśli Supabase rzuciło wszystko jako jeden string, parsujemy
-                    if isinstance(raw_exs, str):
-                        raw_exs = json.loads(raw_exs)
-                    
-                    # Krok 2: Jeśli to lista, dobieramy się do środka
-                    if isinstance(raw_exs, list) and len(raw_exs) > 0:
-                        first_item = raw_exs[0]
-                        
-                        # Krok 3: Czasami wewnątrz listy nadal siedzi string, znów parsujemy
-                        if isinstance(first_item, str):
-                            first_item = json.loads(first_item)
-                            
-                        # Krok 4: Jeśli to w końcu słownik (dict), wyciągamy dane
-                        if isinstance(first_item, dict):
-                            # Zauważ, że zapisujesz "de" nawet dla języka czeskiego (zgodnie z logiką w Dodaj/Skanerze)
-                            ex_foreign = first_item.get("de")
-                            ex_pl = first_item.get("pl")
-                except Exception:
-                    pass # Ciche połykanie błędu parsowania, fallback zadziała niżej
-
-                # Fallback dla starszych słówek
-                if not ex_foreign and c.get('example'):
-                    ex_foreign = c.get('example')
-
-                # Wyświetlanie na ekranie
-                if ex_foreign:
-                    st.info(f"📖 **Przykład:** {ex_foreign}" + (f"\n\n🇵🇱 *{ex_pl}*" if ex_pl else ""))
+                # --- OBSŁUGA PRZYKŁADÓW I AUDIO (Dokładnie skopiowane z sekcji 9) ---
+                exs = c.get("examples", [])
+                example_foreign = None
+                example_pl = None
                 
-                # --- ODTWARZANIE AUDIO (Słowo + Pauza + Przykład) ---
-                if auto_audio: 
-                    play_audio(c['de'], ex_foreign, lang=L_CODE)
+                if exs and isinstance(exs, list) and len(exs) > 0:
+                    example_foreign = exs[0].get("de")
+                    example_pl = exs[0].get("pl")
+                elif c.get('example'): # Fallback
+                    example_foreign = c['example']
+
+                if example_foreign:
+                    st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
+                
+                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
+                if auto_audio:
+                    play_audio(c['de'], example_foreign, lang=L_CODE)
 
                 st.divider()
                 if is_r:
