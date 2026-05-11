@@ -3592,32 +3592,20 @@ elif choice == "🕵️ Kulturowy Detektyw":
         st.write("🔴 **Uliczny:** Tylko w bardzo luźnych sytuacjach.")
         st.caption("Każdy idiom dodany do słownika otrzymuje tag #idiom.")
 
-# --- 32. DYNAMO FAN-ZONE (V2 - KARAOKE MODE) ---
+# --- 32. DYNAMO FAN-ZONE (V2.1 - Empty State Fix) ---
 elif choice == "🏟️ Dynamo Fan-Zone" and u == ADMIN_USER:
-    st.markdown("""
-        <style>
-            .stApp { background-color: #000000; }
-            h1, h2, h3, p, span { color: #f9d71c !important; }
-            .lyrics-container {
-                height: 300px; overflow-y: auto; 
-                background: #111; padding: 20px; 
-                border: 2px solid #f9d71c; border-radius: 10px;
-                text-align: center; font-family: 'Arial Black', sans-serif;
-            }
-            .line { opacity: 0.3; transition: all 0.3s; margin: 10px 0; font-size: 1.2rem; }
-            .active { opacity: 1; transform: scale(1.1); color: #fff !important; text-shadow: 0 0 10px #f9d71c; }
-        </style>
-    """, unsafe_allow_html=True)
-
+    st.markdown("<style>.stApp { background-color: #000000; } h1, h2, h3, p, span { color: #f9d71c !important; }</style>", unsafe_allow_html=True)
     st.title("🏟️ SGD Karaoke Player")
     
     db = get_db()
-    res = db.table("fan_chants").select("*").execute()
-    chants = res.data if res.data else []
+    try:
+        res = db.table("fan_chants").select("*").execute()
+        chants = res.data if res.data else []
+    except:
+        chants = []
 
-    if not chants:
-        st.warning("Brak przyśpiewek w K-Blocku.")
-    else:
+    # Sprawdzamy czy mamy co wyświetlić
+    if chants:
         sel_name = st.selectbox("Wybierz hymn:", [c['title'] for c in chants])
         chant = next(item for item in chants if item["title"] == sel_name)
         
@@ -3625,80 +3613,70 @@ elif choice == "🏟️ Dynamo Fan-Zone" and u == ADMIN_USER:
         audio_url = chant.get('audio_url', "")
 
         if timed_data and audio_url:
-            # --- SILNIK KARAOKE (JS + HTML) ---
-            # Parsujemy dane: "0|Tekst\n5|Kolejny" -> Listy dla JS
+            # --- MODUŁ KARAOKE ---
+            import json
             lines = []
             for l in timed_data.split('\n'):
                 if '|' in l:
                     t, txt = l.split('|', 1)
                     lines.append({"time": float(t), "text": txt.strip()})
-            
-            import json
             lines_json = json.dumps(lines)
 
-            # Komponent Karaoke w HTML/JS
             st.components.v1.html(f"""
-                <div id="lyrics-box" class="lyrics-container" style="height: 250px; overflow-y: auto; background: #111; padding: 20px; border: 2px solid #f9d71c; border-radius: 10px; text-align: center; font-family: sans-serif;">
-                    <div id="display" style="color: #f9d71c;">Rozpocznij audio, aby śpiewać...</div>
+                <div id="lyrics-box" style="height: 250px; overflow-y: auto; background: #111; padding: 20px; border: 2px solid #f9d71c; border-radius: 10px; text-align: center; font-family: sans-serif;">
+                    <div id="display" style="color: #f9d71c;">Rozpocznij audio...</div>
                 </div>
                 <br>
                 <audio id="player" controls style="width: 100%; filter: invert(100%) hue-rotate(180deg);">
                     <source src="{audio_url}" type="audio/mpeg">
                 </audio>
-
                 <script>
                     const lines = {lines_json};
                     const audio = document.getElementById('player');
                     const display = document.getElementById('display');
                     const box = document.getElementById('lyrics-box');
-
                     audio.ontimeupdate = () => {{
                         const cur = audio.currentTime;
                         let activeIndex = -1;
-                        
-                        // Znajdź aktualny wers
-                        for (let i = 0; i < lines.length; i++) {{
-                            if (cur >= lines[i].time) {{
-                                activeIndex = i;
-                            }}
-                        }}
-
+                        for (let i = 0; i < lines.length; i++) {{ if (cur >= lines[i].time) activeIndex = i; }}
                         if (activeIndex !== -1) {{
-                            // Generuj HTML z podświetleniem
                             let html = "";
                             lines.forEach((l, idx) => {{
                                 const cls = idx === activeIndex ? "color: #fff; font-size: 1.5rem; font-weight: bold; text-shadow: 0 0 10px #f9d71c;" : "opacity: 0.3;";
                                 html += `<div id="line-${{idx}}" style="margin: 10px 0; transition: 0.3s; ${{cls}}">${{l.text}}</div>`;
                             }});
                             display.innerHTML = html;
-                            
-                            // Scroll do aktywnego wersu
                             const activeEl = document.getElementById("line-" + activeIndex);
-                            if (activeEl) {{
-                                box.scrollTo({{ top: activeEl.offsetTop - 100, behavior: 'smooth' }});
-                            }}
+                            if (activeEl) box.scrollTo({{ top: activeEl.offsetTop - 100, behavior: 'smooth' }});
                         }}
                     }};
                 </script>
             """, height=450)
         else:
-            st.info("Aby uruchomić Karaoke, dodaj URL do audio i zsynchronizowany tekst.")
+            st.info("Dodaj URL audio i tekst z czasem w sekcji poniżej, aby uruchomić Karaoke.")
+    else:
+        st.warning("Baza przyśpiewek jest pusta. Dodaj swoją pierwszą pieśń w formularzu poniżej! 👇")
 
-    # Formularz edycji (z instrukcją formatu)
-    with st.expander("🛠️ Edytuj / Dodaj przyśpiewkę"):
-        with st.form("edit_sgd"):
-            f_title = st.text_input("Tytuł", value=chant['title'] if chants else "")
-            f_audio = st.text_input("URL do pliku MP3", value=chant.get('audio_url', '') if chants else "")
-            f_timed = st.text_area("Tekst ZSYNCHRONIZOWANY (Format: sekunda|tekst)", 
-                                   placeholder="0|Wir sind die Fans\n5|Aus Elbflorenz\n10|SGD!")
+    # Formularz dodawania (zawsze widoczny)
+    with st.expander("🛠️ Edytuj / Dodaj nową przyśpiewkę"):
+        with st.form("edit_sgd_v2"):
+            f_title = st.text_input("Tytuł (musi być unikalny)")
+            f_audio = st.text_input("URL do pliku MP3")
+            f_timed = st.text_area("Tekst ZSYNCHRONIZOWANY (Format: sekunda|tekst)")
             f_pl = st.text_input("Tłumaczenie PL")
             
             if st.form_submit_button("Zapisz w K-Blocku"):
-                data_obj = {
-                    "title": f_title, "audio_url": f_audio, 
-                    "lyrics_timed": f_timed, "translation_pl": f_pl,
-                    "lyrics": f_timed # uproszczenie
-                }
-                db.table("fan_chants").upsert(data_obj, on_conflict="title").execute()
-                st.success("Zsynchronizowano! Schwarz-Gelbe Grüße!")
-                st.rerun()
+                if f_title and f_timed:
+                    try:
+                        data_obj = {
+                            "title": f_title, "audio_url": f_audio, 
+                            "lyrics_timed": f_timed, "translation_pl": f_pl,
+                            "lyrics": f_timed
+                        }
+                        db.table("fan_chants").upsert(data_obj, on_conflict="title").execute()
+                        st.success("Zapisano! Odświeżam listę...")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd zapisu: {e}. Czy dodałeś UNIQUE w SQL?")
+                else:
+                    st.error("Tytuł i tekst są wymagane!")
