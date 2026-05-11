@@ -2706,34 +2706,30 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V312 - Idioms Management: Seed & Clear) ---
+# --- 27. ADMIN PRO (V315 - Idioms & Cultural Trivia Management) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
-    # --- FUNKCJA 1: CZYSZCZENIE BAZY ---
+    # --- FUNKCJE DLA IDIOMÓW ---
     def clear_idioms_library():
         try:
-            # Usuwamy wszystkie rekordy (id != 0)
             get_db().table("idioms_library").delete().neq("id", 0).execute()
             st.success("✅ Biblioteka idiomów została całkowicie wyczyszczona!")
             time.sleep(1)
             st.rerun()
         except Exception as e:
-            st.error(f"Błąd podczas czyszczenia bazy: {e}")
+            st.error(f"Błąd podczas czyszczenia bazy idiomów: {e}")
 
-    # --- FUNKCJA 2: INICJALIZACJA BAZY (ROBUST UPSERT) ---
     def seed_idioms_library():
         import json
         import time
         st.info("🚀 Rozpoczynam proces generowania 200 idiomów (100 DE + 100 CS)...")
-        
         languages = ["de", "cs"]
         categories = ["Jedzenie", "Pieniądze", "Emocje", "Praca", "Pogoda", "Zwierzęta", "Czas", "Ludzie"]
         
         for lang_code in languages:
             total_generated = 0
             lang_full = "niemieckim" if lang_code == "de" else "czeskim"
-            
             while total_generated < 100:
                 batch_size = 20
                 with st.spinner(f"Generuję paczkę {total_generated//batch_size + 1}/5 dla języka: {lang_code.upper()}..."):
@@ -2756,7 +2752,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         }}
                       ]
                     }}"""
-                    
                     try:
                         res_raw = get_openai_response(prompt)
                         data = json.loads(res_raw)
@@ -2764,24 +2759,86 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         if idioms:
                             get_db().table("idioms_library").upsert(idioms, on_conflict="lang,phrase").execute()
                             total_generated += len(idioms)
-                            st.toast(f"Paczka zapisana dla {lang_code.upper()}")
+                            st.toast(f"Paczka idiomów zapisana ({lang_code.upper()})")
                             time.sleep(1)
                         else: break
                     except Exception as e:
-                        st.error(f"Błąd przy paczce: {e}")
+                        st.error(f"Błąd przy paczce idiomów: {e}")
                         time.sleep(2)
                         continue
-        st.success("✅ Proces zakończony! Sprawdź bazę w panelu Supabase.")
+        st.success("✅ Baza idiomów zainicjowana!")
 
-    # --- PRZYCISKI ADMINISTRACYJNE (UKŁAD) ---
-    st.subheader("🛠️ Zarządzanie Biblioteką Idiomów")
+    # --- FUNKCJE DLA CIEKAWOSTEK (NOWOŚĆ) ---
+    def clear_cultural_trivia():
+        try:
+            get_db().table("cultural_trivia").delete().neq("id", 0).execute()
+            st.success("✅ Baza ciekawostek została wyczyszczona!")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Błąd podczas czyszczenia ciekawostek: {e}")
+
+    def seed_cultural_trivia():
+        import json
+        import time
+        st.info("🌍 Rozpoczynam generowanie 200 ciekawostek (100 o Niemczech + 100 o Czechach)...")
+        languages = ["de", "cs"]
+        
+        for lang_code in languages:
+            total_generated = 0
+            country = "Niemczech" if lang_code == "de" else "Czechach"
+            lang_full = "niemiecku" if lang_code == "de" else "czesku"
+            
+            while total_generated < 100:
+                batch_size = 20
+                with st.spinner(f"Generuję ciekawostki {total_generated//batch_size + 1}/5 dla: {lang_code.upper()}..."):
+                    prompt = f"""Wygeneruj 20 unikalnych, fascynujących ciekawostek o {country}.
+                    Tekst ciekawostki musi być napisany w języku {lang_full} (poziom B1/B2).
+                    Zwróć WYŁĄCZNIE JSON w formacie:
+                    {{
+                      "trivia": [
+                        {{
+                          "lang": "{lang_code}",
+                          "title": "Krótki tytuł PL",
+                          "content_orig": "Tekst ciekawostki w języku {lang_full} (2-3 zdania)",
+                          "content_pl": "Tłumaczenie ciekawostki na język polski",
+                          "source": "Kultura/Historia/Geografia/Styl życia"
+                        }}
+                      ]
+                    }}"""
+                    try:
+                        res_raw = get_openai_response(prompt)
+                        data = json.loads(res_raw)
+                        items = data.get("trivia", [])
+                        if items:
+                            get_db().table("cultural_trivia").insert(items).execute()
+                            total_generated += len(items)
+                            st.toast(f"Paczka ciekawostek zapisana ({lang_code.upper()})")
+                            time.sleep(1)
+                        else: break
+                    except Exception as e:
+                        st.error(f"Błąd przy paczce ciekawostek: {e}")
+                        break
+        st.success("✅ Baza ciekawostek zainicjowana!")
+
+    # --- UI: ZARZĄDZANIE DANYCH ---
+    st.subheader("🕵️ Zarządzanie Biblioteką Idiomów")
     c_id1, c_id2 = st.columns(2)
     with c_id1:
-        if st.button("🏗️ Inicjuj Bazę (200 rekordów)", use_container_width=True, type="primary"):
+        if st.button("🏗️ Inicjuj Bazę Idiomów (200)", use_container_width=True, type="primary"):
             seed_idioms_library()
     with c_id2:
-        if st.button("💣 Usuń całą bazę idiomów", use_container_width=True):
+        if st.button("💣 Usuń bazę idiomów", use_container_width=True):
             clear_idioms_library()
+
+    st.subheader("🌍 Zarządzanie Ciekawostkami")
+    c_tr1, c_tr2 = st.columns(2)
+    with c_tr1:
+        if st.button("🏗️ Inicjuj Ciekawostki (200)", use_container_width=True, type="primary"):
+            seed_cultural_trivia()
+    with c_tr2:
+        if st.button("💣 Usuń ciekawostki", use_container_width=True):
+            clear_cultural_trivia()
 
     st.divider()
     
@@ -2797,7 +2854,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     db = get_db()
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
-
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
     
     adm_list = []
@@ -2820,7 +2876,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         strong_cards = 0
         if not user_cards.empty:
             strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
-            wiedza_val = int((strong_cards / len(user_cards)) * 100)
+            wiedza_val = int((strong_cards / len(user_cards)) * 100) if len(user_cards) > 0 else 0
         else:
             wiedza_val = 0
 
@@ -2859,10 +2915,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.warning("Brak danych użytkowników.")
     else:
         df_admin = pd.DataFrame(adm_list)
-        
         st.subheader("📈 Globalny rozkład aktywności")
         total_global_study = sum(global_time.values())
-        
         if total_global_study > 0:
             analysis_rows = []
             for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]:
@@ -2871,7 +2925,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 m, _ = divmod(int(val_sec), 60)
                 h, m = divmod(m, 60)
                 time_str = f"{h}h {m}m" if h > 0 else f"{m}m"
-
                 analysis_rows.append({
                     "Moduł": display_names[code],
                     "Popularność (%)": f"{round(perc, 1)}%",
@@ -2896,16 +2949,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "PLN": st.column_config.NumberColumn("PLN", width=80, format="%.2f zł"),
             }
         )
-        
-        with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
-            detail_rows = []
-            valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
-            for _, row in df_admin.iterrows():
-                d_row = {"Użytkownik": row["Użytkownik"]}
-                for code in valid_codes:
-                    d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
-                detail_rows.append(d_row)
-            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
