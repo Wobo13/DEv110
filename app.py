@@ -519,7 +519,7 @@ if u:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
 
-# --- 6. SIDEBAR (V387 - Survival Mode Integration) ---
+# --- 6. SIDEBAR (V388 - Club & Arena Integration) ---
 with st.sidebar:
     st.markdown("""
         <style>
@@ -576,14 +576,12 @@ with st.sidebar:
     # 3. STATYSTYKI WIEDZY I CELU DNIA
     all_c = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
     
-    # Obliczanie wiedzy (słówka opanowane > 6 dni)
     wiedza = 0
     if all_c:
         today = date.today()
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
         wiedza = int((strong / len(all_c)) * 100)
 
-    # Obliczanie czasu (z dokładnością co do sekundy dla płynności paska)
     m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
     time_stats = ud.get("time_stats", {})
     total_sec = sum(time_stats.get(c, 0) for c in m_list)
@@ -591,7 +589,6 @@ with st.sidebar:
     mins_done = int(total_sec // 60)
     goal_mins = ud.get("settings", {}).get("daily_goal", 20)
 
-    # Progress Bars
     st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🧠 Wiedza ({L_CODE.upper()}): {wiedza}%</div>", unsafe_allow_html=True)
     st.progress(min(wiedza / 100, 1.0))
     
@@ -616,9 +613,10 @@ with st.sidebar:
         for item in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]:
             menu_item(item, item)
 
-    # Sekcja GRY (Z nowym trybem🎲)
-    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "🏆 Arena Wyzwań"])):
-        for item in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "🏆 Arena Wyzwań"]:
+    # Sekcja GRY (Z nowym Klubem Pojedynków)
+    list_gry = ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "⚔️ Klub Pojedynków", "🏆 Arena Wyzwań"]
+    with st.expander("🎮 Gry", expanded=(choice_now in list_gry)):
+        for item in list_gry:
             menu_item(item, item)
 
     # Sekcja BAZA SŁÓW
@@ -645,17 +643,17 @@ with st.sidebar:
             del st.session_state[key]
         st.rerun()
 
-# --- 7. START (V3.0 - Mobile First + Persistent Workshop Fix) ---
+# --- 7. START (V3.1 - Dashboard + Duel Alerts) ---
 
-# Ujednolicenie zmiennej wyboru - to klucz do poprawnego działania nawigacji
 choice = st.session_state.get("choice", "🏠 Start")
 update_activity(choice)
 
 if choice == "🏠 Start":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    u_name = st.session_state.get("user", "Anonim")
     
-    # 1. ANALIZA DANYCH BIEŻĄCYCH
+    # --- 1. ANALIZA DANYCH BIEŻĄCYCH ---
     all_cards_full = st.session_state.flashcards
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     ud = st.session_state.user_data
@@ -671,13 +669,42 @@ if choice == "🏠 Start":
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # --- NAGŁÓWEK (KOMPAKTOWY) ---
+    # --- NAGŁÓWEK ---
     hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
-    st.markdown(f"<h3 style='margin-bottom: 0px; font-size: 1.4rem;'>{hello_msg}, {str(u).capitalize()}! ☀️</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='margin-bottom: 0px; font-size: 1.4rem;'>{hello_msg}, {str(u_name).capitalize()}! ☀️</h3>", unsafe_allow_html=True)
+
+    # --- NOWOŚĆ: CENTRUM DOWODZENIA (ALERTY POJEDYNKÓW) ---
+    try:
+        db = get_db()
+        # Sprawdzamy czy są jakieś oczekujące wyzwania dla nas
+        res_pending = db.table("duels").select("challenger")\
+            .eq("opponent", u_name).eq("status", "pending").execute()
+        
+        pending_challenges = res_pending.data if res_pending.data else []
+        
+        if pending_challenges:
+            challengers = ", ".join(list(set([d['challenger'] for d in pending_challenges])))
+            st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #FF4B4B 0%, #FF8F8F 100%); 
+                            padding: 15px; border-radius: 12px; margin: 15px 0px; color: white;">
+                    <div style="display: flex; align-items: center;">
+                        <span style="font-size: 1.5rem; margin-right: 15px;">⚔️</span>
+                        <div>
+                            <b style="font-size: 1rem;">Masz nowe wyzwania!</b><br>
+                            <span style="font-size: 0.85rem; opacity: 0.9;">Wyzywa Cię: {challengers}</span>
+                        </div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("ODPOWIEDZ NA WYZWANIE ➔", use_container_width=True):
+                st.session_state.choice = "⚔️ Klub Pojedynków"
+                st.rerun()
+    except:
+        pass
 
     # --- SEKCJA 1: SŁÓWKO DNIA (SPOTLIGHT) ---
     if hard_cards:
-        # Losowanie słówka na podstawie daty (stałe przez cały dzień)
         idx_spot = int(hashlib.md5((today_str + "spot").encode()).hexdigest(), 16) % len(hard_cards)
         spot_word = hard_cards[idx_spot]
         
@@ -699,20 +726,18 @@ if choice == "🏠 Start":
     st.markdown(f"<div style='margin-top: 10px; font-weight: bold; font-size: 1.1rem;'>🏆 Zadania na dziś</div>", unsafe_allow_html=True)
     
     try:
-        db = get_db()
-        # A. ASYSTENT PISANIA: Sprawdzenie w DB
+        # A. Pisanie
         topics_for_teaser = {
             "de": ["Beschreibe deinen Morgen.", "Was są Twoje cele?", "Erzähle von deinem Hobby."],
             "cs": ["Popiš své ráno.", "Jaké są Twoje cele?", "Vyprávěj o svém koníčku."]
         }
-        # Szybkie wyliczenie dzisiejszego tematu do sprawdzenia postępu
         t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser.get(L_CODE, ["..."]))
         current_writing_topic = topics_for_teaser.get(L_CODE, ["..."])[t_idx]
         
-        res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
+        res_w = db.table("writing_history").select("id").eq("username", u_name).eq("lang", L_CODE).gte("created_at", today_str).execute()
         writing_done = len(res_w.data) > 0 if res_w.data else False
 
-        # B. KULTUROWY DETEKTYW: Sprawdzenie w DB
+        # B. Detektyw
         res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
         daily_phrase = "Brak spraw"
         if res_idioms.data:
@@ -720,7 +745,7 @@ if choice == "🏠 Start":
             daily_phrase = res_idioms.data[idx_det]['phrase']
         det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
 
-        # C. WARSZTAT: TRWAŁA LOGIKA
+        # C. Warsztat
         wrk_goal = 3
         wrk_key_day = f"{today_str}_{L_CODE}"
         mastered_today = ud.get("workshop_progress", {}).get(wrk_key_day, 0)
@@ -731,7 +756,7 @@ if choice == "🏠 Start":
         current_writing_topic = daily_phrase = "Błąd połączenia"
         mastered_today = 0
 
-    # Pasek postępu czasu
+    # Status czasu
     t_icon = "✅" if study_minutes >= daily_goal else "❌"
     st.markdown(f"<div style='font-size: 0.9rem; margin-bottom: 5px;'>{t_icon} Cel czasowy: <b>{study_minutes}/{daily_goal} m</b></div>", unsafe_allow_html=True)
 
@@ -775,7 +800,6 @@ if choice == "🏠 Start":
     col_f1.metric("Baza słów", len(all_c))
     col_f2.metric("Do powtórki", len(due_cards))
 
-    # Ostatnie słówka (podgląd)
     with st.expander("🆕 Ostatnio dodane"):
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']} ({r['pl']})")
@@ -2181,6 +2205,238 @@ elif choice == "🎲 Językowa Ruletka":
                     st.session_state.surv_state = "GAMEOVER"; st.rerun()
 
         survival_engine()
+
+# --- 19. KLUB POJEDYNKÓW (V1.0 - Neutral Ground & Async Duels) ---
+elif choice == "⚔️ Klub Pojedynków":
+    import json
+    import time
+
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    u_name = st.session_state.get("user", "Anonim")
+
+    st.markdown("<h1 style='text-align: center;'>⚔️ Klub Pojedynków</h1>", unsafe_allow_html=True)
+    
+    # --- SUB-MENU ---
+    t1, t2, t3, t4 = st.tabs(["🆕 Nowe Wyzwanie", "📥 Oczekujące", "📜 Historia", "🏆 Ranking Pojedynków"])
+
+    db = get_db()
+
+    # --- TAB 1: NOWE WYZWANIE ---
+    with t1:
+        st.subheader("Rzuć wyzwanie innemu graczowi")
+        
+        # Pobieramy listę użytkowników (bez nas samych)
+        try:
+            res_users = db.table("user_data").select("username").execute()
+            all_users = [row['username'] for row in res_users.data if row['username'] != u_name]
+            
+            col1, col2 = st.columns(2)
+            target_user = col1.selectbox("Wybierz przeciwnika:", all_users)
+            duel_level = col2.selectbox("Poziom trudności:", ["A1", "A2", "B1", "B2", "C1"])
+
+            if st.button("🚀 Zainicjuj Pojedynek", use_container_width=True):
+                # Losowanie 10 słówek z master_vocab (Neutral Ground)
+                res_vocab = db.table("master_vocab").select("id, word, translation")\
+                    .eq("lang", L_CODE).eq("level", duel_level).limit(30).execute()
+                
+                if len(res_vocab.data) < 10:
+                    st.error(f"Baza 'master_vocab' ma za mało słówek dla {L_CODE} na poziomie {duel_level} (wymagane 10).")
+                else:
+                    selected_vocab = random.sample(res_vocab.data, 10)
+                    # Zapisujemy ID słówek do sesji i odpalamy quiz
+                    st.session_state.duel_setup = {
+                        "opponent": target_user,
+                        "level": duel_level,
+                        "vocab": selected_vocab,
+                        "word_ids": [v['id'] for v in selected_vocab]
+                    }
+                    st.session_state.duel_step = 0
+                    st.session_state.duel_score = 0
+                    st.session_state.duel_start_time = time.time()
+                    st.rerun()
+        except Exception as e:
+            st.error(f"Błąd inicjacji: {e}")
+
+        # LOGIKA QUIZU DLA WYZYWAJĄCEGO
+        if "duel_setup" in st.session_state:
+            setup = st.session_state.duel_setup
+            st.divider()
+            st.warning(f"**TRWA POJEDYNEK:** Wyzwałeś {setup['opponent']} (Poziom {setup['level']})")
+            
+            current_idx = st.session_state.duel_step
+            if current_idx < 10:
+                word_obj = setup['vocab'][current_idx]
+                st.write(f"Słowo {current_idx + 1}/10: **{word_obj['word']}**")
+                
+                # Prosty quiz 4-opcyjny
+                correct = word_obj['translation']
+                others = [v['translation'] for v in setup['vocab'] if v['id'] != word_obj['id']]
+                opts = random.sample(others, 3) + [correct]
+                random.shuffle(opts)
+                
+                cols = st.columns(2)
+                for i, o in enumerate(opts):
+                    if cols[i%2].button(o, key=f"duel_btn_{i}"):
+                        if o == correct: st.session_state.duel_score += 1
+                        st.session_state.duel_step += 1
+                        st.rerun()
+            else:
+                # KONIEC POJEDYNKU (GRACZ A)
+                total_time = round(time.time() - st.session_state.duel_start_time, 2)
+                final_score = st.session_state.duel_score
+                
+                # Zapis do tabeli duels
+                db.table("duels").insert({
+                    "challenger": u_name,
+                    "opponent": setup['opponent'],
+                    "lang": L_CODE,
+                    "level": setup['level'],
+                    "word_ids": setup['word_ids'],
+                    "score_challenger": final_score,
+                    "time_challenger": total_time,
+                    "status": "pending"
+                }).execute()
+                
+                st.success(f"Wynik zapisany! {final_score}/10 w czasie {total_time}s. Czekamy na ruch {setup['opponent']}.")
+                del st.session_state.duel_setup
+                if st.button("Powrót"): st.rerun()
+
+    # --- TAB 2: OCZEKUJĄCE (Dla gracza wyzwanego) ---
+    with t2:
+        try:
+            res_pending = db.table("duels").select("*").eq("opponent", u_name).eq("status", "pending").execute()
+            if not res_pending.data:
+                st.info("Nie masz obecnie żadnych nowych wyzwań. Sam kogoś wyzwij!")
+            else:
+                for duel in res_pending.data:
+                    with st.expander(f"✉️ Wyzwanie od: {duel['challenger']} ({duel['level']})"):
+                        st.write(f"Język: **{duel['lang'].upper()}** | Poziom: **{duel['level']}**")
+                        c1, c2 = st.columns(2)
+                        
+                        if c1.button("✅ Akceptuj", key=f"acc_{duel['id']}"):
+                            # Pobieramy konkretne słówka, które miał wyzywający
+                            vocab_ids = duel['word_ids']
+                            res_v = db.table("master_vocab").select("*").in_("id", vocab_ids).execute()
+                            
+                            st.session_state.active_duel = duel
+                            st.session_state.active_vocab = res_v.data
+                            st.session_state.active_step = 0
+                            st.session_state.active_score = 0
+                            st.session_state.active_start_time = time.time()
+                            st.rerun()
+                            
+                        if c2.button("❌ Odrzuć", key=f"dec_{duel['id']}"):
+                            db.table("duels").update({"status": "declined"}).eq("id", duel['id']).execute()
+                            st.rerun()
+
+            # LOGIKA QUIZU DLA WYZWANEGO
+            if "active_duel" in st.session_state:
+                ad = st.session_state.active_duel
+                av = st.session_state.active_vocab
+                st.divider()
+                st.error(f"**ODPOWIADASZ NA WYZWANIE:** {ad['challenger']} (Poziom {ad['level']})")
+                
+                curr_idx = st.session_state.active_step
+                if curr_idx < 10:
+                    w_obj = av[curr_idx]
+                    st.write(f"Słowo {curr_idx + 1}/10: **{w_obj['word']}**")
+                    correct = w_obj['translation']
+                    others = [v['translation'] for v in av if v['id'] != w_obj['id']]
+                    opts = random.sample(others, 3) + [correct]
+                    random.shuffle(opts)
+                    
+                    cols = st.columns(2)
+                    for i, o in enumerate(opts):
+                        if cols[i%2].button(o, key=f"active_btn_{i}"):
+                            if o == correct: st.session_state.active_score += 1
+                            st.session_state.active_step += 1
+                            st.rerun()
+                else:
+                    # KONIEC - ROZSTRZYGNIĘCIE
+                    t_opp = round(time.time() - st.session_state.active_start_time, 2)
+                    s_opp = st.session_state.active_score
+                    
+                    # Logika zwycięstwa
+                    winner = ""
+                    s_chall = ad['score_challenger']
+                    t_chall = ad['time_challenger']
+                    
+                    if s_opp > s_chall: winner = u_name
+                    elif s_chall > s_opp: winner = ad['challenger']
+                    else: # Remis w punktach -> decyduje czas
+                        winner = u_name if t_opp < t_chall else ad['challenger']
+                    
+                    # Aktualizacja tabeli duels
+                    db.table("duels").update({
+                        "score_opponent": s_opp,
+                        "time_opponent": t_opp,
+                        "status": "finished",
+                        "winner": winner
+                    }).eq("id", ad['id']).execute()
+                    
+                    # --- AKTUALIZACJA RANKINGU (user_data) ---
+                    def update_points(user, pts, is_win):
+                        curr = db.table("user_data").select("duel_points, duel_wins, duel_losses").eq("username", user).execute().data[0]
+                        new_pts = curr.get('duel_points', 0) + pts
+                        new_wins = curr.get('duel_wins', 0) + (1 if is_win else 0)
+                        new_losses = curr.get('duel_losses', 0) + (0 if is_win or pts == 2 else 1)
+                        db.table("user_data").update({
+                            "duel_points": new_pts, 
+                            "duel_wins": new_wins,
+                            "duel_losses": new_losses
+                        }).eq("username", user).execute()
+
+                    if winner == u_name:
+                        update_points(u_name, 10, True)
+                        update_points(ad['challenger'], 0, False)
+                        st.balloons(); st.success("WYGRAŁEŚ! Zyskujesz 10 pkt rankingowych!")
+                    elif winner == ad['challenger']:
+                        update_points(u_name, 0, False)
+                        update_points(ad['challenger'], 10, True)
+                        st.error("Przegrałeś tym razem. Trenuj dalej!")
+                    else: # Teoretyczny remis (identyczny czas i punkty)
+                        update_points(u_name, 2, False); update_points(ad['challenger'], 2, False)
+                        st.warning("REMIS! Obaj dostajecie po 2 pkt.")
+
+                    del st.session_state.active_duel
+                    if st.button("Zamknij"): st.rerun()
+
+        except Exception as e:
+            st.error(f"Błąd odbierania: {e}")
+
+    # --- TAB 3: HISTORIA ---
+    with t3:
+        res_hist = db.table("duels").select("*")\
+            .or_(f"challenger.eq.{u_name},opponent.eq.{u_name}")\
+            .order("created_at", desc=True).limit(10).execute()
+        
+        if res_hist.data:
+            for d in res_hist.data:
+                icon = "🏆" if d['winner'] == u_name else "💀" if d['winner'] else "⏳"
+                res_str = f"{d['score_challenger']} vs {d['score_opponent']}" if d['status'] == 'finished' else "W toku"
+                st.write(f"{icon} **{d['challenger']}** vs **{d['opponent']}** ({d['level']}) — Wynik: {res_str} [{d['status']}]")
+        else:
+            st.caption("Brak historii pojedynków.")
+
+    # --- TAB 4: RANKING POJEDYNKÓW ---
+    with t4:
+        st.subheader("Mistrzowie Klubu Pojedynków")
+        res_rank = db.table("user_data").select("username, duel_points, duel_wins")\
+            .order("duel_points", desc=True).limit(10).execute()
+        
+        if res_rank.data:
+            df_rank = pd.DataFrame(res_rank.data)
+            df_rank.columns = ["Użytkownik", "Punkty ⚔️", "Zwycięstwa"]
+            
+            # Dodawanie medali
+            medals = ["🥇", "🥈", "🥉"]
+            new_idx = []
+            for i in range(len(df_rank)):
+                if i < 3: new_idx.append(f"{medals[i]} {i+1}")
+                else: new_idx.append(str(i+1))
+            df_rank.index = new_idx
+            st.table(df_rank)
 
 # --- 20. ARENA WYZWAŃ (V2.9 - Syntax Fix & Final) ---
 elif choice == "🏆 Arena Wyzwań":
