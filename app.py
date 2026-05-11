@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
+# --- 8. POWTÓRKI & TRENING (V265 - Fix SyntaxError + Multilang + Audio Examples) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -820,7 +820,23 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                if auto_audio: play_audio(c['de'], lang=L_CODE)
+                # --- POBIERANIE I WYŚWIETLANIE PRZYKŁADU ---
+                exs = c.get("examples", [])
+                ex_foreign = None
+                ex_pl = None
+                
+                if exs and isinstance(exs, list) and len(exs) > 0:
+                    ex_foreign = exs[0].get("de")
+                    ex_pl = exs[0].get("pl")
+                elif c.get('example'): # Fallback dla starych danych
+                    ex_foreign = c['example']
+
+                if ex_foreign:
+                    st.info(f"📖 **Przykład:** {ex_foreign}" + (f"\n\n🇵🇱 *{ex_pl}*" if ex_pl else ""))
+                
+                # --- ODTWARZANIE AUDIO (Słowo + Pauza + Przykład) ---
+                if auto_audio: 
+                    play_audio(c['de'], ex_foreign, lang=L_CODE)
 
                 st.divider()
                 if is_r:
@@ -843,7 +859,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
-                        # POPRAWKA del:
+                        
                         if dir_key in st.session_state: 
                             del st.session_state[dir_key]
                             
@@ -853,7 +869,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                     if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
-                        # POPRAWKA del:
+                        
                         if dir_key in st.session_state: 
                             del st.session_state[dir_key]
                             
