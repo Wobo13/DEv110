@@ -1792,14 +1792,14 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
 
 
-# --- 16. BALONOWY WYŚCIG (V315 - Performance Edition) ---
+# --- 16. BALONOWY WYŚCIG (V316 - Auto-Save Records Fix) ---
 elif choice == "🎈 Balonowy Wyścig":
     import time
     
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. CSS wczytujemy raz (poza fragmentem)
+    # 1. CSS
     st.markdown("""
         <style>
             .target-card {
@@ -1827,7 +1827,7 @@ elif choice == "🎈 Balonowy Wyścig":
         </style>
     """, unsafe_allow_html=True)
 
-    # Przygotowanie danych (raz)
+    # Przygotowanie danych
     if "bal_cards_pool" not in st.session_state or st.session_state.get("bal_lang_ref") != L_CODE:
         st.session_state.bal_cards_pool = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
         st.session_state.bal_lang_ref = L_CODE
@@ -1852,28 +1852,46 @@ elif choice == "🎈 Balonowy Wyścig":
         elif st.session_state.bal_state == "FINISHED":
             st.balloons()
             st.markdown(f"<div style='text-align:center;'><h1>Koniec! 🏁</h1><h2>Wynik: {st.session_state.bal_score} pkt</h2></div>", unsafe_allow_html=True)
+            
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🔄 Jeszcze raz", use_container_width=True):
                     st.session_state.bal_state = "START"; st.rerun()
             with col2:
-                if st.button("🚪 Wyjdź", use_container_width=True):
-                    st.session_state.bal_state = "START"; st.rerun()
+                if st.button("🏠 Powrót", use_container_width=True):
+                    st.session_state.choice = "🏠 Start"; st.rerun()
 
         # --- EKRAN GRY (Zoptymalizowany Fragment) ---
         elif st.session_state.bal_state == "PLAYING":
             
-            # MAGIA: Ten dekorator sprawia, że odświeża się TYLKO ten blok
             @st.fragment(run_every="1s") 
             def game_fragment():
                 elapsed = time.time() - st.session_state.bal_start_time
                 time_left = max(0, int(30 - elapsed))
 
+                # --- LOGIKA ZAPISU (WYKONYWANA RAZ PRZY KOŃCU CZASU) ---
                 if time_left <= 0:
+                    final_score = st.session_state.bal_score
+                    ud = st.session_state.user_data
+                    bal_key = f"top_balloons_{L_CODE}"
+                    
+                    # Pobranie obecnej listy wyników
+                    current_scores = ud.get(bal_key, [])
+                    if not isinstance(current_scores, list): current_scores = []
+                    
+                    # Dodanie nowego wyniku, sortowanie od najwyższego i zachowanie top 10
+                    current_scores.append(final_score)
+                    current_scores = sorted([int(s) for s in current_scores], reverse=True)[:10]
+                    
+                    # Zapis do profilu i do bazy
+                    ud[bal_key] = current_scores
+                    save_user_data(u, ud)
+                    
+                    # Zmiana stanu i wyjście z fragmentu
                     st.session_state.bal_state = "FINISHED"
                     st.rerun()
 
-                # Losowanie (jeśli trzeba)
+                # Losowanie celu
                 if "bal_target" not in st.session_state:
                     pool = st.session_state.bal_cards_pool
                     target = random.choice(pool)
@@ -1884,24 +1902,21 @@ elif choice == "🎈 Balonowy Wyścig":
                     st.session_state.bal_target = target
                     st.session_state.bal_options = options
 
-                # UI
+                # Interfejs
                 st.markdown(f"<div style='display:flex; justify-content:space-between; font-weight:bold; font-size:1.5rem;'><span>⏱️ {time_left}s</span><span style='color:#ffbc00;'>⭐ {st.session_state.bal_score}</span></div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='target-card'>{st.session_state.bal_target[L_CODE]}</div>", unsafe_allow_html=True)
 
                 cols = st.columns(3)
                 for i, opt in enumerate(st.session_state.bal_options):
-                    with cols[i]:
-                        # Kliknięcie wewnątrz fragmentu jest błyskawiczne
-                        if st.button(opt, key=f"bal_btn_{i}", use_container_width=True):
-                            if opt == st.session_state.bal_target['pl']:
-                                st.session_state.bal_score += 1
-                            else:
-                                st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
-                            
-                            del st.session_state.bal_target
-                            st.rerun()
+                    if cols[i].button(opt, key=f"bal_btn_{i}", use_container_width=True):
+                        if opt == st.session_state.bal_target['pl']:
+                            st.session_state.bal_score += 1
+                        else:
+                            st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
+                        
+                        del st.session_state.bal_target
+                        st.rerun()
 
-            # Uruchomienie fragmentu
             game_fragment()
             
 # --- 20. ARENA WYZWAŃ (V2.2 - Professional Index Fix & Medals) ---
