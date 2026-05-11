@@ -381,7 +381,7 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V258 - Total Persistence & Fixed Mapping) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V259 - Ruletka & Target Mapping Fix) ---
 
 u = st.session_state.get("user")
 
@@ -458,8 +458,9 @@ def update_activity(current_choice):
             "memory": "Mem", 
             "warsztat": "War", 
             "konstruktor": "Kon",
-            "waz": "Wan",       # lingwistyczny waz (po normalizacji)
-            "wyscig": "Bal",    # balonowy wyscig (po normalizacji)
+            "waz": "Wan", 
+            "wyscig": "Bal", 
+            "ruletka": "Sur",    # NOWOŚĆ: Językowa Ruletka
             "asystent": "Wri", 
             "detektyw": "Det", 
             "laborat": "Lab", 
@@ -481,9 +482,9 @@ def update_activity(current_choice):
             curr_dict[label] = float(curr_dict.get(label, 0.0)) + delta
             ud[stat_key] = curr_dict
 
-        # 2. SPRAWDZANIE CELU DNIA (Suma sekund z ważnych modułów)
-        # Te kody muszą być identyczne jak w sidebarze (m_list)
-        target_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
+        # 2. SPRAWDZANIE CELU DNIA (Suma sekund z ważnych modułów nauki)
+        # Dodano 'Sur' (Ruletka) do listy modułów naliczających cel
+        target_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur"]
         total_sec_today = sum(ud["time_stats"].get(code, 0) for code in target_modules)
         
         goal_min = ud.get("settings", {}).get("daily_goal", 20)
@@ -494,7 +495,7 @@ def update_activity(current_choice):
             ud["last_date"] = today_str # Blokada ponownego naliczenia dzisiaj
             st.toast(f"🔥 Cel dnia osiągnięty! Twoja passa: {ud['streak']} dni", icon="🚀")
 
-        # 3. Zapis zmian
+        # 3. Zapis zmian do session_state i bazy
         st.session_state.user_data = ud
         save_user_data(u, ud)
 
@@ -502,7 +503,7 @@ def update_activity(current_choice):
 
 # --- INICJALIZACJA SESJI ---
 if u:
-    # Pobierz dane przy wejściu (jeśli brak)
+    # Pobierz dane przy wejściu (jeśli brak w sesji)
     if "user_data" not in st.session_state:
         st.session_state.user_data = load_user_data(u)
         st.session_state.flashcards = load_flashcards(u)
@@ -518,7 +519,7 @@ if u:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
 
-# --- 6. SIDEBAR (V386 - Total Synchronization & Smooth Progress) ---
+# --- 6. SIDEBAR (V387 - Survival Mode Integration) ---
 with st.sidebar:
     st.markdown("""
         <style>
@@ -610,14 +611,17 @@ with st.sidebar:
     choice_now = st.session_state.get("choice", "🏠 Start")
     menu_item("🏠 Start", "🏠 Start")
 
+    # Sekcja NAUKA
     with st.expander("📚 Nauka", expanded=(choice_now in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"])):
         for item in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]:
             menu_item(item, item)
 
-    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"])):
-        for item in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🏆 Arena Wyzwań"]:
+    # Sekcja GRY (Z nowym trybem🎲)
+    with st.expander("🎮 Gry", expanded=(choice_now in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "🏆 Arena Wyzwań"])):
+        for item in ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "🏆 Arena Wyzwań"]:
             menu_item(item, item)
 
+    # Sekcja BAZA SŁÓW
     with st.expander("🗂️ Baza słów", expanded=(choice_now in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"])):
         for item in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"]:
             menu_item(item, item)
@@ -1982,28 +1986,207 @@ elif choice == "🎈 Balonowy Wyścig":
                         st.rerun()
 
             game_fragment()
+
+
+# --- 17. JĘZYKOWA RULETKA (V1.0 - Sudden Death Edition) ---
+elif choice == "🎲 Językowa Ruletka":
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🎲 Językowa Ruletka: {current_lang_name}")
+    st.markdown("""
+        <style>
+            .survival-card {
+                background: #111;
+                border: 4px solid #ff4b4b;
+                border-radius: 25px;
+                padding: 30px;
+                text-align: center;
+                margin-bottom: 20px;
+                box-shadow: 0 10px 30px rgba(255, 75, 75, 0.2);
+            }
+            .stat-box {
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: #ff4b4b;
+                text-align: center;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # 1. PRZYGOTOWANIE BAZY
+    all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    
+    if len(all_c) < 10:
+        st.warning(f"Dodaj przynajmniej 10 słówek w języku {current_lang_name}, aby odblokować Ruletkę.")
+        st.stop()
+
+    # 2. FUNKCJE POMOCNICZE (Rodzajniki)
+    def extract_gender(word, lang):
+        w = word.lower().strip()
+        if lang == "de":
+            if w.startswith("der "): return "der", word[4:]
+            if w.startswith("die "): return "die", word[4:]
+            if w.startswith("das "): return "das", word[4:]
+        else:
+            if w.startswith("ten "): return "ten", word[4:]
+            if w.startswith("ta "): return "ta", word[3:]
+            if w.startswith("to "): return "to", word[3:]
+        return None, word
+
+    # 3. INICJALIZACJA STANU GRY
+    if "surv_state" not in st.session_state or st.session_state.get("surv_lang_ref") != L_CODE:
+        st.session_state.surv_state = "START"
+        st.session_state.surv_score = 0
+        st.session_state.surv_lang_ref = L_CODE
+
+    # --- EKRAN STARTOWY ---
+    if st.session_state.surv_state == "START":
+        st.info("⚠️ **ZASADY:** Odpowiadaj poprawnie na kolejne pytania. Jeden błąd kończy grę. Wyzwania stają się trudniejsze wraz z Twoim postępem!")
+        if st.button("🔥 ROZPOCZNIJ PRZETRWANIE", use_container_width=True, type="primary"):
+            st.session_state.surv_state = "PLAYING"
+            st.session_state.surv_score = 0
+            if "surv_task" in st.session_state: del st.session_state.surv_task
+            st.rerun()
+
+    # --- EKRAN GAMEOVER ---
+    elif st.session_state.surv_state == "GAMEOVER":
+        st.error(f"### 💀 KONIEC GRY!")
+        st.markdown(f"<div class='stat-box'>TWÓJ WYNIK: {st.session_state.surv_score}</div>", unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        if col1.button("🔄 Spróbuj ponownie", use_container_width=True, type="primary"):
+            st.session_state.surv_state = "START"; st.rerun()
+        if col2.button("🏆 Zobacz Arenę", use_container_width=True):
+            st.session_state.choice = "🏆 Arena Wyzwań"; st.rerun()
+
+    # --- EKRAN GRY ---
+    elif st.session_state.surv_state == "PLAYING":
+        
+        @st.fragment
+        def survival_engine():
+            # GENEROWANIE ZADANIA (jeśli brak)
+            if "surv_task" not in st.session_state:
+                word = random.choice(all_c)
+                score = st.session_state.surv_score
+                
+                # Progresywna trudność
+                if score < 5:
+                    mode = "QUIZ"
+                elif score < 12:
+                    mode = random.choice(["QUIZ", "QUIZ", "LAB", "WRITE"])
+                else:
+                    mode = random.choice(["QUIZ", "LAB", "WRITE", "WRITE"])
+                
+                # Zabezpieczenie dla trybu LAB (czy słowo ma rodzajnik)
+                gender, clean = extract_gender(word['de'], L_CODE)
+                if mode == "LAB" and not gender: mode = "QUIZ"
+                
+                task = {"word": word, "mode": mode, "gender": gender, "clean": clean}
+                
+                # Przygotowanie opcji dla Quizu
+                if mode == "QUIZ":
+                    others = [x['pl'] for x in all_c if x['id'] != word['id']]
+                    opts = random.sample(others, min(len(others), 3)) + [word['pl']]
+                    random.shuffle(opts)
+                    task["opts"] = opts
+                
+                st.session_state.surv_task = task
+
+            # INTERFEJS
+            t = st.session_state.surv_task
+            st.markdown(f"<div style='text-align:right; font-weight:bold; color:#ff4b4b;'>SERIA: {st.session_state.surv_score} 🔥</div>", unsafe_allow_html=True)
             
-# --- 20. ARENA WYZWAŃ (V2.3 - Games on Top + Global Knowledge Leaderboard) ---
+            # Karta pytania
+            st.markdown(f"""
+                <div class="survival-card">
+                    <div style="color:#888; font-size:0.8rem; text-transform:uppercase; margin-bottom:10px;">
+                        Tryb: {t['mode']}
+                    </div>
+                    <div style="font-size:2.5rem; font-weight:bold; color:white;">
+                        {t['word']['de'] if t['mode'] != 'LAB' else t['clean']}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # OBSŁUGA ODPOWIEDZI
+            user_ans = None
+            
+            if t['mode'] == "QUIZ":
+                cols = st.columns(2)
+                for i, o in enumerate(t['opts']):
+                    if cols[i%2].button(o, key=f"surv_q_{i}", use_container_width=True):
+                        user_ans = (o == t['word']['pl'])
+
+            elif t['mode'] == "LAB":
+                options = ["DER", "DIE", "DAS"] if L_CODE == "de" else ["TEN", "TA", "TO"]
+                cols = st.columns(3)
+                for i, o in enumerate(options):
+                    if cols[i].button(o, key=f"surv_l_{i}", use_container_width=True):
+                        user_ans = (o.lower() == t['gender'])
+
+            elif t['mode'] == "WRITE":
+                with st.form("surv_w_form", clear_on_submit=True):
+                    st.write("Wpisz tłumaczenie na polski:")
+                    u_txt = st.text_input("Odpowiedź...").strip().lower()
+                    if st.form_submit_button("ZATWIERDŹ", use_container_width=True):
+                        # Tolerancyjne sprawdzanie (używamy Twojej logiki z sekcji 8)
+                        correct_synonyms = [normalize_text(s) for s in re.split(r'[/,;]', t['word']['pl'])]
+                        user_ans = normalize_text(u_txt) in correct_synonyms
+
+            # WALIDACJA WYNIKU
+            if user_ans is not None:
+                if user_ans:
+                    st.session_state.surv_score += 1
+                    # Globalne statystyki
+                    ud = st.session_state.user_data
+                    ud["survival_total_words"] = ud.get("survival_total_words", 0) + 1
+                    del st.session_state.surv_task
+                    st.toast("Dobrze! +1", icon="✅")
+                    st.rerun(scope="fragment")
+                else:
+                    # KONIEC GRY - ZAPIS REKORDU
+                    final_score = st.session_state.surv_score
+                    ud = st.session_state.user_data
+                    surv_key = f"survival_scores_{L_CODE}"
+                    
+                    # Pobierz historię, dodaj nowy wynik, posortuj top 10
+                    scores = ud.get(surv_key, [])
+                    if not isinstance(scores, list): scores = []
+                    scores.append(final_score)
+                    scores = sorted([int(s) for s in scores], reverse=True)[:10]
+                    
+                    ud[surv_key] = scores
+                    ud["survival_total_games"] = ud.get("survival_total_games", 0) + 1
+                    
+                    save_user_data(u, ud)
+                    st.session_state.surv_state = "GAMEOVER"
+                    st.rerun()
+
+        survival_engine()
+
+# --- 20. ARENA WYZWAŃ (V2.4 - Full Games Leaderboard + Knowledge) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
-    u_name = st.session_state.get("user", "Anonim") # Używamy 'user' z session_state
+    u_name = st.session_state.get("user", "Anonim") 
     
     st.markdown(f"<h1 style='text-align: center;'>🏆 Arena Wyzwań</h1>", unsafe_allow_html=True)
     st.markdown(f"<p style='text-align: center;'>Język rankingu: <b>{current_lang_name}</b></p>", unsafe_allow_html=True)
 
-    # 1. POBIERANIE DANYCH (Profilowe + Karty wszystkich użytkowników dla Wiedzy)
+    # 1. POBIERANIE DANYCH (Rozszerzone o Ruletkę i Węża)
     try:
         db = get_db()
-        # Pobieramy dane o profilach
-        res_users = db.table("user_data").select("username, streak, memory_scores_de, memory_scores_cs, top_balloons_de, top_balloons_cs").execute()
+        # Pobieramy dane o profilach z nowymi kolumnami
+        res_users = db.table("user_data").select(
+            f"username, streak, snake_best_chain, memory_scores_{L_CODE}, top_balloons_{L_CODE}, survival_scores_{L_CODE}"
+        ).execute()
         raw_users = res_users.data if res_users.data else []
         
         # Pobieramy dane o kartach wszystkich, aby wyliczyć ich wiedzę %
         res_cards = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute()
         all_cards_global = res_cards.data if res_cards.data else []
         
-        # Agregacja kart per użytkownik
         cards_per_user = {}
         for c in all_cards_global:
             un = c['username']
@@ -2022,7 +2205,7 @@ elif choice == "🏆 Arena Wyzwań":
         uname = u_row.get("username", "Anonim")
         streak = u_row.get("streak", 0)
         
-        # Obliczanie Wiedzy dla każdego użytkownika w pętli
+        # Obliczanie Wiedzy
         user_cards = cards_per_user.get(uname, [])
         w_raw = 0
         wiedza_str = "0%"
@@ -2039,7 +2222,9 @@ elif choice == "🏆 Arena Wyzwań":
             "Wiedza 🧠": wiedza_str,
             "w_raw": w_raw,
             "memory": u_row.get(f"memory_scores_{L_CODE}", []),
-            "balloons": u_row.get(f"top_balloons_{L_CODE}", [])
+            "balloons": u_row.get(f"top_balloons_{L_CODE}", []),
+            "survival": u_row.get(f"survival_scores_{L_CODE}", []),
+            "snake_best": u_row.get("snake_best_chain", 0)
         })
 
     # FUNKCJA POMOCNICZA DO MEDALI
@@ -2059,9 +2244,11 @@ elif choice == "🏆 Arena Wyzwań":
     if not leaderboard_data:
         st.info("Ranking jest pusty.")
     else:
-        # --- [SEKCJA GÓRNA] REKORDY GIER ---
+        # --- [SEKCJA GÓRNA] REKORDY GIER (Rozszerzona) ---
         st.subheader("🎮 Rekordy Gier")
-        t_mem, t_bal = st.tabs(["⏱️ Memory (Najlepsze czasy)", "🎈 Balony (Najwyższe wyniki)"])
+        t_mem, t_bal, t_surv, t_snake = st.tabs([
+            "⏱️ Memory", "🎈 Balony", "🎲 Ruletka", "🐍 Wąż"
+        ])
 
         with t_mem:
             mem_rank = []
@@ -2075,11 +2262,9 @@ elif choice == "🏆 Arena Wyzwań":
             
             if mem_rank:
                 df_m = pd.DataFrame(mem_rank).sort_values("val", ascending=True).head(10)
-                df_m = df_m.reset_index(drop=True)
-                df_m = assign_medals(df_m)
+                df_m = assign_medals(df_m.reset_index(drop=True))
                 st.table(df_m[["Użytkownik", "Rekord"]])
-            else:
-                st.caption("Brak rekordów w Memory.")
+            else: st.caption("Brak rekordów.")
 
         with t_bal:
             bal_rank = []
@@ -2093,11 +2278,41 @@ elif choice == "🏆 Arena Wyzwań":
             
             if bal_rank:
                 df_b = pd.DataFrame(bal_rank).sort_values("val", ascending=False).head(10)
-                df_b = df_b.reset_index(drop=True)
-                df_b = assign_medals(df_b)
+                df_b = assign_medals(df_b.reset_index(drop=True))
                 st.table(df_b[["Użytkownik", "Rekord"]])
-            else:
-                st.caption("Brak rekordów w Balonach.")
+            else: st.caption("Brak rekordów.")
+
+        with t_surv:
+            surv_rank = []
+            for entry in leaderboard_data:
+                scores = entry["survival"]
+                if scores and isinstance(scores, list):
+                    v_scores = [int(s) for s in scores if str(s).isdigit()]
+                    if v_scores:
+                        best = max(v_scores)
+                        surv_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best} poprawnych", "val": best})
+            
+            if surv_rank:
+                df_sv = pd.DataFrame(surv_rank).sort_values("val", ascending=False).head(10)
+                df_sv = assign_medals(df_sv.reset_index(drop=True))
+                st.table(df_sv[["Użytkownik", "Rekord"]])
+            else: st.caption("Brak rekordów w Ruletce.")
+
+        with t_snake:
+            snake_rank = []
+            for entry in leaderboard_data:
+                if entry["snake_best"] > 0:
+                    snake_rank.append({
+                        "Użytkownik": entry["Użytkownik"], 
+                        "Rekord": f"{entry['snake_best']} słów", 
+                        "val": entry["snake_best"]
+                    })
+            
+            if snake_rank:
+                df_sn = pd.DataFrame(snake_rank).sort_values("val", ascending=False).head(10)
+                df_sn = assign_medals(df_sn.reset_index(drop=True))
+                st.table(df_sn[["Użytkownik", "Rekord"]])
+            else: st.caption("Brak rekordów w Węża.")
 
         st.divider()
 
@@ -2107,28 +2322,24 @@ elif choice == "🏆 Arena Wyzwań":
         with col1:
             st.subheader("🔥 Top 10: Passa (Streak)")
             df_s = pd.DataFrame(leaderboard_data).sort_values("Ogień 🔥", ascending=False).head(10)
-            df_s = df_s.reset_index(drop=True)
-            df_s = assign_medals(df_s)
+            df_s = assign_medals(df_s.reset_index(drop=True))
             st.table(df_s[["Użytkownik", "Ogień 🔥"]])
             
         with col2:
             st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
-            # Filtrujemy użytkowników, którzy mają jakiekolwiek słówka
             df_w = pd.DataFrame(leaderboard_data)
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
             
             if not df_w.empty:
-                df_w = df_w.reset_index(drop=True)
-                df_w = assign_medals(df_w)
+                df_w = assign_medals(df_w.reset_index(drop=True))
                 st.table(df_w[["Użytkownik", "Wiedza 🧠"]])
-            else:
-                st.caption("Brak danych o postępach.")
+            else: st.caption("Brak danych o postępach.")
 
         # Podświetlenie pozycji aktualnego gracza
         st.write("---")
         my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
         if my_stats:
-            st.info(f"Twoja aktualna wiedza w języku {current_lang_name} to **{my_stats['Wiedza 🧠']}**, a Twoja passa wynosi **{my_stats['Ogień 🔥']} dni**. Powodzenia!")
+            st.info(f"Twoja aktualna wiedza ({current_lang_name}): **{my_stats['Wiedza 🧠']}** | Twoja passa: **{my_stats['Ogień 🔥']} dni**. Powodzenia!")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
@@ -2621,21 +2832,19 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V238 - Live Database Fetch Fix) ---
+# --- 25. STATYSTYKI (V239 - Survival Records & Module Mapping Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📊 Statystyki: {current_lang_name}")
 
-    # --- KROK 1: BEZPOŚREDNIE POBRANIE DANYCH Z BAZY (JAK W ARENIE) ---
-    # To omija cache sesji i pobiera to, co pokazałeś na screenie
+    # --- KROK 1: BEZPOŚREDNIE POBRANIE DANYCH Z BAZY ---
     try:
         db = get_db()
         res = db.table("user_data").select("*").eq("username", u).execute()
         if res.data:
             fresh_ud = res.data[0]
-            # Aktualizujemy session_state, aby reszta apki też widziała zmiany
             st.session_state.user_data = fresh_ud
             ud = fresh_ud
         else:
@@ -2661,37 +2870,28 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
-        # --- 2. REKORDY GIER ---
+        # --- 2. REKORDY GIER (Z DODANĄ RULETKĄ) ---
         st.subheader("🏆 Moje Rekordy w Grach")
-        t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Lingwistyczny Wąż"])
+        t_mem, t_bal, t_snake, t_surv = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Wąż", "🎲 Językowa Ruletka"])
         
         with t_mem:
-            # POBIERANIE DOKŁADNIE Z KOLUMNY memory_scores_de / memory_scores_cs
             mem_key = f"memory_scores_{L_CODE}"
             mem_scores = ud.get(mem_key, [])
-            
-            # Obsługa formatu listy z Twojego screena (jsonb)
             if mem_scores and isinstance(mem_scores, list):
-                # Konwersja na liczby i wybór 3 najniższych czasów
                 valid_scores = []
                 for s in mem_scores:
                     try: valid_scores.append(float(s))
                     except: pass
-                
                 top3_mem = sorted(valid_scores)[:3]
-                
                 if top3_mem:
                     m_cols = st.columns(3)
                     icons = ["🥇", "🥈", "🥉"]
                     for i, score in enumerate(top3_mem):
                         m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
-                else:
-                    st.info("Brak poprawnych rekordów.")
-            else:
-                st.info(f"Zagraj w Memory, aby ustanowić rekord!")
+                else: st.info("Brak poprawnych rekordów.")
+            else: st.info(f"Zagraj w Memory, aby ustanowić rekord!")
 
         with t_bal:
-            # Logika Balonów (zgodnie z prośbą - bez zmian)
             bal_key = f"top_balloons_{L_CODE}"
             bal_scores = ud.get(bal_key, [])
             if bal_scores and isinstance(bal_scores, list):
@@ -2705,30 +2905,51 @@ elif choice == "📊 Statystyki":
             else: st.info("Brak rekordów.")
 
         with t_snake:
-            # Logika Węża (zgodnie z prośbą - bez zmian)
             s_max = ud.get("snake_best_chain", 0)
             s_wins = ud.get("snake_wins", 0)
             s_loss = ud.get("snake_losses", 0)
-            
             s_c1, s_c2, s_c3 = st.columns(3)
             s_c1.metric("Najdłuższa seria", f"{s_max} słów")
             s_c2.metric("Wygrane", f"{s_wins}")
             s_c3.metric("Przegrane", f"{s_loss}")
-            
             if s_wins + s_loss > 0:
                 win_rate = int((s_wins / (s_wins + s_loss)) * 100)
                 st.caption(f"Skuteczność: {win_rate}%")
 
+        with t_surv:
+            surv_key = f"survival_scores_{L_CODE}"
+            surv_scores = ud.get(surv_key, [])
+            if surv_scores and isinstance(surv_scores, list):
+                # Wybieramy Top 3 najlepszych wyników (najwyższe liczby)
+                top3_surv = sorted([int(s) for s in surv_scores if str(s).isdigit()], reverse=True)[:3]
+                if top3_surv:
+                    s_cols = st.columns(3)
+                    icons = ["🥇", "🥈", "🥉"]
+                    for i, score in enumerate(top3_surv):
+                        s_cols[i].metric(f"{icons[i]} Miejsce", f"{score} popr.")
+                else: st.info("Brak rekordów w Ruletce.")
+            else: st.info("Podejmij wyzwanie w Ruletce, aby ustanowić pierwszy rekord!")
+
         st.write("---")
         
-        # --- 3. CZAS NAUKI I FAZY (RESZTA STATYSTYK) ---
+        # --- 3. CZAS NAUKI (ZAKTUALIZOWANE MAPOWANIE MODUŁÓW) ---
         col_top1, col_top2 = st.columns(2)
         
         with col_top1:
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
-            display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Sta": "Statystyki", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon"}
-            nav_order = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Warsztat", "Konstruktor", "Wąż", "Bal", "Statystyki", "Inne"]
+            # Pełne mapowanie wszystkich dostępnych kodów modułów
+            display_names = {
+                "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", 
+                "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", 
+                "Wan": "Wąż", "Bal": "Balon", "Wri": "Asystent Pisania", "Det": "Detektyw", 
+                "Lab": "Laboratorium", "Skn": "Skaner AI", "Sta": "Statystyki"
+            }
+            nav_order = [
+                "Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Laboratorium", 
+                "Asystent Pisania", "Detektyw", "Memory", "Warsztat", "Konstruktor", 
+                "Wąż", "Bal", "Skaner AI", "Statystyki", "Inne"
+            ]
             
             aggregated_mins = {name: 0 for name in nav_order}
             for code, sec in time_stats.items():
@@ -2795,7 +3016,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else: st.info("Brak historii testów.")
 
-# --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
+# --- 26. KONTO (V272 - Full Restore + Individual Game Resets) ---
 elif choice == "⚙️ Konto":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2867,6 +3088,40 @@ elif choice == "⚙️ Konto":
         st.error(f"Tryb zarządzania bazą: **{current_lang_name.upper()}**")
         safety_lock = st.checkbox("Potwierdzam chęć skasowania danych")
         
+        # --- RESET REKORDÓW GIER (Nowa funkcja) ---
+        st.subheader("Resety rekordów gier")
+        st.caption(f"Wyczyść swoje najlepsze wyniki (tylko dla języka {current_lang_name}).")
+        
+        r_col1, r_col2 = st.columns(2)
+        
+        if r_col1.button(f"🧩 Resetuj Memory ({L_CODE.upper()})", disabled=not safety_lock, use_container_width=True):
+            st.session_state.user_data[f"memory_scores_{L_CODE}"] = []
+            save_user_data(u, st.session_state.user_data)
+            st.session_state.acc_msg = f"Wyczyszczono rekordy Memory dla języka {current_lang_name}."
+            st.rerun()
+
+        if r_col2.button(f"🎈 Resetuj Balony ({L_CODE.upper()})", disabled=not safety_lock, use_container_width=True):
+            st.session_state.user_data[f"top_balloons_{L_CODE}"] = []
+            save_user_data(u, st.session_state.user_data)
+            st.session_state.acc_msg = f"Wyczyszczono rekordy Balonowego Wyścigu dla języka {current_lang_name}."
+            st.rerun()
+
+        if r_col1.button(f"🎲 Resetuj Ruletkę ({L_CODE.upper()})", disabled=not safety_lock, use_container_width=True):
+            st.session_state.user_data[f"survival_scores_{L_CODE}"] = []
+            save_user_data(u, st.session_state.user_data)
+            st.session_state.acc_msg = f"Wyczyszczono rekordy Językowej Ruletki dla języka {current_lang_name}."
+            st.rerun()
+
+        if r_col2.button(f"🐍 Resetuj Węża (Global)", disabled=not safety_lock, use_container_width=True):
+            st.session_state.user_data["snake_best_chain"] = 0
+            st.session_state.user_data["snake_wins"] = 0
+            st.session_state.user_data["snake_losses"] = 0
+            save_user_data(u, st.session_state.user_data)
+            st.session_state.acc_msg = "Statystyki Lingwistycznego Węża zostały wyzerowane."
+            st.rerun()
+
+        st.divider()
+
         # --- KASOWANIE POZIOMÓW (CEFR) ---
         st.subheader("Usuwanie wg poziomów")
         st.caption(f"Usuwa słówka z tagiem poziomu TYLKO dla języka {current_lang_name}.")
@@ -2874,9 +3129,7 @@ elif choice == "⚙️ Konto":
         lvl_to_del = col_lvl1.selectbox("Wybierz poziom:", ["A1", "A2", "B1", "B2", "C1"], key="lvl_del_sel")
         
         if col_lvl2.button(f"Skasuj {lvl_to_del}", disabled=not safety_lock, use_container_width=True):
-            # Używamy operatora 'ilike', aby znaleźć poziom wewnątrz ciągu kategorii
             res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).ilike("category", f"%{lvl_to_del}%").execute()
-            # Liczba skasowanych rekordów (Supabase zwraca je w .data przy delete)
             count = len(res.data) if res.data else 0
             st.session_state.flashcards = load_flashcards(u)
             st.session_state.acc_msg = f"Skasowano {count} słówek z poziomu {lvl_to_del} ({current_lang_name})."
@@ -2901,7 +3154,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V330 - Full Suite + Word Origin Stats + Global Analytics) ---
+# --- 27. ADMIN PRO (V331 - Full Suite + Ruletka Analytics) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -2955,7 +3208,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     with tabs[2]:
         st.info("Zarządzanie ciekawostkami kulturowymi.")
 
-    # --- 3. ANALIZA UŻYTKOWNIKÓW (PRZYWRÓCONY KOMPLET STATYSTYK) ---
+    # --- 3. ANALIZA UŻYTKOWNIKÓW (ZAKŁADKA 4) ---
     with tabs[3]:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
@@ -2972,24 +3225,25 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         adm_summary = []
         global_daily_time = {}
         
+        # Słownik mapowania kodów na ładne nazwy (ZAKTUALIZOWANY O RULETKĘ)
         MOD_MAP = {
             "Pow": "📅 Powtórki", "Trn": "🚀 Trening", "Qiz": "🕹️ Quiz", "Fis": "🎴 Fiszki",
             "Tst": "📝 Testy", "Mem": "🧠 Memory", "War": "🛠️ Warsztat", "Kon": "🏗️ Konstruktor",
-            "Wan": "🐍 Wąż", "Bal": "🎈 Balon", "Wri": "✍️ Pisanie", "Det": "🕵️ Detektyw", 
-            "Lab": "🧪 Laboratorium", "Skn": "📸 Skaner", "Sta": "📊 Statystyki", "Inn": "Inne"
+            "Wan": "🐍 Wąż", "Bal": "🎈 Balon", "Sur": "🎲 Ruletka", "Wri": "✍️ Pisanie", 
+            "Det": "🕵️ Detektyw", "Lab": "🧪 Laboratorium", "Skn": "📸 Skaner", 
+            "Sta": "📊 Statystyki", "Inn": "Inne"
         }
 
         for user in ud_data:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # --- PRZYWRÓCONA LOGIKA ROZKŁADU SŁÓWEK (R|G|S) ---
+            # --- LOGIKA ROZKŁADU SŁÓWEK (R|G|S) ---
             total_words = len(u_cards)
             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
             r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
             g_count = sum(1 for x in oc if "Generator" in str(x))
             s_count = sum(1 for x in oc if "Skaner" in str(x))
-            # -------------------------------------------------
 
             # Wiedza %
             strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - date.today()).days > 6]) if not u_cards.empty else 0
@@ -3020,7 +3274,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "raw_total": stats_total
             })
 
-        # --- TABELA 1: PODSUMOWANIE KONT (Z PRZYWRÓCONĄ KOLUMNĄ) ---
+        # --- TABELA 1: PODSUMOWANIE KONT ---
         st.subheader("📋 Podsumowanie kont")
         df_main = pd.DataFrame(adm_summary).sort_values("Dziś (min)", ascending=False)
         st.dataframe(
@@ -3052,7 +3306,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         else:
             st.info("Brak aktywności użytkowników w dniu dzisiejszym.")
 
-        # --- TABELA 3: SZCZEGÓŁY HISTORYCZNE ---
+        # --- TABELA 3: SZCZEGÓŁY HISTORYCZNE (Z RULETKĄ) ---
         with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (historycznie)"):
             history_rows = []
             for item in adm_summary:
