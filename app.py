@@ -715,35 +715,29 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V270 - FINALNY FIX WIDOCZNOŚCI) ---
+# --- 8. POWTÓRKI & TRENING (V271 - SYNCHRONIZACJA Z QUIZEM + DIAGNOSTYKA) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
-    # TO JEST TEST WIDOCZNOŚCI - jeśli tego nie widzisz, masz duplikat sekcji 8 w pliku!
-    st.error("🚀 WERSJA V270 - MODUŁ PRAWIDŁOWO ZAŁADOWANY")
+    # Jeśli po odświeżeniu nie widzisz tego napisu, szukaj w pliku duplikatu sekcji "Powtórki"!
+    st.error("DEBUG: Moduł Powtórki V271 Aktywny") 
     
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # PRZYCISK RESETU - musi być widoczny zaraz pod nagłówkiem
-    if st.button("🧨 CAŁKOWITY RESET TEJ SESJI", use_container_width=True):
-        to_del = [k for k in st.session_state.keys() if k.startswith("rep_") or k.startswith("trn_")]
-        for k in to_del: del st.session_state[k]
-        st.rerun()
-
     pfx = "rep" if is_r else "trn"
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. FILTROWANIE SŁÓWEK
+    # 1. FILTROWANIE SŁÓWEK (Na świeżo z bazy)
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_v270")
+    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_v271")
 
-    # 2. KOLEJKA
+    # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         if is_r:
@@ -759,23 +753,23 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     cards = st.session_state.get(f"{pfx}_list", [])
     
     if not cards:
-        st.success(f"Brak słówek do nauki.")
+        st.success(f"Brak słówek w sekcji {choice}. ✨")
+        if st.button("Odśwież"): st.rerun()
     elif st.session_state[f"{pfx}_idx"] >= len(cards):
-        st.success("Sesja zakończona!")
-        if st.button("Zacznij od nowa", key=f"{pfx}_restart_v270"):
-            for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode"]: 
-                if f"{pfx}_{k}" in st.session_state: del st.session_state[f"{pfx}_{k}"]
+        st.balloons()
+        st.success("Sesja zakończona! 🏆")
+        if st.button("Zacznij od nowa", key=f"{pfx}_restart_final"):
+            for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
+                if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # POBIERANIE SŁÓWKA
+        # POBIERANIE AKTUALNEGO SŁÓWKA
         idx = st.session_state[f"{pfx}_idx"]
-        # Pobieramy "świeże" dane z bazy st.session_state.flashcards, używając ID z kolejki
         c_cached = cards[idx]
-        c = next((x for x in st.session_state.flashcards if x['id'] == c_cached['id']), c_cached)
+        # Kluczowe: Pobieramy dane bezpośrednio z głównej listy po ID, aby uniknąć starych danych
+        c = next((item for item in st.session_state.flashcards if item['id'] == c_cached['id']), c_cached)
 
-        # UI
-        st.progress(idx / len(cards))
-        
+        # Ustalenie kierunku (DE->PL lub PL->DE)
         dir_key = f"{pfx}_dir_{idx}"
         if dir_key not in st.session_state:
             st.session_state[dir_key] = random.choice([0, 1])
@@ -785,55 +779,80 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         target_lang_label = "Polski" if not is_target_foreign else current_lang_name
         correct_val = c["pl"] if not is_target_foreign else c["de"]
 
-        st.markdown(f"""
-            <div style="font-size:2.6em; text-align:center; padding:30px; background:#111; border:3px solid #4CAF50; border-radius:20px; color:white;">
-                <div style="font-size:0.4em; color:gray;">Tłumaczysz na: {target_lang_label}</div>
+        st.progress(idx / len(cards))
+        st.caption(f"Słówko {idx + 1} z {len(cards)}")
+
+        st.markdown(f'''
+            <div style="font-size:2.6em; text-align:center; padding:40px; background:#111; border:3px solid #4CAF50; border-radius:20px; color:white;">
+                <div style="font-size:0.35em; color:gray;">Tłumaczysz na: {target_lang_label}</div>
                 {display_word}
             </div>
-        """, unsafe_allow_html=True)
+        ''', unsafe_allow_html=True)
 
         if st.session_state[f"{pfx}_mode"] == "ask":
             with st.form(key=f"form_{pfx}_{idx}"):
-                u_in = st.text_input("Twoja odpowiedź:")
-                if st.form_submit_button("SPRAWDŹ"):
+                u_in = st.text_input("Twoja odpowiedź:", key=f"input_{pfx}_{idx}")
+                if st.form_submit_button("SPRAWDŹ", use_container_width=True):
                     st.session_state[f"{pfx}_user_ans"] = u_in
                     st.session_state[f"{pfx}_mode"] = "res"
                     st.rerun()
         else:
-            # SPRAWDZANIE (Tolerancyjne)
-            def simple_clean(txt):
-                t = str(txt).lower().strip()
+            # 3. SPRAWDZANIE (Tolerancja na brak umlautów/haczków)
+            def ultra_clean(t):
+                import unicodedata
+                t = str(t).lower().strip()
+                t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
+                # Zamiana umlautów na proste litery (ä -> a, itd.)
                 t = t.replace("ä","a").replace("ö","o").replace("ü","u").replace("ß","ss")
-                t = t.replace("á","a").replace("č","c").replace("ď","d").replace("é","e") # uproszczone haczki
-                return t
+                # Usuwanie diakrytyki (haczki, ogonki)
+                t = "".join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+                return t.replace("ł", "l")
 
-            u_ans = simple_clean(st.session_state.get(f"{pfx}_user_ans", ""))
-            correct_clean = [simple_clean(s) for s in re.split(r'[/,;]', correct_val)]
+            u_ans = ultra_clean(st.session_state.get(f"{pfx}_user_ans", ""))
+            correct_options = [ultra_clean(s) for s in re.split(r'[/,;]', correct_val)]
             
-            if u_ans in correct_clean:
-                st.success(f"✅ Dobrze! Poprawna forma: {correct_val}")
-            else:
-                st.error(f"❌ Błąd! Powinno być: {correct_val}")
+            is_correct = u_ans in correct_options
+            
+            if is_correct: st.success(f"✅ Dobrze! Poprawna odpowiedź: {correct_val}")
+            else: st.error(f"❌ Błąd! Poprawna odpowiedź: {correct_val}")
 
-            # --- PRZYKŁADY (Logika z sekcji 9) ---
+            # --- LOGIKA PRZYKŁADÓW (DOKŁADNIE JAK W SEKCYJI 9) ---
             exs = c.get("examples", [])
-            ex_f, ex_p = None, None
-            if exs and isinstance(exs, list) and len(exs) > 0:
-                ex_f, ex_p = exs[0].get("de"), exs[0].get("pl")
+            example_foreign = None
+            example_pl = None
             
-            if ex_f:
-                st.info(f"📖 **Przykład:** {ex_f}\n\n🇵🇱 *{ex_p}*")
+            if exs and isinstance(exs, list) and len(exs) > 0:
+                example_foreign = exs[0].get("de")
+                example_pl = exs[0].get("pl")
+            elif c.get('example'): 
+                example_foreign = c['example']
+
+            if example_foreign:
+                st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
             
             if auto_audio:
-                play_audio(c['de'], ex_f, lang=L_CODE)
+                play_audio(c['de'], example_foreign, lang=L_CODE)
 
-            # NAWIGACJA
-            st.write("---")
+            st.divider()
+            # 4. NAWIGACJA
             if is_r:
-                col1, col2, col3 = st.columns(3)
-                if col1.button("🔴 Trudne"): update_word(c['id'], {"next_review": str(date.today() + timedelta(days=1))}); st.session_state[f"{pfx}_idx"] += 1; st.session_state[f"{pfx}_mode"] = "ask"; st.rerun()
-                if col2.button("🟡 Średnie"): update_word(c['id'], {"next_review": str(date.today() + timedelta(days=3))}); st.session_state[f"{pfx}_idx"] += 1; st.session_state[f"{pfx}_mode"] = "ask"; st.rerun()
-                if col3.button("🟢 Łatwe"): update_word(c['id'], {"next_review": str(date.today() + timedelta(days=7))}); st.session_state[f"{pfx}_idx"] += 1; st.session_state[f"{pfx}_mode"] = "ask"; st.rerun()
+                st.write("Oceń trudność (SRS):")
+                c1, c2, c3 = st.columns(3)
+                if c1.button("🔴 Trudne"): 
+                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=1))})
+                    st.session_state[f"{pfx}_idx"] += 1
+                    st.session_state[f"{pfx}_mode"] = "ask"
+                    st.rerun()
+                if c2.button("🟡 Średnie"): 
+                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=3))})
+                    st.session_state[f"{pfx}_idx"] += 1
+                    st.session_state[f"{pfx}_mode"] = "ask"
+                    st.rerun()
+                if c3.button("🟢 Łatwe"): 
+                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=7))})
+                    st.session_state[f"{pfx}_idx"] += 1
+                    st.session_state[f"{pfx}_mode"] = "ask"
+                    st.rerun()
             else:
                 if st.button("Następne słówko ➡️", type="primary", use_container_width=True):
                     st.session_state[f"{pfx}_idx"] += 1
