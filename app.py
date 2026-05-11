@@ -1741,7 +1741,7 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 
                 if not found:
                     st.error("Nie znaleziono słowa w Twojej bazie (lub to czasownik).")
-                elif found[0]['id'] in st.session_state.snake_used_
+         elif found[0]['id'] in st.session_state.snake_used_ids:
 
 
 # --- 16. BALONOWY WYŚCIG (V315 - Performance Edition) ---
