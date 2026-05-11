@@ -516,7 +516,7 @@ if "choice" not in st.session_state:
     st.session_state.choice = "🏠 Start"
 choice = st.session_state.choice
 
-# --- 7. START (V2.7 - Word Spotlight Edition) ---
+# --- 7. START (V2.8 - Content-Rich Dashboard: Trivia & Spotlight) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -531,8 +531,9 @@ if current_choice == "🏠 Start":
     ud = st.session_state.user_data
     today_str = date.today().isoformat()
     
-    # Pobieranie słówek do powtórki
+    # Filtrowanie słówek do powtórki i do warsztatu (level 0-1)
     due_cards = [c for c in all_c if str(c.get("next_review", today_str)) <= today_str]
+    hard_cards = [c for c in all_c if c.get("level", 0) < 2]
 
     # Statystyki czasu
     current_stats = ud.get("time_stats", {})
@@ -557,34 +558,53 @@ if current_choice == "🏠 Start":
     c1, c2 = st.columns([1, 1.1])
     
     with c1:
-        st.markdown(f"### 🔍 Słówko pod lupą")
-        
-        if due_cards:
-            # Losujemy jedno słówko z tych, które czekają na powtórkę
-            # Seedowanie datą sprawia, że słówko zmienia się co sesję/odświeżenie, zachęcając do szybkiej powtórki
-            spot_word = random.choice(due_cards)
+        # --- A. SŁÓWKO DNIA (SPOTLIGHT) ---
+        st.markdown(f"### 🎯 Słówko pod lupą")
+        if hard_cards:
+            # Stały wybór na 24h z Twojego Warsztatu
+            idx_spot = int(hashlib.md5((today_str + "spot").encode()).hexdigest(), 16) % len(hard_cards)
+            spot_word = hard_cards[idx_spot]
             
             with st.container(border=True):
-                st.write("Czy pamiętasz, co to znaczy?")
-                st.markdown(f"<h2 style='color:#4CAF50; margin-top:0;'>{spot_word['de']}</h2>", unsafe_allow_html=True)
+                st.markdown(f"<h2 style='color:#4CAF50; margin-top:0; margin-bottom:0;'>{spot_word['de']}</h2>", unsafe_allow_html=True)
+                st.caption("To słowo sprawia Ci trudność. Opanuj je dzisiaj!")
                 
                 with st.expander("👁️ Sprawdź znaczenie"):
                     st.write(f"🎯 **{spot_word['pl']}**")
-                    st.write("---")
-                    if st.button("Uruchom sesję powtórek 🚀", use_container_width=True):
-                        st.session_state.choice = "📅 Powtórki"
-                        st.rerun()
+                
+                st.write("**🗣️ Shadowing:**")
+                st.caption("Odsłuchaj i powtórz 5 razy na głos, naśladując akcent.")
+                if st.button("🔊 Odsłuchaj wymowę", key="spot_audio", use_container_width=True):
+                    play_audio(spot_word['de'], lang=L_CODE)
         else:
-            st.success("✨ Twoja lista powtórek jest pusta! Jesteś na bieżąco.")
-            st.info("Dodaj nowe słówka za pomocą Generatora lub Skanera AI, aby kontynuować progres.")
+            st.success("✨ Twoja lista trudnych słówek jest pusta! Dobra robota.")
+
+        # --- B. KULTURA W PIGUŁCE ---
+        st.markdown(f"### 🥨 Kultura w pigułce")
+        try:
+            db = get_db()
+            res_trivia = db.table("cultural_trivia").select("*").eq("lang", L_CODE).execute()
+            if res_trivia.data:
+                # Stały wybór na 24h
+                idx_tr = int(hashlib.md5((today_str + "trivia").encode()).hexdigest(), 16) % len(res_trivia.data)
+                trivia = res_trivia.data[idx_tr]
+                
+                with st.container(border=True):
+                    st.markdown(f"**{trivia['title']}**")
+                    st.write(trivia['content_orig'])
+                    with st.expander("👁️ Tłumaczenie"):
+                        st.caption(trivia['content_pl'])
+            else:
+                st.info("Baza ciekawostek jest pusta. Użyj panelu Admina, aby ją zainicjować.")
+        except:
+            st.error("Błąd połączenia z bazą ciekawostek.")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         
         try:
             db = get_db()
-            
-            # --- A. LOGIKA PISANIA ---
+            # LOGIKA PISANIA
             topics_for_teaser = {
                 "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
                 "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
@@ -594,7 +614,7 @@ if current_choice == "🏠 Start":
             res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
             writing_done = len(res_w.data) > 0 if res_w.data else False
 
-            # --- B. LOGIKA DETEKTYWA ---
+            # LOGIKA DETEKTYWA
             res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
             daily_phrase = "Brak spraw w archiwum"
             if res_idioms.data:
@@ -602,48 +622,40 @@ if current_choice == "🏠 Start":
                 daily_phrase = res_idioms.data[idx_det]['phrase']
             det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
 
-            # --- C. LOGIKA WARSZTATU (Language Specific) ---
+            # LOGIKA WARSZTATU (Language Specific)
             wrk_goal = 3
             wrk_key = f"wrk_mastered_today_{L_CODE}"
-            if wrk_key not in st.session_state: st.session_state[wrk_key] = 0
-            
-            mastered_today = st.session_state[wrk_key]
+            mastered_today = st.session_state.get(wrk_key, 0)
             workshop_done = mastered_today >= wrk_goal
-            hard_cards_count = len([c for c in all_c if c.get("level", 0) < 2])
+            hard_cards_count = len(hard_cards)
 
         except:
             writing_done = det_done = workshop_done = False
             current_writing_topic = daily_phrase = "Błąd połączenia"
             mastered_today = 0
 
-        # --- UI ZADAŃ ---
+        # UI ZADAŃ
         time_icon = "✅" if study_minutes >= daily_goal else "❌"
         st.write(f"{time_icon} Cel czasowy: **{daily_goal} min**")
 
-        # Container 1: ASYSTENT PISANIA
         with st.container(border=True):
-            w_icon = "✅" if writing_done else "✍️"
-            st.markdown(f"**{w_icon} Asystent Pisania**")
+            st.markdown(f"**{'✅' if writing_done else '✍️'} Asystent Pisania**")
             st.markdown(f"📝 *„{current_writing_topic}”*")
             if not writing_done:
                 if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
                     st.session_state.choice = "✍️ Asystent Pisania"; st.rerun()
             else: st.caption("✨ Zadanie zaliczone!")
 
-        # Container 2: KULTUROWY DETEKTYW
         with st.container(border=True):
-            d_icon = "✅" if det_done else "🕵️"
-            st.markdown(f"**{d_icon} Kulturowy Detektyw**")
+            st.markdown(f"**{'✅' if det_done else '🕵️'} Kulturowy Detektyw**")
             st.markdown(f"🔍 *„{daily_phrase}”*")
             if not det_done:
                 if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
                     st.session_state.choice = "🕵️ Kulturowy Detektyw"; st.rerun()
             else: st.caption("✨ Sprawa rozwiązana!")
 
-        # Container 3: WARSZTAT
         with st.container(border=True):
-            wrk_icon = "✅" if workshop_done else "🛠️"
-            st.markdown(f"**{wrk_icon} Warsztat Słówek**")
+            st.markdown(f"**{'✅' if workshop_done else '🛠️'} Warsztat Słówek**")
             if hard_cards_count > 0:
                 st.markdown(f"📊 *Postęp: {mastered_today}/{wrk_goal} słów*")
                 if not workshop_done:
@@ -655,16 +667,15 @@ if current_choice == "🏠 Start":
 
     st.divider()
 
-    # 4. CYTAT DNIA
+    # 4. CYTAT DNIA I OSTATNIE SŁÓWKA
     col_q, col_w = st.columns([2, 1])
     with col_q:
         quotes_db = {
-            "de": [{"orig": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.", "pl": "Granice mojego języka oznaczają granice mojego świata."}, {"orig": "Übung macht den Meister!", "pl": "Praktyka czyni mistrza."}, {"orig": "Aller Anfang ist schwer.", "pl": "Każdy początek jest trudny."}],
-            "cs": [{"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."}, {"orig": "Trpělivost přináší růže.", "pl": "Cierpliwość przynosi róže."}, {"orig": "Učený nikdo z nebe nespadl.", "pl": "Nikt uczony z nieba nepadl."}]
+            "de": [{"orig": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.", "pl": "Granice mojego języka oznaczają granice mojego świata."}, {"orig": "Übung macht den Meister!", "pl": "Praktyka czyni mistrza."}],
+            "cs": [{"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."}]
         }
         q_list = quotes_db.get(L_CODE, [{"orig": "Lernen!", "pl": "Ucz się!"}])
-        q_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(q_list)
-        q = q_list[q_idx]
+        q = q_list[int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(q_list)]
         st.info(f"**{q['orig']}**")
         with st.expander("👁️ Pokaż tłumaczenie cytatu"):
             st.caption(q['pl'])
