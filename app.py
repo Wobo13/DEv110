@@ -1440,18 +1440,19 @@ elif choice == "🛠️ Warsztat":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 14. KONSTRUKTOR SŁÓW (V315 - True Mobile Grid) ---
+# --- 14. KONSTRUKTOR SŁÓW (V316 - Surgical Fix) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h2 style='text-align: center;'>🏗️ Konstruktor</h2>", unsafe_allow_html=True)
 
-    # 1. AGRESYWNY CSS DLA UKŁADU POZIOMEGO NA MOBILE
+    # 1. CSS - TYLKO DLA KLAWIATURY LITER
     st.markdown("""
         <style>
-            /* 1. Wymuszenie rzędu zamiast kolumny na telefonie */
-            [data-testid="stHorizontalBlock"] {
+            /* --- STYL KLAWIATURY LITER --- */
+            /* Szukamy kontenera, który zawiera przyciski z kluczem 'btn_k' */
+            div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"][key*="btn_k"]) {
                 display: flex !important;
                 flex-direction: row !important;
                 flex-wrap: wrap !important;
@@ -1459,49 +1460,38 @@ elif choice == "🏗️ Konstruktor":
                 gap: 5px !important;
             }
 
-            /* 2. Zablokowanie rozciągania się kolumn na 100% szerokości */
-            [data-testid="column"] {
+            /* Litery: małe, kwadratowe, obok siebie */
+            div[data-testid="stHorizontalBlock"]:has(button[key*="btn_k"]) div[data-testid="column"] {
                 width: auto !important;
                 flex: 0 1 auto !important;
-                min-width: 45px !important; /* Szerokość pojedynczego klawisza */
+                min-width: 42px !important;
             }
 
-            /* 3. Stylizacja przycisków (Klawisze) */
-            [data-testid="stMain"] div.stButton > button {
+            button[key*="btn_k"] {
+                height: 45px !important;
+                width: 42px !important;
+                padding: 0 !important;
                 background: rgba(128, 128, 128, 0.1) !important;
                 color: var(--text-color) !important;
                 border: 1px solid rgba(128, 128, 128, 0.3) !important;
-                border-radius: 8px !important;
-                height: 45px !important;
-                width: 45px !important; /* Kwadratowe klawisze */
-                padding: 0px !important;
                 font-weight: bold !important;
-                font-size: 1.2rem !important;
             }
 
-            /* 4. Slot na odpowiedź (dopasowany do motywu) */
+            /* --- STYL DLA SLOTU NA ODPOWIEDŹ --- */
             .slot-box {
                 font-size: 1.8rem;
                 letter-spacing: 4px;
                 text-align: center;
-                color: #ff4b4b;
-                font-family: monospace;
-                padding: 15px;
                 background: rgba(255, 75, 75, 0.05);
                 border: 2px dashed #ff4b4b;
                 border-radius: 12px;
+                padding: 15px;
                 margin: 10px 0;
-                min-height: 50px;
                 color: var(--text-color);
             }
 
-            .task-panel {
-                background: rgba(128, 128, 128, 0.1);
-                padding: 10px;
-                border-radius: 12px;
-                text-align: center;
-                color: var(--text-color);
-            }
+            /* --- PRZYCISKI FUNKCYJNE (Reset itp.) --- */
+            /* Te przyciski NIE MAJĄ key*="btn_k", więc będą wyglądać normalnie (standard Streamlit) */
         </style>
     """, unsafe_allow_html=True)
 
@@ -1523,45 +1513,47 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_used_indices = []
             st.session_state.konstr_lang_ref = L_CODE
 
-        # UI Zadania
-        st.markdown(f'<div class="task-panel"><b>{st.session_state.konstr_pl}</b></div>', unsafe_allow_html=True)
+        # Panel Zadania
+        st.info(f"Przetłumacz: **{st.session_state.konstr_pl}**")
 
         # Slot na odpowiedź
         display_ans = "".join([st.session_state.konstr_ans[i] if i < len(st.session_state.konstr_ans) else "_" for i in range(len(st.session_state.konstr_word))])
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # 3. KLAWIATURA (Wszystkie litery w jednym kontenerze)
-        # Tworzymy dużą liczbę kolumn, CSS i tak je poukłada obok siebie
+        # 3. KLAWIATURA (Tylko litery)
         cols = st.columns(len(st.session_state.konstr_pool))
         for idx, char in enumerate(st.session_state.konstr_pool):
             with cols[idx]:
                 label = "␣" if char == " " else char
+                # SPRAWDZAMY CZY LITERA BYŁA UŻYTA
                 is_used = idx in st.session_state.konstr_used_indices
                 if st.button(label, key=f"btn_k_{idx}", disabled=is_used):
                     st.session_state.konstr_ans += char
                     st.session_state.konstr_used_indices.append(idx)
                     st.rerun()
 
-        # 4. PRZYCISKI FUNKCYJNE
-        st.write("")
+        st.write("") # Odstęp
+
+        # 4. PRZYCISKI FUNKCYJNE (Standardowy wygląd Streamlit)
+        # Używamy st.columns, ale bez agresywnego CSS, więc na mobile będą jeden pod drugim (czytelnie)
         f1, f2, f3 = st.columns(3)
         with f1:
-            if st.button("🔄 Reset", use_container_width=True):
+            if st.button("🔄 Reset", key="f_reset", use_container_width=True):
                 st.session_state.konstr_ans = ""; st.session_state.konstr_used_indices = []; st.rerun()
         with f2:
             can_undo = len(st.session_state.konstr_used_indices) > 0
-            if st.button("⬅️ Cofnij", use_container_width=True, disabled=not can_undo):
+            if st.button("⬅️ Cofnij", key="f_undo", use_container_width=True, disabled=not can_undo):
                 st.session_state.konstr_ans = st.session_state.konstr_ans[:-1]
                 st.session_state.konstr_used_indices.pop(); st.rerun()
         with f3:
-            if st.button("⏭️ Pomiń", use_container_width=True):
+            if st.button("⏭️ Pomiń", key="f_skip", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
         # 5. WALIDACJA
         if st.session_state.konstr_ans == st.session_state.konstr_word:
             st.balloons()
-            st.success(f"Brawo! **{st.session_state.konstr_word}**")
-            if st.button("Następne ➡️", type="primary", use_container_width=True):
+            st.success(f"Poprawnie: **{st.session_state.konstr_word}**")
+            if st.button("Następne ➡️", key="f_next", type="primary", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
 # --- 15. LINGWISTYCZNY WĄŻ (V1.6 - Multilang + Difficulty Levels + Logic Fix) ---
