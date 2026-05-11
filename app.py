@@ -2472,64 +2472,79 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V231 - Classic Look + Multilang Filter) ---
+# --- 25. STATYSTYKI (V235 - Live Data Sync & Games Records Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📊 Statystyki: {current_lang_name}")
+
+    # --- KROK 0: WYMUSZENIE ODŚWIEŻENIA DANYCH Z BAZY ---
+    # Dzięki temu rekordy w Statystykach będą identyczne jak w Arenie Wyzwań
+    with st.spinner("Aktualizuję Twoje osiągnięcia..."):
+        fresh_ud = load_user_data(u)
+        if fresh_ud:
+            st.session_state.user_data = fresh_ud
     
-    # 1. FILTROWANIE DANYCH POD JĘZYK
+    ud = st.session_state.user_data
     all_cards = st.session_state.flashcards
-    # Wybieramy tylko te słówka, które należą do aktualnego języka
+    
+    # Filtrowanie słówek pod język
     df_full = pd.DataFrame(all_cards)
     if not df_full.empty:
         df = df_full[df_full.get("lang", "de") == L_CODE].copy()
     else:
         df = pd.DataFrame()
-        
-    ud = st.session_state.user_data
-    
+
     if not df.empty:
-        # 1. Metryki główne (Wielkość bazy i Passa)
+        # 1. Metryki główne
         c1, c2 = st.columns(2)
         c1.metric(f"Wielkość Bazy ({current_lang_name})", len(df))
         c2.metric("Passa Nauki", f"{ud.get('streak', 0)} dni")
         
         st.write("---")
 
-        # --- REKORDY GIER (Zależne od kluczy językowych de/cs) ---
+        # --- 2. REKORDY GIER (NAPRAWIONE MAPOWANIE) ---
         st.subheader("🏆 Moje Rekordy w Grach")
         t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Lingwistyczny Wąż"])
         
         with t_mem:
-            # Używamy dynamicznego klucza np. memory_scores_de lub memory_scores_cs
+            # Szukamy klucza memory_scores_de lub memory_scores_cs
             mem_key = f"memory_scores_{L_CODE}"
             mem_scores = ud.get(mem_key, [])
-            if mem_scores:
-                top3_mem = sorted([float(s) for s in mem_scores])[:3]
-                m_cols = st.columns(3)
-                icons = ["🥇", "🥈", "🥉"]
-                for i, score in enumerate(top3_mem):
-                    m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+            if mem_scores and isinstance(mem_scores, list):
+                # Wybieramy 3 najlepsze (najniższe) czasy
+                top3_mem = sorted([float(s) for s in mem_scores if str(s).replace('.','',1).isdigit()])[:3]
+                if top3_mem:
+                    m_cols = st.columns(3)
+                    icons = ["🥇", "🥈", "🥉"]
+                    for i, score in enumerate(top3_mem):
+                        m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+                else:
+                    st.info("Brak poprawnych wyników w Memory.")
             else:
-                st.info(f"Zagraj w Memory ({current_lang_name}), aby ustanowić rekord!")
+                st.info(f"Zagraj w Memory ({current_lang_name}), aby ustanowić pierwszy rekord!")
 
         with t_bal:
-            # Używamy dynamicznego klucza np. top_balloons_de lub top_balloons_cs
+            # Szukamy klucza top_balloons_de lub top_balloons_cs
             bal_key = f"top_balloons_{L_CODE}"
             bal_scores = ud.get(bal_key, [])
-            if bal_scores:
-                top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
-                b_cols = st.columns(3)
-                icons = ["🥇", "🥈", "🥉"]
-                for i, score in enumerate(top3_bal):
-                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
+            if bal_scores and isinstance(bal_scores, list):
+                # Wybieramy 3 najlepsze (najwyższe) wyniki punktowe
+                top3_bal = sorted([int(s) for s in bal_scores if str(s).isdigit()], reverse=True)[:3]
+                if top3_bal:
+                    b_cols = st.columns(3)
+                    icons = ["🥇", "🥈", "🥉"]
+                    for i, score in enumerate(top3_bal):
+                        b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
+                else:
+                    st.info("Brak poprawnych wyników w Balonach.")
             else:
                 st.info(f"Zagraj w Balonowy Wyścig ({current_lang_name}), aby zdobyć punkty!")
 
         with t_snake:
-            s_max = ud.get("snake_best_chain", 0) # Wąż obecnie jest globalny
+            # Wąż korzysta z kluczy: snake_best_chain, snake_wins, snake_losses
+            s_max = ud.get("snake_best_chain", 0)
             s_wins = ud.get("snake_wins", 0)
             s_loss = ud.get("snake_losses", 0)
             
@@ -2541,10 +2556,12 @@ elif choice == "📊 Statystyki":
             if s_wins + s_loss > 0:
                 win_rate = int((s_wins / (s_wins + s_loss)) * 100)
                 st.caption(f"Skuteczność w walce z systemem: {win_rate}%")
+            else:
+                st.info("Zagraj w Lingwistycznego Węża, aby zobaczyć statystyki starć.")
 
         st.write("---")
         
-        # 2. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
+        # 3. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
         col_top1, col_top2 = st.columns(2)
         
         with col_top1:
@@ -2592,7 +2609,7 @@ elif choice == "📊 Statystyki":
 
         st.write("---")
         
-        # 3. Tabela z prognozą powtórek
+        # 4. Tabela z prognozą powtórek
         st.subheader(f"📅 Prognoza powtórek: {current_lang_name}")
         sched = []
         for i in range(10):
@@ -2608,7 +2625,7 @@ elif choice == "📊 Statystyki":
 
         st.write("---")
         
-        # 4. Tabele Poziomów i Źródeł
+        # 5. Tabele Poziomów i Źródeł
         col_stats1, col_stats2 = st.columns(2)
         
         with col_stats1:
@@ -2642,7 +2659,7 @@ elif choice == "📊 Statystyki":
             if 'origin' in df.columns:
                 origin_counts = df['origin'].value_counts().reset_index()
                 origin_counts.columns = ['Źródło', 'Liczba słówek']
-                st.table(origin_counts) # Tutaj st.table wyglądało dobrze
+                st.table(origin_counts)
         
     else:
         st.info(f"Baza słówek ({current_lang_name}) jest pusta.")
@@ -2651,7 +2668,6 @@ elif choice == "📊 Statystyki":
     st.subheader(f"📝 Historia testów ({current_lang_name})")
     t_hist = ud.get("test_history", [])
     if t_hist:
-        # Filtrujemy historię testów, aby pokazać tylko te z aktualnego języka
         filtered_hist = [t for t in t_hist if t.get("lang", "de") == L_CODE]
         if filtered_hist:
             hist_df = pd.DataFrame(filtered_hist)[::-1]
