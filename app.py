@@ -1570,7 +1570,7 @@ elif choice == "🏗️ Konstruktor":
             if st.button("Następne ➡️", key="f_next", type="primary", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V2.0 - Final Logic Fix) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V2.1 - Native Mobile & Logic Fix) ---
 elif choice == "🐍 Lingwistyczny Wąż":
     import re
     import random
@@ -1580,110 +1580,75 @@ elif choice == "🐍 Lingwistyczny Wąż":
     user_name = st.session_state.get("user_name", "Gracz")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.markdown(f"<h2 style='text-align: center;'>🐍 Lingwistyczny Wąż: {current_lang_name}</h2>", unsafe_allow_html=True)
+    st.markdown(f"## 🐍 Lingwistyczny Wąż: {current_lang_name}")
 
-    # 1. PANCERNE FUNKCJE LOGICZNE
+    # 1. LOGIKA CZYSZCZENIA TEKSTU
     def get_clean_text(text):
         if not text: return ""
-        # Usuwamy rodzajniki i zbędne spacje
         clean = text.lower().strip()
         clean = re.sub(r'^(der|die|das)\s+', '', clean)
-        # Zostawiamy tylko litery (obsługa umlautów i ß)
         clean = "".join([c for c in clean if c.isalpha()])
         return clean
 
     def is_valid_snake_word(card):
-        # Akceptujemy wszystko co NIE jest czasownikiem
+        # Wykluczamy tylko czasowniki
         cat = str(card.get('category', '')).lower()
-        if "czasownik" in cat or "verb" in cat:
-            return False
-        return True
+        return "czasownik" not in cat and "verb" not in cat
 
-    # 2. PRZYGOTOWANIE BAZY (TYLKO RAZ DLA WYDAJNOŚCI)
-    if "snake_pool" not in st.session_state or st.session_state.get("snake_lang_ref") != L_CODE:
-        st.session_state.snake_pool = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE and is_valid_snake_word(c)]
-        st.session_state.snake_lang_ref = L_CODE
-
-    pool = st.session_state.snake_pool
+    # 2. PRZYGOTOWANIE BAZY
+    # Za każdym razem filtrujemy bazę na świeżo, by widzieć nowe słówka
+    pool = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE and is_valid_snake_word(c)]
 
     if len(pool) < 3:
-        st.warning("Masz za mało słówek w bazie (min. 3 nie-czasowniki), by zacząć.")
+        st.warning("Masz za mało słówek (nie-czasowników) w bazie, by zacząć.")
         st.stop()
 
-    # 3. CSS - PROSTY I CZYTELNY
-    st.markdown("""
-        <style>
-            .snake-tile {
-                background: #1E88E5;
-                color: white;
-                padding: 10px;
-                border-radius: 10px;
-                text-align: center;
-                margin-bottom: 10px;
-                box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-            }
-            .snake-info-box {
-                background: rgba(128, 128, 128, 0.1);
-                padding: 15px;
-                border-radius: 12px;
-                border: 1px solid rgba(128, 128, 128, 0.2);
-                margin-bottom: 20px;
-                text-align: center;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # 4. START GRY
+    # 3. START / RESTART GRY
     if "snake_status" not in st.session_state:
-        st.info("Wygrywa ten, kto doda ostatnie możliwe słowo z bazy!")
-        diff = st.selectbox("Poziom trudności:", ["Łatwy", "Średni", "Trudny"])
+        st.info("Zasady: Dodaj słowo zaczynające się na ostatnią literę poprzedniego. Tylko słowa z Twojej bazy!")
+        diff = st.selectbox("Poziom trudności:", ["Łatwy", "Średni", "Trudny"], key="snake_diff_sel")
         if st.button("Zacznij grę 🚀", use_container_width=True):
             first_word = random.choice(pool)
             st.session_state.snake_chain = [first_word]
             st.session_state.snake_used_ids = {first_word['id']}
-            st.session_state.snake_status = "player" # Po starcie kolej gracza
+            st.session_state.snake_status = "player"
             st.session_state.snake_diff = diff
             st.rerun()
         st.stop()
 
-    # 5. SILNIK GRY (GŁÓWNA PĘTLA)
+    # 4. SILNIK GRY
     chain = st.session_state.snake_chain
     last_word_clean = get_clean_text(chain[-1][L_CODE])
     req_letter = last_word_clean[-1] if last_word_clean else ""
 
-    # --- PANCERNY SKANER MOŻLIWOŚCI (NAJWAŻNIEJSZE!) ---
-    # Sprawdzamy, czy KTOKOLWIEK może jeszcze ruszyć na tę literę
-    available_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
+    # --- WIZUALIZACJA (NATYWNA - BEZ HTML) ---
+    st.write("⛓️ **Łańcuch słów:**")
+    # Pokazujemy 5 ostatnich ruchów w czytelny sposób
+    for i, word in enumerate(chain[-5:]):
+        # Sprawdzamy czyj to ruch (co drugie słowo)
+        pos = len(chain) - len(chain[-5:]) + i
+        is_sys = (pos % 2 == 0)
+        
+        with st.chat_message("assistant" if is_sys else "user"):
+            st.write(f"**{word[L_CODE]}** — {word['pl']}")
 
-    if not available_moves and st.session_state.snake_status != "end":
-        # Jeśli nie ma ruchów, kończymy natychmiast
-        if st.session_state.snake_status == "player":
-            st.session_state.snake_winner = "System 🤖 (Brak słów w Twojej bazie)"
-        else:
-            st.session_state.snake_winner = f"{user_name} 🏆 (System nie zna więcej słów)"
-            st.balloons()
-        st.session_state.snake_status = "end"
-        st.rerun()
+    st.divider()
 
-    # --- WIZUALIZACJA ŁAŃCUCHA ---
-    st.write("⛓️ **Ostatnie ogniwa:**")
-    display_cols = st.columns(min(len(chain), 4))
-    for i, word in enumerate(chain[-4:]):
-        with display_cols[i]:
-            # System (niebieski) vs Gracz (zielony)
-            is_sys = (len(chain) - len(chain[-4:]) + i) % 2 == 0
-            color = "#1E88E5" if is_sys else "#4CAF50"
-            st.markdown(f'<div class="snake-tile" style="background:{color}">{word[L_CODE]}<br><small>{word["pl"]}</small></div>', unsafe_allow_html=True)
-
-    # --- OBSŁUGA STATUSÓW ---
+    # --- KOLEJ GRACZA ---
     if st.session_state.snake_status == "player":
-        st.markdown(f"""<div class="snake-info-box">
-            Ostatnie słowo: <b>{chain[-1][L_CODE]}</b><br>
-            Twoje słowo musi zaczynać się na: <span style="font-size:1.8rem; color:#ff4b4b;"><b>{req_letter.upper()}</b></span>
-        </div>""", unsafe_allow_html=True)
-
-        with st.form("snake_player_input", clear_on_submit=True):
-            u_in = st.text_input("Twoja odpowiedź:").strip()
+        # SPRAWDZAMY CZY GRACZ MA RUCH (Skaner Przegranej)
+        player_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
+        
+        if not player_moves:
+            st.error(f"💀 Koniec gry! Nie masz w bazie żadnego słowa na literę: **{req_letter.upper()}**")
+            st.session_state.snake_winner = "System 🤖"
+            st.session_state.snake_status = "end"
+            st.rerun()
+        
+        st.write(f"👉 Twoja kolej! Słowo na literę: **{req_letter.upper()}**")
+        
+        with st.form("snake_input_form", clear_on_submit=True):
+            u_in = st.text_input("Wpisz słowo:").strip()
             c1, c2 = st.columns([2,1])
             if c1.form_submit_button("Dodaj 🔗", use_container_width=True):
                 u_clean = get_clean_text(u_in)
@@ -1692,9 +1657,9 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 if not found:
                     st.error("Nie znaleziono słowa w Twojej bazie (lub to czasownik).")
                 elif found[0]['id'] in st.session_state.snake_used_ids:
-                    st.error("To słowo zostało już użyte!")
+                    st.error("To słowo już było!")
                 elif u_clean[0] != req_letter:
-                    st.error(f"Zła litera! Musi zaczynać się na '{req_letter.upper()}'.")
+                    st.error(f"Zła litera! Musi być na '{req_letter.upper()}'.")
                 else:
                     st.session_state.snake_chain.append(found[0])
                     st.session_state.snake_used_ids.add(found[0]['id'])
@@ -1706,14 +1671,17 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 st.session_state.snake_winner = "System 🤖"
                 st.rerun()
 
+    # --- KOLEJ SYSTEMU ---
     elif st.session_state.snake_status == "system":
-        with st.spinner("System myśli..."):
+        with st.status("System szuka słowa...", expanded=True):
             time.sleep(1.0)
-            # System szuka w dostępnych ruchach
+            # System szuka odpowiedzi
+            bot_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
+            
             fail_chance = {"Łatwy": 0.50, "Średni": 0.25, "Trudny": 0.0}.get(st.session_state.snake_diff, 0)
             
-            if available_moves and random.random() > fail_chance:
-                bot_choice = random.choice(available_moves)
+            if bot_moves and random.random() > fail_chance:
+                bot_choice = random.choice(bot_moves)
                 st.session_state.snake_chain.append(bot_choice)
                 st.session_state.snake_used_ids.add(bot_choice['id'])
                 st.session_state.snake_status = "player"
@@ -1724,12 +1692,14 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 st.balloons()
                 st.rerun()
 
+    # --- EKRAN KOŃCOWY ---
     elif st.session_state.snake_status == "end":
         st.success(f"### 🎉 Zwycięzca: {st.session_state.snake_winner}")
         if st.button("Zagraj jeszcze raz 🔄", use_container_width=True, type="primary"):
-            to_del = ["snake_status", "snake_chain", "snake_used_ids", "snake_winner", "snake_pool"]
-            for k in to_del:
-                if k in st.session_state: del st.session_state[k]
+            # Czyścimy stany gry
+            for key in ["snake_status", "snake_chain", "snake_used_ids", "snake_winner", "snake_diff"]:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
 
 
