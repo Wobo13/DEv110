@@ -516,7 +516,7 @@ if "choice" not in st.session_state:
     st.session_state.choice = "🏠 Start"
 choice = st.session_state.choice
 
-# --- 7. START (V2.8 - Content-Rich Dashboard: Trivia & Spotlight) ---
+# --- 7. START (V2.9 - Mobile First Optimization) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -531,161 +531,132 @@ if current_choice == "🏠 Start":
     ud = st.session_state.user_data
     today_str = date.today().isoformat()
     
-    # Filtrowanie słówek do powtórki i do warsztatu (level 0-1)
     due_cards = [c for c in all_c if str(c.get("next_review", today_str)) <= today_str]
     hard_cards = [c for c in all_c if c.get("level", 0) < 2]
 
-    # Statystyki czasu
+    # Pobieranie statystyk czasu dla paska postępu (sidebar go używa, tu potrzebny do ikon zadań)
     current_stats = ud.get("time_stats", {})
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # Powitanie
+    # --- NAGŁÓWEK (KOMPAKTOWY) ---
     hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
-    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
-    
-    # 2. UKŁAD KAFELKÓW (KPI)
-    col1, col2, col3 = st.columns(3)
-    col1.metric(f"Słówek ({current_lang_name})", len(all_c))
-    col2.metric("Do powtórki", len(due_cards), delta=-len(due_cards) if due_cards else "Czysto!", delta_color="inverse")
-    col3.metric("Dzisiejsza nauka", f"{study_minutes} / {daily_goal} m")
+    st.markdown(f"""
+        <h3 style='margin-bottom: 0px; font-size: 1.4rem;'>
+            {hello_msg}, {str(u).capitalize()}! ☀️
+        </h3>
+    """, unsafe_allow_html=True)
 
-    st.write("---")
-
-    # 3. BRIEFING I ZADANIA
-    c1, c2 = st.columns([1, 1.1])
-    
-    with c1:
-        # --- A. SŁÓWKO DNIA (SPOTLIGHT) ---
-        st.markdown(f"### 🎯 Słówko pod lupą")
-        if hard_cards:
-            # Stały wybór na 24h z Twojego Warsztatu
-            idx_spot = int(hashlib.md5((today_str + "spot").encode()).hexdigest(), 16) % len(hard_cards)
-            spot_word = hard_cards[idx_spot]
-            
-            with st.container(border=True):
-                st.markdown(f"<h2 style='color:#4CAF50; margin-top:0; margin-bottom:0;'>{spot_word['de']}</h2>", unsafe_allow_html=True)
-                st.caption("To słowo sprawia Ci trudność. Opanuj je dzisiaj!")
-                
-                with st.expander("👁️ Sprawdź znaczenie"):
-                    st.write(f"🎯 **{spot_word['pl']}**")
-                
-                st.write("**🗣️ Shadowing:**")
-                st.caption("Odsłuchaj i powtórz 5 razy na głos, naśladując akcent.")
-                if st.button("🔊 Odsłuchaj wymowę", key="spot_audio", use_container_width=True):
-                    play_audio(spot_word['de'], lang=L_CODE)
-        else:
-            st.success("✨ Twoja lista trudnych słówek jest pusta! Dobra robota.")
-
-        # --- B. KULTURA W PIGUŁCE ---
-        st.markdown(f"### 🥨 Kultura w pigułce")
-        try:
-            db = get_db()
-            res_trivia = db.table("cultural_trivia").select("*").eq("lang", L_CODE).execute()
-            if res_trivia.data:
-                # Stały wybór na 24h
-                idx_tr = int(hashlib.md5((today_str + "trivia").encode()).hexdigest(), 16) % len(res_trivia.data)
-                trivia = res_trivia.data[idx_tr]
-                
-                with st.container(border=True):
-                    st.markdown(f"**{trivia['title']}**")
-                    st.write(trivia['content_orig'])
-                    with st.expander("👁️ Tłumaczenie"):
-                        st.caption(trivia['content_pl'])
-            else:
-                st.info("Baza ciekawostek jest pusta. Użyj panelu Admina, aby ją zainicjować.")
-        except:
-            st.error("Błąd połączenia z bazą ciekawostek.")
-
-    with c2:
-        st.markdown("### 🏆 Zadania na dziś")
+    # --- SEKCJA 1: SŁÓWKO DNIA (SPOTLIGHT) ---
+    # Na telefonie to jest pierwszy element pod powitaniem
+    if hard_cards:
+        idx_spot = int(hashlib.md5((today_str + "spot").encode()).hexdigest(), 16) % len(hard_cards)
+        spot_word = hard_cards[idx_spot]
         
-        try:
-            db = get_db()
-            # LOGIKA PISANIA
-            topics_for_teaser = {
-                "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
-                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
-            }
-            t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser[L_CODE])
-            current_writing_topic = topics_for_teaser[L_CODE][t_idx]
-            res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
-            writing_done = len(res_w.data) > 0 if res_w.data else False
-
-            # LOGIKA DETEKTYWA
-            res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
-            daily_phrase = "Brak spraw w archiwum"
-            if res_idioms.data:
-                idx_det = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
-                daily_phrase = res_idioms.data[idx_det]['phrase']
-            det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
-
-            # LOGIKA WARSZTATU (Language Specific)
-            wrk_goal = 3
-            wrk_key = f"wrk_mastered_today_{L_CODE}"
-            mastered_today = st.session_state.get(wrk_key, 0)
-            workshop_done = mastered_today >= wrk_goal
-            hard_cards_count = len(hard_cards)
-
-        except:
-            writing_done = det_done = workshop_done = False
-            current_writing_topic = daily_phrase = "Błąd połączenia"
-            mastered_today = 0
-
-        # UI ZADAŃ
-        time_icon = "✅" if study_minutes >= daily_goal else "❌"
-        st.write(f"{time_icon} Cel czasowy: **{daily_goal} min**")
-
         with st.container(border=True):
-            st.markdown(f"**{'✅' if writing_done else '✍️'} Asystent Pisania**")
-            st.markdown(f"📝 *„{current_writing_topic}”*")
-            if not writing_done:
-                if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
-                    st.session_state.choice = "✍️ Asystent Pisania"; st.rerun()
-            else: st.caption("✨ Zadanie zaliczone!")
+            st.markdown(f"<div style='color: #4CAF50; font-size: 0.8rem; font-weight: bold; text-transform: uppercase;'>🔍 Słówko pod lupą</div>", unsafe_allow_html=True)
+            st.markdown(f"<h2 style='margin: 0px; padding: 0px;'>{spot_word['de']}</h2>", unsafe_allow_html=True)
+            
+            col_a, col_b = st.columns([1, 1])
+            with col_a:
+                with st.expander("👁️ Znaczenie"):
+                    st.write(f"**{spot_word['pl']}**")
+            with col_b:
+                if st.button("🔊 Słuchaj", key="spot_audio_mob", use_container_width=True):
+                    play_audio(spot_word['de'], lang=L_CODE)
+    else:
+        st.success("✨ Wszystkie trudne słowa opanowane!")
 
-        with st.container(border=True):
-            st.markdown(f"**{'✅' if det_done else '🕵️'} Kulturowy Detektyw**")
-            st.markdown(f"🔍 *„{daily_phrase}”*")
-            if not det_done:
-                if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
-                    st.session_state.choice = "🕵️ Kulturowy Detektyw"; st.rerun()
-            else: st.caption("✨ Sprawa rozwiązana!")
+    # --- SEKCJA 2: ZADANIA NA DZIŚ ---
+    st.markdown(f"<div style='margin-top: 10px; font-weight: bold; font-size: 1.1rem;'>🏆 Zadania na dziś</div>", unsafe_allow_html=True)
+    
+    try:
+        db = get_db()
+        # Logika zadań (tematy, idiomy, warsztat)
+        topics_for_teaser = {
+            "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
+            "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
+        }
+        t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser[L_CODE])
+        current_writing_topic = topics_for_teaser[L_CODE][t_idx]
+        res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
+        writing_done = len(res_w.data) > 0 if res_w.data else False
 
-        with st.container(border=True):
-            st.markdown(f"**{'✅' if workshop_done else '🛠️'} Warsztat Słówek**")
-            if hard_cards_count > 0:
-                st.markdown(f"📊 *Postęp: {mastered_today}/{wrk_goal} słów*")
-                if not workshop_done:
-                    if st.button("Otwórz Warsztat", key="go_to_wrk", use_container_width=True):
-                        st.session_state.choice = "🛠️ Warsztat"; st.rerun()
-                else: st.caption("✨ Warsztat odpracowany!")
-            else:
-                st.markdown("✨ *Wszystkie słowa są opanowane!*")
+        res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
+        daily_phrase = "Brak spraw"
+        if res_idioms.data:
+            idx_det = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
+            daily_phrase = res_idioms.data[idx_det]['phrase']
+        det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
+
+        wrk_goal = 3
+        wrk_key = f"wrk_mastered_today_{L_CODE}"
+        mastered_today = st.session_state.get(wrk_key, 0)
+        workshop_done = mastered_today >= wrk_goal
+    except:
+        writing_done = det_done = False
+        current_writing_topic = daily_phrase = "Błąd"
+        mastered_today = 0
+
+    # Layout zadań w pionie - kompaktowe kontenery
+    t_icon = "✅" if study_minutes >= daily_goal else "❌"
+    st.markdown(f"<div style='font-size: 0.9rem; margin-bottom: 5px;'>{t_icon} Cel czasowy: <b>{study_minutes}/{daily_goal} m</b></div>", unsafe_allow_html=True)
+
+    # Asystent
+    with st.container(border=True):
+        c_w1, c_w2 = st.columns([4, 1])
+        c_w1.markdown(f"**{'✅' if writing_done else '✍️'} Pisanie:** *{current_writing_topic[:30]}...*")
+        if not writing_done:
+            if c_w2.button("GO", key="go_w", use_container_width=True):
+                st.session_state.choice = "✍️ Asystent Pisania"; st.rerun()
+    
+    # Detektyw
+    with st.container(border=True):
+        c_d1, c_d2 = st.columns([4, 1])
+        c_d1.markdown(f"**{'✅' if det_done else '🕵️'} Detektyw:** *{daily_phrase[:30]}...*")
+        if not det_done:
+            if c_d2.button("GO", key="go_d", use_container_width=True):
+                st.session_state.choice = "🕵️ Kulturowy Detektyw"; st.rerun()
+
+    # Warsztat
+    with st.container(border=True):
+        c_r1, c_r2 = st.columns([4, 1])
+        c_r1.markdown(f"**{'✅' if workshop_done else '🛠️'} Warsztat:** *Postęp {mastered_today}/{wrk_goal}*")
+        if not workshop_done:
+            if c_r2.button("GO", key="go_wr", use_container_width=True):
+                st.session_state.choice = "🛠️ Warsztat"; st.rerun()
+
+    # --- SEKCJA 3: KULTURA (MIDDLE) ---
+    try:
+        res_trivia = db.table("cultural_trivia").select("*").eq("lang", L_CODE).execute()
+        if res_trivia.data:
+            idx_tr = int(hashlib.md5((today_str + "trivia").encode()).hexdigest(), 16) % len(res_trivia.data)
+            trivia = res_trivia.data[idx_tr]
+            with st.expander(f"🥨 Ciekawostka: {trivia['title']}"):
+                st.write(trivia['content_orig'])
+                st.caption(f"PL: {trivia['content_pl']}")
+    except: pass
 
     st.divider()
 
-    # 4. CYTAT DNIA I OSTATNIE SŁÓWKA
-    col_q, col_w = st.columns([2, 1])
-    with col_q:
-        quotes_db = {
-            "de": [{"orig": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.", "pl": "Granice mojego języka oznaczają granice mojego świata."}, {"orig": "Übung macht den Meister!", "pl": "Praktyka czyni mistrza."}],
-            "cs": [{"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."}]
-        }
-        q_list = quotes_db.get(L_CODE, [{"orig": "Lernen!", "pl": "Ucz się!"}])
-        q = q_list[int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(q_list)]
-        st.info(f"**{q['orig']}**")
-        with st.expander("👁️ Pokaż tłumaczenie cytatu"):
-            st.caption(q['pl'])
+    # --- SEKCJA 4: FOOTER (METRYKI I CYTAT) ---
+    col_f1, col_f2 = st.columns(2)
+    col_f1.metric("Baza", len(all_c))
+    col_f2.metric("Do powtórki", len(due_cards))
 
-    with col_w:
-        with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
-            if all_c:
-                for r in reversed(all_c[-3:]):
-                    st.write(f"**{r['de']}**")
-            else: st.write("Baza jest pusta.")
+    quotes_db = {
+        "de": [{"orig": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.", "pl": "Granice mojego języka oznaczają granice mojego świata."}],
+        "cs": [{"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."}]
+    }
+    q_list = quotes_db.get(L_CODE, [{"orig": "Lernen!", "pl": "Ucz się!"}])
+    q = q_list[int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(q_list)]
+    st.caption(f"_{q['orig']}_")
+
+    with st.expander("🆕 Ostatnie słówka"):
+        if all_c:
+            for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
 # --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
