@@ -316,56 +316,44 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V252 - Fix AttributeError NoneType) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V253 - Activity Sync Fix) ---
 
-# Najpierw sprawdzamy, czy użytkownik jest w sesji
-if "user" in st.session_state:
-    u = st.session_state.user
-else:
-    u = None
+# 1. Pobranie nazwy użytkownika z sesji
+u = st.session_state.get("user")
 
 def load_user_data(username):
-    """Pobiera dane profilu użytkownika i inicjalizuje strukturę wielu języków."""
+    """Pobiera dane profilu użytkownika."""
     try:
         res = get_db().table("user_data").select("*").eq("username", username).execute()
         if res.data:
             data = res.data[0]
-            
-            # Inicjalizacja wymaganych kluczy (DE i CS)
-            required_keys = [
-                "memory_scores_de", "memory_scores_cs",
-                "top_balloons_de", "top_balloons_cs",
-                "time_stats", "settings", "test_history"
-            ]
-            
+            # Inicjalizacja kluczy jeśli ich nie ma
+            required_keys = ["time_stats", "settings", "test_history", "workshop_progress"]
             for key in required_keys:
                 if key not in data or data[key] is None:
-                    data[key] = [] if any(x in key for x in ["scores", "top", "history"]) else {}
-
-            # Migracja starych rekordów do wersji _de
-            if "memory_scores" in data and not data["memory_scores_de"]:
-                data["memory_scores_de"] = data["memory_scores"]
-            if "top_balloons" in data and not data["top_balloons_de"]:
-                data["top_balloons_de"] = data["top_balloons"]
-
+                    data[key] = {} if key != "test_history" else []
             return data
     except Exception as e:
         st.error(f"Błąd ładowania danych: {e}")
     return None
 
 def save_user_data(username, data):
-    """Zapisuje dane do Supabase, usuwając klucze techniczne."""
+    """Zapisuje dane do Supabase i zawsze aktualizuje czas aktywności."""
     if not username: return
     try:
-        clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username", "last_ts"]}
+        # Kopiujemy dane, usuwając klucze systemowe Supabase
+        clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
+        
+        # Zawsze wstawiamy świeżą datę aktywności PL
+        clean_data["last_seen"] = get_now_pl()
+        
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
     except Exception as e:
-        st.error(f"Błąd zapisu danych: {e}")
+        pass # Cichy błąd, by nie przerywać pracy użytkownikowi
 
 def update_activity(current_choice):
-    """Nalicza czas nauki i zapisuje postęp."""
-    # --- DODANO ZABEZPIECZENIE PRZED None ---
-    if not current_choice or "user_data" not in st.session_state or not st.session_state.user_data or not u:
+    """Nalicza czas nauki."""
+    if not current_choice or "user_data" not in st.session_state or not u:
         return
 
     now = time.time()
@@ -375,14 +363,13 @@ def update_activity(current_choice):
 
     delta = now - st.session_state.last_ts_activity
     
+    # Jeśli ruch był w rozsądnym czasie (poniżej 10 min), doliczamy minuty
     if 0 < delta < 600:
         mapping = {
             "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
             "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
             "wąż": "Wan", "wyścig": "Bal", "statystyki": "Sta"
         }
-        
-        # Bezpieczne przetwarzanie tekstu
         clean_choice = "".join(filter(str.isalpha, str(current_choice).lower()))
         label = "Inn"
         for k, v in mapping.items():
@@ -395,15 +382,25 @@ def update_activity(current_choice):
         stats[label] = stats.get(label, 0.0) + delta
         st.session_state.user_data["time_stats"] = stats
         
+        # Zapisujemy do bazy (to przy okazji zaktualizuje 'last_seen')
         save_user_data(u, st.session_state.user_data)
 
     st.session_state.last_ts_activity = now
 
-# --- START SESJI ---
-if u and "user_data" not in st.session_state:
-    st.session_state.user_data = load_user_data(u)
-    if "flashcards" not in st.session_state:
+# --- START SESJI (DLA KAŻDEGO UŻYTKOWNIKA) ---
+if u:
+    # Jeśli dane nie są załadowane do sesji - ładujemy je
+    if "user_data" not in st.session_state:
+        st.session_state.user_data = load_user_data(u)
         st.session_state.flashcards = load_flashcards(u)
+        # Przy pierwszym ładowaniu (logowaniu) zawsze wymuszamy zapis godziny do bazy
+        save_user_data(u, st.session_state.user_data)
+
+    # DODATKOWY MECHANIZM: Jeśli użytkownik po prostu odświeżył stronę 
+    # (nie było go np. 5 minut), aktualizujemy jego czas w bazie.
+    if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
+        save_user_data(u, st.session_state.user_data)
+        st.session_state.last_db_ping = time.time()
 
 # --- 6. SIDEBAR (V382 - Logout Fix with Query Params Clear) ---
 with st.sidebar:
