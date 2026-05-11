@@ -1333,56 +1333,54 @@ elif choice == "🧠 Memory":
         init_memory_game()
         st.rerun()
                 
-# --- 13. WARSZTAT SŁÓWEK (V315 - Multilang & Ultra Fast) ---
+# --- 13. WARSZTAT SŁÓWEK (V320 - With Task Tracker Integration) ---
 elif choice == "🛠️ Warsztat":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🛠️ Warsztat Słówek: {current_lang_name}")
-    st.write(f"Tu trafiają słówka {current_lang_name.lower()}, które sprawiają Ci trudność. Opanuj je raz a dobrze!")
+    st.write(f"Tu szlifujesz słowa, które sprawiają Ci trudność. Opanuj 3, aby zaliczyć dzisiejsze zadanie!")
 
-    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK (Filtrowane pod język)
+    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK
     if "w_list" not in st.session_state or st.session_state.get("w_lang_ref") != L_CODE:
-        # Pobieramy karty tylko dla aktualnego języka
         lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
         
-        # Filtrujemy słówka: te z level < 2 lub interval < 2 (najświeższe błędy)
-        hard_cards = [
-            c for c in lang_cards 
-            if c.get("level", 0) < 2 or c.get("interval", 0) < 2
-        ]
+        # Filtrujemy: level 0 lub 1 (najświeższe błędy)
+        hard_cards = [c for c in lang_cards if c.get("level", 0) < 2]
         
-        # Jeśli nie ma "bardzo trudnych", weźmy te z najniższym levelem ogólnie w tym języku
+        # Failsafe: jeśli nie ma level < 2, weź te z najniższym interwałem
         if len(hard_cards) < 5 and lang_cards:
             hard_cards = sorted(lang_cards, key=lambda x: x.get("level", 0))[:10]
 
         random.shuffle(hard_cards)
-        st.session_state.w_list = hard_cards[:15] # Sesja max 15 "koszmarów"
+        st.session_state.w_list = hard_cards[:15] 
         st.session_state.w_idx = 0
         st.session_state.w_show = False
         st.session_state.w_lang_ref = L_CODE
+
+    # Inicjalizacja trackera zadania dnia, jeśli nie istnieje
+    if "wrk_mastered_today" not in st.session_state:
+        st.session_state.wrk_mastered_today = 0
 
     if not st.session_state.w_list:
         st.success(f"Twoja lista trudnych słówek ({current_lang_name}) jest pusta! ✨")
     
     elif st.session_state.w_idx >= len(st.session_state.w_list):
         st.balloons()
-        st.success(f"Warsztat {current_lang_name} zakończony! Dobra robota.")
-        if st.button("Zacznij od nowa", use_container_width=True):
+        st.success(f"Warsztat {current_lang_name} zakończony!")
+        if st.button("Zacznij nową sesję warsztatową", use_container_width=True):
             for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # --- SILNIK WARSZTATU (FRAGMENT - BEZ ZMIAN W GRAFICE) ---
         @st.fragment
         def workshop_engine():
             idx = st.session_state.w_idx
             w_list = st.session_state.w_list
             curr = w_list[idx]
             
-            progress = (idx) / len(w_list)
-            st.progress(progress)
-            st.caption(f"Słówko {idx + 1} z {len(w_list)}")
+            st.progress(idx / len(w_list))
+            st.caption(f"Słówko {idx + 1} z {len(w_list)} | Postęp zadania: {st.session_state.wrk_mastered_today}/3")
 
             with st.container(border=True):
                 st.markdown(f"<h1 style='text-align: center; margin-bottom: 20px;'>{curr['de']}</h1>", unsafe_allow_html=True)
@@ -1390,12 +1388,12 @@ elif choice == "🛠️ Warsztat":
                 if st.session_state.w_show:
                     st.markdown(f"<h3 style='text-align: center; color: #FF5252; margin-top: -10px;'>{curr['pl']}</h3>", unsafe_allow_html=True)
                     
-                    # Obsługa przykładów (pobieranie z nowej struktury listy jeśli istnieje)
+                    # Obsługa przykładów
                     ex_obj = curr.get('examples', [])
                     example_text = ""
-                    if ex_obj and isinstance(ex_obj, list):
+                    if ex_obj and isinstance(ex_obj, list) and len(ex_obj) > 0:
                         example_text = ex_obj[0].get('de', '')
-                    elif curr.get('example'): # fallback dla starych danych
+                    elif curr.get('example'): 
                         example_text = curr['example']
 
                     if example_text:
@@ -1403,7 +1401,6 @@ elif choice == "🛠️ Warsztat":
                     
                     user_settings = st.session_state.user_data.get("settings", {})
                     if user_settings.get("auto_audio", True):
-                        # Kluczowa zmiana: lang=L_CODE dla poprawnej wymowy
                         play_audio(curr['de'], example_text if example_text else None, lang=L_CODE)
                 
                 st.write("")
@@ -1414,27 +1411,27 @@ elif choice == "🛠️ Warsztat":
                 else:
                     col_a, col_b = st.columns(2)
                     if col_a.button("❌ Nadal trudne", use_container_width=True):
+                        # Przesuwamy na koniec listy
                         card = st.session_state.w_list.pop(st.session_state.w_idx)
                         st.session_state.w_list.append(card)
                         st.session_state.w_show = False
                         st.rerun(scope="fragment")
                     
                     if col_b.button("✅ Już rozumiem", use_container_width=True):
+                        # --- KLUCZOWA AKTUALIZACJA TRACKERA ZADANIA ---
+                        st.session_state.wrk_mastered_today += 1
+                        # ----------------------------------------------
                         st.session_state.w_idx += 1
                         st.session_state.w_show = False
                         st.rerun(scope="fragment")
 
         workshop_engine()
 
-    # Przycisk resetu
-    if st.button("Wygeneruj nową listę warsztatową", type="secondary", use_container_width=True):
+    # Przycisk resetu na wypadek chęci zmiany puli
+    if st.button("Wylosuj inne trudne słówka", type="secondary", use_container_width=True):
         for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
-
-    # Statystyki warsztatu w sidebarze
-    st.sidebar.divider()
-    st.sidebar.write(f"🔧 W warsztacie ({current_lang_name}): **{len(st.session_state.w_list)}**")
 
 # --- 14. KONSTRUKTOR SŁÓW (V313 - CSS Isolation & Sidebar Fix) ---
 elif choice == "🏗️ Konstruktor":
