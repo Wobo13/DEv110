@@ -2636,11 +2636,22 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V310 - Added Idioms Library Seeder) ---
+# --- 27. ADMIN PRO (V312 - Idioms Management: Seed & Clear) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
-    # --- FUNKCJA INICJUJĄCA BAZĘ IDIOMÓW ---
+    # --- FUNKCJA 1: CZYSZCZENIE BAZY ---
+    def clear_idioms_library():
+        try:
+            # Usuwamy wszystkie rekordy (id != 0)
+            get_db().table("idioms_library").delete().neq("id", 0).execute()
+            st.success("✅ Biblioteka idiomów została całkowicie wyczyszczona!")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Błąd podczas czyszczenia bazy: {e}")
+
+    # --- FUNKCJA 2: INICJALIZACJA BAZY (ROBUST UPSERT) ---
     def seed_idioms_library():
         import json
         import time
@@ -2657,7 +2668,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 batch_size = 20
                 with st.spinner(f"Generuję paczkę {total_generated//batch_size + 1}/5 dla języka: {lang_code.upper()}..."):
                     prompt = f"""Wygeneruj listę {batch_size} unikalnych, popularnych idiomów lub zwrotów slangowych w języku {lang_full}.
-                    Każdy rekord musi być unikalny i nie powtarzać się z poprzednimi.
+                    UNIKAJ DUPLIKATÓW. Wybierz ciekawe, mniej oczywiste zwroty.
                     Użyj kategorii z listy: {categories}.
                     Zwróć WYŁĄCZNIE JSON w formacie:
                     {{
@@ -2681,29 +2692,38 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                         data = json.loads(res_raw)
                         idioms = data.get("idioms", [])
                         if idioms:
-                            get_db().table("idioms_library").insert(idioms).execute()
+                            get_db().table("idioms_library").upsert(idioms, on_conflict="lang,phrase").execute()
                             total_generated += len(idioms)
-                            st.toast(f"Dodano {total_generated} idiomów dla {lang_code.upper()}")
+                            st.toast(f"Paczka zapisana dla {lang_code.upper()}")
                             time.sleep(1)
                         else: break
                     except Exception as e:
                         st.error(f"Błąd przy paczce: {e}")
-                        break
-        st.success("✅ Baza idiomów została pomyślnie zainicjowana!")
+                        time.sleep(2)
+                        continue
+        st.success("✅ Proces zakończony! Sprawdź bazę w panelu Supabase.")
 
-    # --- PRZYCISKI ADMINISTRACYJNE ---
+    # --- PRZYCISKI ADMINISTRACYJNE (UKŁAD) ---
+    st.subheader("🛠️ Zarządzanie Biblioteką Idiomów")
+    c_id1, c_id2 = st.columns(2)
+    with c_id1:
+        if st.button("🏗️ Inicjuj Bazę (200 rekordów)", use_container_width=True, type="primary"):
+            seed_idioms_library()
+    with c_id2:
+        if st.button("💣 Usuń całą bazę idiomów", use_container_width=True):
+            clear_idioms_library()
+
+    st.divider()
+    
     col_adm1, col_adm2 = st.columns(2)
     with col_adm1:
-        if st.button("🏗️ Inicjuj Bazę Idiomów (200 rekordów)", use_container_width=True, type="primary"):
-            seed_idioms_library()
+        if st.button("🔄 Odśwież statystyki bazy", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
     with col_adm2:
         st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
 
-    if st.button("🔄 Pobierz najświeższe statystyki z bazy", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-    # --- ANALIZA DANYCH ---
+    # --- ANALIZA DANYCH (STAŁA CZĘŚĆ PANELU) ---
     db = get_db()
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
@@ -2770,7 +2790,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     else:
         df_admin = pd.DataFrame(adm_list)
         
-        # --- TABELA 1: GLOBALNY ROZKŁAD AKTYWNOŚCI ---
         st.subheader("📈 Globalny rozkład aktywności")
         total_global_study = sum(global_time.values())
         
@@ -2791,8 +2810,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             st.table(pd.DataFrame(analysis_rows).set_index("Moduł"))
         
         st.divider()
-
-        # --- TABELA 2: GŁÓWNA LISTA UŻYTKOWNIKÓW ---
         st.subheader("📋 Podsumowanie kont")
         st.dataframe(
             df_admin.drop(columns=["__raw_stats"]), 
@@ -2810,7 +2827,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             }
         )
         
-        # --- TABELA 3: SZCZEGÓŁY CZASU ---
         with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
             valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
