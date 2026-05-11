@@ -2174,26 +2174,25 @@ elif choice == "🎲 Językowa Ruletka":
 
         survival_engine()
 
-# --- 20. ARENA WYZWAŃ (V2.7 - Fix RLS & Query Debug) ---
+# --- 20. ARENA WYZWAŃ (V2.8 - Deep Debugger) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     u_name = st.session_state.get("user", "Anonim") 
     
     st.markdown(f"<h1 style='text-align: center;'>🏆 Arena Wyzwań</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align: center;'>Ranking dla języka: <b>{current_lang_name}</b></p>", unsafe_allow_html=True)
+    st.write(f"DEBUG: Język = {current_lang_name}, Kod = {L_CODE}")
 
     # --- 0. DATY ---
     now_pl = datetime.now(pytz.timezone('Europe/Warsaw'))
-    # Używamy formatu kompatybilnego z Postgres (bez strefy czasowej w stringu dla uproszczenia)
-    start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
-    start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%S")
+    start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-    # --- 1. FUNKCJA POBIERAJĄCA REKORDY ---
+    # --- 1. FUNKCJA POBIERAJĄCA Z WYŚWIETLANIEM BŁĘDÓW ---
     def get_game_leaderboard(game_id, lang_code, start_date=None):
         try:
             db = get_db()
-            query = db.table("game_scores").select("username, score, created_at").eq("game_name", game_id).eq("lang", lang_code)
+            query = db.table("game_scores").select("username, score, lang, game_name").eq("game_name", game_id).eq("lang", lang_code)
             
             if start_date:
                 query = query.gte("created_at", start_date)
@@ -2201,13 +2200,18 @@ elif choice == "🏆 Arena Wyzwań":
             is_asc = True if game_id == "memory" else False
             res = query.order("score", ascending=is_asc).limit(10).execute()
             
-            return res.data if res.data else []
+            # DEBUG: Wyświetl jeśli coś przyszło
+            if res.data:
+                # st.write(f"✅ {game_id} ({lang_code}): znaleziono {len(res.data)} rekordów")
+                return res.data
+            else:
+                return []
         except Exception as e:
-            # Jeśli jest błąd, wyświetl go (tylko w trybie debug)
-            # st.error(f"DEBUG: Błąd tabeli {game_id}: {e}")
+            # TO POKAŻE NAM DOKŁADNY BŁĄD JEŚLI ZAPYTANIE PADŁO
+            st.error(f"❌ Błąd zapytania dla {game_id}: {str(e)}")
             return []
 
-    # --- 2. POBIERANIE DANYCH STAŁYCH (STREAK I WIEDZA) ---
+    # --- 2. POBIERANIE DANYCH STAŁYCH ---
     try:
         db = get_db()
         raw_users = db.table("user_data").select("username, streak").execute().data or []
@@ -2219,10 +2223,9 @@ elif choice == "🏆 Arena Wyzwań":
             if un not in cards_per_user: cards_per_user[un] = []
             cards_per_user[un].append(c)
     except Exception as e:
-        st.error(f"Błąd profilu: {e}")
+        st.error(f"❌ Błąd profilu: {e}")
         raw_users, cards_per_user = [], {}
 
-    # --- 3. MEDALE ---
     def assign_medals(df):
         medals = ["🥇", "🥈", "🥉"]
         new_indices = []
@@ -2247,7 +2250,6 @@ elif choice == "🏆 Arena Wyzwań":
 
     for g in games_config:
         with g["tab"]:
-            # Pod-zakładki czasowe
             st_all, st_month, st_week = st.tabs(["🏆 Wszech czasów", "📅 Ten miesiąc", "⏳ Ten tydzień"])
             
             periods = [
@@ -2265,7 +2267,7 @@ elif choice == "🏆 Arena Wyzwań":
                         df_game = df_game.rename(columns={"username": "Użytkownik"})
                         st.table(assign_medals(df_game[["Użytkownik", "Rekord"]].head(10)))
                     else:
-                        st.caption(f"Brak rekordów.")
+                        st.caption(f"Brak rekordów dla {g['id']} ({L_CODE}).")
 
     st.divider()
 
@@ -2281,33 +2283,19 @@ elif choice == "🏆 Arena Wyzwań":
             strong = len([c for c in u_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
             w_raw = int((strong / len(u_cards)) * 100)
         
-        leaderboard_data.append({
-            "Użytkownik": uname,
-            "Ogień 🔥": int(u_row.get("streak", 0)),
-            "w_raw": w_raw,
-            "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"
-        })
+        leaderboard_data.append({"Użytkownik": uname, "Ogień 🔥": int(u_row.get("streak", 0)), "w_raw": w_raw, "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"})
 
-    with col1:
-        st.subheader("🔥 Top 10: Passa")
-        if leaderboard_data:
+    if leaderboard_data:
+        with col1:
+            st.subheader("🔥 Top 10: Passa")
             df_s = pd.DataFrame(leaderboard_data).sort_values("Ogień 🔥", ascending=False).head(10)
             st.table(assign_medals(df_s.reset_index(drop=True))[["Użytkownik", "Ogień 🔥"]])
-            
-    with col2:
-        st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
-        if leaderboard_data:
+        with col2:
+            st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
             df_w = pd.DataFrame(leaderboard_data)
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
-            if not df_w.empty:
-                st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
+            if not df_w.empty: st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
             else: st.caption("Brak danych.")
-
-    # Podświetlenie pozycji aktualnego gracza
-    st.write("---")
-    my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
-    if my_stats:
-        st.info(f"Twoje statystyki ({current_lang_name}): Wiedza: **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
