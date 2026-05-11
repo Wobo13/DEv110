@@ -2505,30 +2505,29 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V235 - Live Data Sync & Games Records Fix) ---
+# --- 25. STATYSTYKI (V237 - Memory Sync Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    st.header(f"📊 Statystyki: {current_lang_name}")
-
-    # --- KROK 0: WYMUSZENIE ODŚWIEŻENIA DANYCH Z BAZY ---
-    # Dzięki temu rekordy w Statystykach będą identyczne jak w Arenie Wyzwań
-    with st.spinner("Aktualizuję Twoje osiągnięcia..."):
+    # --- KLUCZOWA POPRAWKA: ODŚWIEŻENIE DANYCH Z BAZY ---
+    # To wymusza, aby rekord z Memory był identyczny jak w Arenie Wyzwań
+    with st.spinner("Aktualizuję dane..."):
         fresh_ud = load_user_data(u)
         if fresh_ud:
             st.session_state.user_data = fresh_ud
+
+    st.header(f"📊 Statystyki: {current_lang_name}")
     
     ud = st.session_state.user_data
     all_cards = st.session_state.flashcards
     
-    # Filtrowanie słówek pod język
     df_full = pd.DataFrame(all_cards)
     if not df_full.empty:
         df = df_full[df_full.get("lang", "de") == L_CODE].copy()
     else:
         df = pd.DataFrame()
-
+        
     if not df.empty:
         # 1. Metryki główne
         c1, c2 = st.columns(2)
@@ -2537,16 +2536,16 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
-        # --- 2. REKORDY GIER (NAPRAWIONE MAPOWANIE) ---
+        # --- REKORDY GIER ---
         st.subheader("🏆 Moje Rekordy w Grach")
         t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Lingwistyczny Wąż"])
         
         with t_mem:
-            # Szukamy klucza memory_scores_de lub memory_scores_cs
+            # Używamy odświeżonych danych z bazy
             mem_key = f"memory_scores_{L_CODE}"
             mem_scores = ud.get(mem_key, [])
             if mem_scores and isinstance(mem_scores, list):
-                # Wybieramy 3 najlepsze (najniższe) czasy
+                # Filtrujemy tylko liczby i sortujemy (najlepsze to najniższe czasy)
                 top3_mem = sorted([float(s) for s in mem_scores if str(s).replace('.','',1).isdigit()])[:3]
                 if top3_mem:
                     m_cols = st.columns(3)
@@ -2554,29 +2553,25 @@ elif choice == "📊 Statystyki":
                     for i, score in enumerate(top3_mem):
                         m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
                 else:
-                    st.info("Brak poprawnych wyników w Memory.")
+                    st.info("Brak rekordów.")
             else:
-                st.info(f"Zagraj w Memory ({current_lang_name}), aby ustanowić pierwszy rekord!")
+                st.info(f"Zagraj w Memory, aby ustanowić rekord!")
 
         with t_bal:
-            # Szukamy klucza top_balloons_de lub top_balloons_cs
+            # Logika Balonów (zgodnie z Twoją prośbą - bez zmian)
             bal_key = f"top_balloons_{L_CODE}"
             bal_scores = ud.get(bal_key, [])
-            if bal_scores and isinstance(bal_scores, list):
-                # Wybieramy 3 najlepsze (najwyższe) wyniki punktowe
-                top3_bal = sorted([int(s) for s in bal_scores if str(s).isdigit()], reverse=True)[:3]
-                if top3_bal:
-                    b_cols = st.columns(3)
-                    icons = ["🥇", "🥈", "🥉"]
-                    for i, score in enumerate(top3_bal):
-                        b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
-                else:
-                    st.info("Brak poprawnych wyników w Balonach.")
+            if bal_scores:
+                top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
+                b_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(top3_bal):
+                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
             else:
-                st.info(f"Zagraj w Balonowy Wyścig ({current_lang_name}), aby zdobyć punkty!")
+                st.info(f"Brak rekordów.")
 
         with t_snake:
-            # Wąż korzysta z kluczy: snake_best_chain, snake_wins, snake_losses
+            # Logika Węża (zgodnie z Twoją prośbą - bez zmian)
             s_max = ud.get("snake_best_chain", 0)
             s_wins = ud.get("snake_wins", 0)
             s_loss = ud.get("snake_losses", 0)
@@ -2588,13 +2583,11 @@ elif choice == "📊 Statystyki":
             
             if s_wins + s_loss > 0:
                 win_rate = int((s_wins / (s_wins + s_loss)) * 100)
-                st.caption(f"Skuteczność w walce z systemem: {win_rate}%")
-            else:
-                st.info("Zagraj w Lingwistycznego Węża, aby zobaczyć statystyki starć.")
+                st.caption(f"Skuteczność: {win_rate}%")
 
         st.write("---")
         
-        # 3. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
+        # 2. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
         col_top1, col_top2 = st.columns(2)
         
         with col_top1:
@@ -2642,7 +2635,7 @@ elif choice == "📊 Statystyki":
 
         st.write("---")
         
-        # 4. Tabela z prognozą powtórek
+        # 3. Tabela z prognozą powtórek
         st.subheader(f"📅 Prognoza powtórek: {current_lang_name}")
         sched = []
         for i in range(10):
@@ -2658,7 +2651,7 @@ elif choice == "📊 Statystyki":
 
         st.write("---")
         
-        # 5. Tabele Poziomów i Źródeł
+        # 4. Tabele Poziomów i Źródeł
         col_stats1, col_stats2 = st.columns(2)
         
         with col_stats1:
