@@ -242,7 +242,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V292 - Bezpieczna Autoryzacja HMAC) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V293 - Bezpieczna Autoryzacja HMAC + Rerun Fix) ---
 import hmac
 import base64
 import time
@@ -251,7 +251,6 @@ import hashlib
 # Pomocnicze funkcje do generowania i weryfikacji bezpiecznego tokena
 def generate_secure_token(username, days_valid=30):
     """Tworzy bezpieczny token z datą ważności i kryptograficznym podpisem."""
-    # Używamy SUPABASE_KEY jako sekretu. Jeśli go nie ma, dajemy bezpieczny fallback.
     secret = SUPABASE_KEY if SUPABASE_KEY else "fallback-secret-key-123"
     expires = int(time.time()) + (days_valid * 86400) # 86400 sekund = 1 dzień
     message = f"{username}.{expires}"
@@ -260,7 +259,7 @@ def generate_secure_token(username, days_valid=30):
     signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     token_raw = f"{message}.{signature}"
     
-    # Kodujemy do Base64, żeby URL ładnie wyglądał i nie miał znaków specjalnych
+    # Kodujemy do Base64, żeby URL nie zawierał znaków specjalnych
     return base64.urlsafe_b64encode(token_raw.encode()).decode()
 
 def verify_secure_token(token_b64):
@@ -278,7 +277,7 @@ def verify_secure_token(token_b64):
         if int(time.time()) > int(expires): 
             return None 
             
-        # Generujemy podpis po naszej stronie i porównujemy (ochrona przed fałszerstwem)
+        # Sprawdzamy oryginalność podpisu
         expected_sig = hmac.new(secret.encode(), f"{username}.{expires}".encode(), hashlib.sha256).hexdigest()
         
         if hmac.compare_digest(signature, expected_sig):
@@ -299,8 +298,9 @@ if "auth" not in st.session_state:
         if verified_user:
             st.session_state.auth, st.session_state.user = True, verified_user
         else:
-            # Jeśli token jest sfałszowany lub wygasł, usuwamy go z URL
+            # Jeśli token jest sfałszowany lub to stary wpis (np. "wobo") - usuwamy i WYMUSZAMY odświeżenie paska
             st.query_params.clear()
+            st.rerun()
 
 
 if not st.session_state.auth:
