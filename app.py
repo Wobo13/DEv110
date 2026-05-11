@@ -2636,16 +2636,74 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V300 - Pełny rozkład z Wężem i Balonem) ---
+# --- 27. ADMIN PRO (V310 - Added Idioms Library Seeder) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
-    
-    if st.button("🔄 Pobierz najświeższe statystyki z bazy"):
+
+    # --- FUNKCJA INICJUJĄCA BAZĘ IDIOMÓW ---
+    def seed_idioms_library():
+        import json
+        import time
+        st.info("🚀 Rozpoczynam proces generowania 200 idiomów (100 DE + 100 CS)...")
+        
+        languages = ["de", "cs"]
+        categories = ["Jedzenie", "Pieniądze", "Emocje", "Praca", "Pogoda", "Zwierzęta", "Czas", "Ludzie"]
+        
+        for lang_code in languages:
+            total_generated = 0
+            lang_full = "niemieckim" if lang_code == "de" else "czeskim"
+            
+            while total_generated < 100:
+                batch_size = 20
+                with st.spinner(f"Generuję paczkę {total_generated//batch_size + 1}/5 dla języka: {lang_code.upper()}..."):
+                    prompt = f"""Wygeneruj listę {batch_size} unikalnych, popularnych idiomów lub zwrotów slangowych w języku {lang_full}.
+                    Każdy rekord musi być unikalny i nie powtarzać się z poprzednimi.
+                    Użyj kategorii z listy: {categories}.
+                    Zwróć WYŁĄCZNIE JSON w formacie:
+                    {{
+                      "idioms": [
+                        {{
+                          "lang": "{lang_code}",
+                          "phrase": "oryginalny idiom",
+                          "literal_pl": "dosłowne tłumaczenie na polski",
+                          "meaning_pl": "co to naprawdę znaczy po polsku",
+                          "origin_pl": "krótka geneza lub ciekawostka skąd się to wzięło",
+                          "example_orig": "krótki dialog lub zdanie użycia w oryginale",
+                          "example_pl": "tłumaczenie przykładu na polski",
+                          "formality": "🟢",
+                          "category": "jedna z podanych kategorii"
+                        }}
+                      ]
+                    }}"""
+                    
+                    try:
+                        res_raw = get_openai_response(prompt)
+                        data = json.loads(res_raw)
+                        idioms = data.get("idioms", [])
+                        if idioms:
+                            get_db().table("idioms_library").insert(idioms).execute()
+                            total_generated += len(idioms)
+                            st.toast(f"Dodano {total_generated} idiomów dla {lang_code.upper()}")
+                            time.sleep(1)
+                        else: break
+                    except Exception as e:
+                        st.error(f"Błąd przy paczce: {e}")
+                        break
+        st.success("✅ Baza idiomów została pomyślnie zainicjowana!")
+
+    # --- PRZYCISKI ADMINISTRACYJNE ---
+    col_adm1, col_adm2 = st.columns(2)
+    with col_adm1:
+        if st.button("🏗️ Inicjuj Bazę Idiomów (200 rekordów)", use_container_width=True, type="primary"):
+            seed_idioms_library()
+    with col_adm2:
+        st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
+
+    if st.button("🔄 Pobierz najświeższe statystyki z bazy", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-    st.link_button("💸 OpenAI Billing", "https://platform.openai.com/usage", use_container_width=True)
-    
+    # --- ANALIZA DANYCH ---
     db = get_db()
     ud_data = db.table("user_data").select("*").execute().data
     all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
@@ -2654,21 +2712,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     
     adm_list = []
     global_time = {}
-    
-    # Rozszerzona lista kodów (zgodnie z nową kolejnością)
     tracked_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
     display_names = {
-        "Pow": "📅 Powtórki", 
-        "Trn": "🚀 Trening", 
-        "Qiz": "🕹️ Quiz", 
-        "Fis": "🎴 Fiszki",
-        "Tst": "📝 Testy", 
-        "Mem": "🧠 Memory", 
-        "War": "🛠️ Warsztat",
-        "Kon": "🏗️ Konstruktor",
-        "Wan": "🐍 Lingwistyczny Wąż",
-        "Bal": "🎈 Balonowy Wyścig",
-        "Inn": "Inne"
+        "Pow": "📅 Powtórki", "Trn": "🚀 Trening", "Qiz": "🕹️ Quiz", "Fis": "🎴 Fiszki",
+        "Tst": "📝 Testy", "Mem": "🧠 Memory", "War": "🛠️ Warsztat",
+        "Kon": "🏗️ Konstruktor", "Wan": "🐍 Lingwistyczny Wąż",
+        "Bal": "🎈 Balonowy Wyścig", "Inn": "Inne"
     }
     
     today = date.today()
@@ -2678,7 +2727,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         user_cards = df_cards_all[df_cards_all["username"] == username]
         oc = user_cards["origin"].value_counts() if not user_cards.empty else {}
         
-        # 1. Obliczanie wiedzy (🧠 %)
         strong_cards = 0
         if not user_cards.empty:
             strong_cards = len([c for c in user_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6])
@@ -2686,7 +2734,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         else:
             wiedza_val = 0
 
-        # 2. Agregacja czasu
         user_stats = user.get("time_stats", {})
         current_user_merged = {code: 0 for code in tracked_codes}
         total_sec = 0
@@ -2694,13 +2741,11 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         for raw_key, seconds in user_stats.items():
             k = str(raw_key).strip()
             f_code = k if k in tracked_codes else "Inn"
-            
             current_user_merged[f_code] += seconds
             total_sec += seconds
             if f_code != "Inn":
                 global_time[f_code] = global_time.get(f_code, 0) + seconds
 
-        # 3. Formatowanie danych do głównej tabeli
         raw_seen = user.get("last_seen", "Brak")
         formatted_seen = raw_seen.replace(" ", "  |  ") if " " in raw_seen else raw_seen
         
@@ -2731,7 +2776,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         if total_global_study > 0:
             analysis_rows = []
-            # Wyświetlamy w zadanej kolejności (z Wężem i Balonem na końcu)
             for code in ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal"]:
                 val_sec = global_time.get(code, 0)
                 perc = (val_sec / total_global_study) * 100
@@ -2769,15 +2813,12 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         # --- TABELA 3: SZCZEGÓŁY CZASU ---
         with st.expander("🔍 Szczegółowy podział czasu użytkowników (minuty)"):
             detail_rows = []
-            # Pełna lista dla tabeli szczegółowej
             valid_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Inn"]
-            
             for _, row in df_admin.iterrows():
                 d_row = {"Użytkownik": row["Użytkownik"]}
                 for code in valid_codes:
                     d_row[display_names[code]] = int(row["__raw_stats"][code] // 60)
                 detail_rows.append(d_row)
-            
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
