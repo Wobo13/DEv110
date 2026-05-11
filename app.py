@@ -519,7 +519,7 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V2.2 - Knowledge Pulse & Dynamic Tasks) ---
+# --- 7. START (V2.3 - Refined Task Logic) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -534,7 +534,7 @@ if current_choice == "🏠 Start":
     ud = st.session_state.user_data
     today_str = date.today().isoformat()
     
-    # Obliczanie "Pulsu Wiedzy" (% słówek z interwałem > 6 dni)
+    # Puls Wiedzy (silne słowa: interwał > 6 dni)
     strong_words = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today_str)).date() - date.today()).days > 6])
     knowledge_pulse = int((strong_words / len(all_c)) * 100) if all_c else 0
 
@@ -544,9 +544,7 @@ if current_choice == "🏠 Start":
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # Powitanie
-    hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
-    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
+    st.header(f"{'Guten Morgen' if L_CODE == 'de' else 'Dobrý den'}, {str(u).capitalize()}! ☀️")
     
     # 2. METRYKI (KPI)
     col1, col2, col3 = st.columns(3)
@@ -563,18 +561,11 @@ if current_choice == "🏠 Start":
         st.markdown(f"### 📊 Puls Wiedzy: {current_lang_name}")
         st.write(f"Opanowałeś już **{knowledge_pulse}%** swojej bazy na poziomie trwałym.")
         st.progress(knowledge_pulse / 100)
-        
-        if knowledge_pulse < 30:
-            st.caption("💡 Twoja baza jest świeża. Skup się na regularnych powtórkach!")
-        elif knowledge_pulse < 70:
-            st.caption("📈 Świetnie! Coraz więcej słów trafia do pamięci długotrwałej.")
-        else:
-            st.caption("🏆 Jesteś mistrzem! Twoja wiedza jest bardzo stabilna.")
+        st.caption("💡 Puls rośnie, gdy terminy Twoich powtórek stają się coraz dłuższe.")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         
-        # --- LOGIKA SPRAWDZANIA ZADAŃ ---
         try:
             db = get_db()
             # ASYSTENT PISANIA
@@ -595,15 +586,22 @@ if current_choice == "🏠 Start":
                 daily_phrase = res_idioms.data[idx_det]['phrase']
             det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
             
-            # NOWE ZADANIE: WARSZTAT
-            hard_cards = [c for c in all_c if c.get("level", 0) < 2]
-            workshop_done = study_stats = ud.get("time_stats", {}).get("War", 0) > 60 # min. 1 minuta w warsztacie
+            # WARSZTAT TRACKER (Cel: 3 słowa)
+            wrk_goal = 3
+            # Pobieramy postęp z session_state (inicjalizacja w razie braku)
+            if "wrk_mastered_today" not in st.session_state: st.session_state.wrk_mastered_today = 0
+            mastered_today = st.session_state.wrk_mastered_today
+            workshop_done = mastered_today >= wrk_goal
+            
+            # Ile słów w ogóle kwalifikuje się do warsztatu
+            hard_cards_count = len([c for c in all_c if c.get("level", 0) < 2])
+
         except:
             writing_done = det_done = workshop_done = False
-            current_writing_topic = "Błąd"
-            daily_phrase = "Błąd"
+            current_writing_topic = daily_phrase = "Błąd"
+            mastered_today = 0
 
-        # --- UI ZADAŃ ---
+        # UI ZADAŃ
         t_icon = "✅" if study_minutes >= daily_goal else "❌"
         st.write(f"{t_icon} Cel czasowy: **{daily_goal} min**")
 
@@ -614,8 +612,7 @@ if current_choice == "🏠 Start":
             st.markdown(f"📝 *„{current_writing_topic}”*")
             if not writing_done:
                 if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
-                    st.session_state.choice = "✍️ Asystent Pisania"
-                    st.rerun()
+                    st.session_state.choice = "✍️ Asystent Pisania"; st.rerun()
 
         # Detektyw
         with st.container(border=True):
@@ -624,15 +621,14 @@ if current_choice == "🏠 Start":
             st.markdown(f"🔍 *„{daily_phrase}”*")
             if not det_done:
                 if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
-                    st.session_state.choice = "🕵️ Kulturowy Detektyw"
-                    st.rerun()
+                    st.session_state.choice = "🕵️ Kulturowy Detektyw"; st.rerun()
 
-        # Warsztat / Nowe Słówka
+        # Dynamiczne Zadanie Warsztatowe
         wrk_icon = "✅" if workshop_done else "🛠️"
-        if len(hard_cards) > 0:
-            st.write(f"{wrk_icon} Zadanie dodatkowe: **Oczyść Warsztat** ({len(hard_cards)} trudnych słów)")
+        if hard_cards_count > 0:
+            st.write(f"{wrk_icon} Zadanie: **Opanuj 3 słowa z Warsztatu** ({mastered_today}/3)")
         else:
-            st.write(f"✅ Warsztat jest pusty! Dobra robota.")
+            st.write(f"✅ Warsztat jest pusty! (Wszystkie słowa na poziomie 2+)")
 
     st.divider()
 
@@ -647,7 +643,7 @@ if current_choice == "🏠 Start":
             ],
             "cs": [
                 {"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."},
-                {"orig": "Trpělivost přináší růže.", "pl": "Cierpliwość przynosi róże (odpowiednik: cierpliwość popłaca)."},
+                {"orig": "Trpělivost přináší růže.", "pl": "Cierpliwość przynosi róże."},
                 {"orig": "Učený nikdo z nebe nespadl.", "pl": "Nikt uczony z nieba nie spadł."}
             ]
         }
