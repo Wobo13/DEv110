@@ -381,12 +381,12 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V255 - Dual-Time & Persistence Engine) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V256 - Total Precision Engine) ---
 
 u = st.session_state.get("user")
 
 def load_user_data(username):
-    """Pobiera profil i zarządza resetem dziennym oraz synchronizacją czasu."""
+    """Pobiera profil i zarządza resetem dziennym."""
     try:
         res = get_db().table("user_data").select("*").eq("username", username).execute()
         if res.data:
@@ -394,43 +394,38 @@ def load_user_data(username):
             today_str = date.today().isoformat()
             yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-            # Inicjalizacja słowników, jeśli są puste
+            # Inicjalizacja słowników
             for key in ["time_stats", "total_time_stats", "settings", "workshop_progress"]:
-                if key not in data or data[key] is None:
-                    data[key] = {}
-            if "test_history" not in data or data[key] is None: data["test_history"] = []
+                if key not in data or data[key] is None: data[key] = {}
+            if "test_history" not in data or data.get("test_history") is None: data["test_history"] = []
 
-            # 1. RESET DZIENNY (Tylko dla time_stats)
+            # 1. RESET DZIENNY MINUT
             last_visit = data.get("last_visit_date", "2000-01-01")
             if last_visit != today_str:
-                # Przed resetem moglibyśmy zmigrować dane, ale tutaj po prostu czyścimy dzień
                 data["time_stats"] = {}
                 data["last_visit_date"] = today_str
 
-            # 2. LOGIKA RESETU PASSY (STREAK)
-            # Jeśli ostatni sukces (last_date) był dawniej niż wczoraj -> ogień gaśnie
+            # 2. LOGIKA RESETU PASSY
             last_success = data.get("last_date", "2000-01-01")
             if last_success != today_str and last_success != yesterday_str:
                 data["streak"] = 0
             
             return data
     except Exception as e:
-        st.error(f"Błąd ładowania profilu: {e}")
+        st.error(f"Błąd profilu: {e}")
     return None
 
 def save_user_data(username, data):
-    """Zapisuje dane profilu i aktualizuje czas ostatniego widzenia."""
+    """Zapisuje dane profilu do Supabase."""
     if not username: return
     try:
-        # Usuwamy pola techniczne Supabase przed updatem
         clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
         clean_data["last_seen"] = get_now_pl()
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
-    except:
-        pass
+    except: pass
 
 def update_activity(current_choice):
-    """Kluczowy silnik: Naliczanie czasu (Dziś + Łącznie), Kosztów i Passy."""
+    """Główny licznik czasu i passy. Wywoływany na początku każdego odświeżenia."""
     if not current_choice or "user_data" not in st.session_state or not u:
         return
 
@@ -441,72 +436,65 @@ def update_activity(current_choice):
 
     delta = now - st.session_state.last_ts_activity
     
-    # Naliczamy tylko jeśli aktywność trwała krócej niż 10 min (anty-idle)
-    if 0 < delta < 600:
+    if 0.5 < delta < 600: # Ignorujemy mikro-odświeżenia i bezczynność > 10 min
         ud = st.session_state.user_data
         today_str = date.today().isoformat()
         
-        # Rozpoznawanie modułu
+        # PEŁNE MAPOWANIE MODUŁÓW (Naprawione)
         mapping = {
             "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
             "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
-            "wąż": "Wan", "wyścig": "Bal", "statystyki": "Sta"
+            "wąż": "Wan", "wyścig": "Bal", "asystent": "Wri", "detektyw": "Det", 
+            "laborat": "Lab", "skaner": "Skn", "statystyk": "Sta"
         }
-        clean_choice = "".join(filter(str.isalpha, str(current_choice).lower()))
+        
+        clean_choice = normalize_text(str(current_choice))
         label = "Inn"
         for k, v in mapping.items():
             if k in clean_choice:
                 label = v
                 break
         
-        # 1. Aktualizacja CZASU DZISIEJSZEGO
-        ts = dict(ud.get("time_stats", {}))
-        ts[label] = ts.get(label, 0.0) + delta
-        ud["time_stats"] = ts
+        # Aktualizacja DZIŚ i ŁĄCZNIE
+        for stat_key in ["time_stats", "total_time_stats"]:
+            curr_dict = dict(ud.get(stat_key, {}))
+            curr_dict[label] = float(curr_dict.get(label, 0.0)) + delta
+            ud[stat_key] = curr_dict
 
-        # 2. Aktualizacja CZASU CAŁKOWITEGO (Nowa kolumna)
-        tts = dict(ud.get("total_time_stats", {}))
-        tts[label] = tts.get(label, 0.0) + delta
-        ud["total_time_stats"] = tts
-
-        # 3. SPRAWDZANIE CELU DNIA I PASSY
+        # SPRAWDZANIE CELU (Używamy sekund dla precyzji)
         m_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
-        total_sec_today = sum(ts.get(code, 0) for code in m_codes)
-        total_min_today = total_sec_today / 60
+        total_sec_today = sum(ud["time_stats"].get(code, 0) for code in m_codes)
         
-        goal = ud.get("settings", {}).get("daily_goal", 20)
+        goal_min = ud.get("settings", {}).get("daily_goal", 20)
         
-        # Jeśli dziś osiągnięto cel i jeszcze nie zapisano sukcesu
-        if total_min_today >= goal and ud.get("last_date") != today_str:
+        if total_sec_today >= (goal_min * 60) and ud.get("last_date") != today_str:
             ud["streak"] = ud.get("streak", 0) + 1
             ud["last_date"] = today_str
             st.toast(f"🔥 Cel dnia osiągnięty! Passa: {ud['streak']} dni", icon="🚀")
 
-        # Zapis do bazy
+        # Ważne: Re-asumpcja do session_state
+        st.session_state.user_data = ud
         save_user_data(u, ud)
 
     st.session_state.last_ts_activity = now
 
-# --- START SESJI ---
+# Inicjalizacja sesji
 if u:
     if "user_data" not in st.session_state:
         st.session_state.user_data = load_user_data(u)
         st.session_state.flashcards = load_flashcards(u)
-        # Ping bazy przy wejściu
-        save_user_data(u, st.session_state.user_data)
+    
+    # KLUCZ: Wywołujemy naliczanie czasu ZANIM narysuje się Sidebar
+    current_choice = st.session_state.get("choice", "🏠 Start")
+    update_activity(current_choice)
 
-    # Co 5 minut wymuszamy pełną synchronizację profilu
-    if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
-        save_user_data(u, st.session_state.user_data)
-        st.session_state.last_db_ping = time.time()
-
-# --- 6. SIDEBAR (V384 - Clean Character Fix) ---
+# --- 6. SIDEBAR (V386 - Total Synchronization & Smooth Progress) ---
 with st.sidebar:
     st.markdown("""
         <style>
             [data-testid="stSidebarNav"] {display: none;}
             
-            /* Selektor ograniczony wyłącznie do bocznego paska */
+            /* Stylizacja przycisków menu w sidebarze */
             [data-testid="stSidebar"] div.stButton > button {
                 width: 100%; 
                 text-align: left; 
@@ -522,16 +510,16 @@ with st.sidebar:
             }
             
             hr { margin: 0.4rem 0 !important; opacity: 0.3; }
+            
+            /* Płynna animacja paska postępu */
+            .stProgress > div > div > div > div {
+                transition: width 0.5s ease-in-out;
+            }
         </style>
     """, unsafe_allow_html=True)
 
-    # Pobranie danych użytkownika
-    if "user_data" not in st.session_state:
-        st.rerun()
-    
+    # 1. DANE UŻYTKOWNIKA I NAGŁÓWEK
     ud = st.session_state.user_data
-    
-    # Nagłówek profilu
     st.markdown(f"""
         <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;'>
             <span style='font-size:0.9rem;'><b>👤 {str(u).capitalize()}</b></span>
@@ -539,7 +527,7 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # Wybór Języka
+    # 2. WYBÓR JĘZYKA
     if "current_lang" not in st.session_state: 
         st.session_state.current_lang = "Niemiecki"
         
@@ -554,26 +542,33 @@ with st.sidebar:
 
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
 
-    # Paski postępu
-    all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    # 3. STATYSTYKI WIEDZY I CELU DNIA
+    all_c = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
+    
+    # Obliczanie wiedzy (słówka opanowane > 6 dni)
     wiedza = 0
     if all_c:
         today = date.today()
         strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
         wiedza = int((strong / len(all_c)) * 100)
 
-    current_stats = ud.get("time_stats", {})
+    # Obliczanie czasu (z dokładnością co do sekundy dla płynności paska)
     m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
-    mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
-    goal = ud.get("settings", {}).get("daily_goal", 20)
+    time_stats = ud.get("time_stats", {})
+    total_sec = sum(time_stats.get(c, 0) for c in m_list)
+    
+    mins_done = int(total_sec // 60)
+    goal_mins = ud.get("settings", {}).get("daily_goal", 20)
 
+    # Progress Bars
     st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🧠 Wiedza ({L_CODE.upper()}): {wiedza}%</div>", unsafe_allow_html=True)
     st.progress(min(wiedza / 100, 1.0))
-    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🎯 Cel dnia: {mins}/{goal}m</div>", unsafe_allow_html=True)
-    st.progress(min(mins / goal, 1.0))
+    
+    st.markdown(f"<div style='font-size:0.75rem; color:#aaa;'>🎯 Cel dnia: {mins_done}/{goal_mins}m</div>", unsafe_allow_html=True)
+    st.progress(min(total_sec / (goal_mins * 60), 1.0))
     st.markdown("<hr>", unsafe_allow_html=True)
 
-    # Funkcja menu
+    # 4. FUNKCJA GENERUJĄCA ELEMENTY MENU
     def menu_item(label, target):
         is_selected = st.session_state.get("choice") == target
         btn_label = f"{'▶ ' if is_selected else ''}{label}"
@@ -581,7 +576,7 @@ with st.sidebar:
             st.session_state.choice = target
             st.rerun()
 
-    # Struktura Menu
+    # 5. STRUKTURA MENU
     choice_now = st.session_state.get("choice", "🏠 Start")
     menu_item("🏠 Start", "🏠 Start")
 
@@ -601,6 +596,7 @@ with st.sidebar:
     for opt in ["📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
+    # Sekcja Admina
     if u == ADMIN_USER:
         st.markdown("<hr>", unsafe_allow_html=True)
         st.write("🏁 **STREFA VIP**")
@@ -614,11 +610,6 @@ with st.sidebar:
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
-
-# --- DEFINICJA ZMIENNEJ CHOICE ---
-if "choice" not in st.session_state:
-    st.session_state.choice = "🏠 Start"
-choice = st.session_state.choice
 
 # --- 7. START (V3.0 - Mobile First + Persistent Workshop Fix) ---
 
