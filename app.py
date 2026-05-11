@@ -381,56 +381,56 @@ if not st.session_state.auth:
                 st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V254 - Streak & Activity Engine) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V255 - Dual-Time & Persistence Engine) ---
 
-# Pobranie nazwy użytkownika z sesji
 u = st.session_state.get("user")
 
 def load_user_data(username):
-    """Pobiera dane profilu i zarządza resetem passy przy logowaniu."""
+    """Pobiera profil i zarządza resetem dziennym oraz synchronizacją czasu."""
     try:
         res = get_db().table("user_data").select("*").eq("username", username).execute()
         if res.data:
             data = res.data[0]
-            today = date.today()
-            today_str = today.isoformat()
-            yesterday_str = (today - timedelta(days=1)).isoformat()
+            today_str = date.today().isoformat()
+            yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-            # Inicjalizacja wymaganych kluczy
-            required_keys = ["time_stats", "settings", "test_history", "workshop_progress"]
-            for key in required_keys:
+            # Inicjalizacja słowników, jeśli są puste
+            for key in ["time_stats", "total_time_stats", "settings", "workshop_progress"]:
                 if key not in data or data[key] is None:
-                    data[key] = {} if key != "test_history" else []
-            
-            # A. Reset minut dnia (jeśli to nowa data wizyty)
+                    data[key] = {}
+            if "test_history" not in data or data[key] is None: data["test_history"] = []
+
+            # 1. RESET DZIENNY (Tylko dla time_stats)
             last_visit = data.get("last_visit_date", "2000-01-01")
             if last_visit != today_str:
+                # Przed resetem moglibyśmy zmigrować dane, ale tutaj po prostu czyścimy dzień
                 data["time_stats"] = {}
                 data["last_visit_date"] = today_str
 
-            # B. Sprawdzanie przerwania passy (Streak Break)
-            # last_date to u Ciebie dzień, w którym ostatnio osiągnięto pełny cel.
-            last_goal_date = data.get("last_date", "2000-01-01")
-            if last_goal_date != today_str and last_goal_date != yesterday_str:
-                data["streak"] = 0 # Przerwa w nauce powyżej 1 dnia = utrata ognia
+            # 2. LOGIKA RESETU PASSY (STREAK)
+            # Jeśli ostatni sukces (last_date) był dawniej niż wczoraj -> ogień gaśnie
+            last_success = data.get("last_date", "2000-01-01")
+            if last_success != today_str and last_success != yesterday_str:
+                data["streak"] = 0
             
             return data
     except Exception as e:
-        st.error(f"Błąd ładowania danych: {e}")
+        st.error(f"Błąd ładowania profilu: {e}")
     return None
 
 def save_user_data(username, data):
-    """Zapisuje dane do bazy i aktualizuje czas ostatniego widzenia."""
+    """Zapisuje dane profilu i aktualizuje czas ostatniego widzenia."""
     if not username: return
     try:
+        # Usuwamy pola techniczne Supabase przed updatem
         clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
         clean_data["last_seen"] = get_now_pl()
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
-    except Exception:
+    except:
         pass
 
 def update_activity(current_choice):
-    """Nalicza czas nauki i sprawdza warunek zwiększenia passy (Streak)."""
+    """Kluczowy silnik: Naliczanie czasu (Dziś + Łącznie), Kosztów i Passy."""
     if not current_choice or "user_data" not in st.session_state or not u:
         return
 
@@ -441,12 +441,12 @@ def update_activity(current_choice):
 
     delta = now - st.session_state.last_ts_activity
     
-    # Jeśli ruch był w rozsądnym czasie (poniżej 10 min), doliczamy czas
+    # Naliczamy tylko jeśli aktywność trwała krócej niż 10 min (anty-idle)
     if 0 < delta < 600:
         ud = st.session_state.user_data
         today_str = date.today().isoformat()
         
-        # 1. Mapowanie i aktualizacja minut w time_stats
+        # Rozpoznawanie modułu
         mapping = {
             "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
             "testy": "Tst", "memory": "Mem", "warsztat": "War", "konstruktor": "Kon",
@@ -459,24 +459,30 @@ def update_activity(current_choice):
                 label = v
                 break
         
-        stats = dict(ud.get("time_stats", {}))
-        stats[label] = stats.get(label, 0.0) + delta
-        ud["time_stats"] = stats
+        # 1. Aktualizacja CZASU DZISIEJSZEGO
+        ts = dict(ud.get("time_stats", {}))
+        ts[label] = ts.get(label, 0.0) + delta
+        ud["time_stats"] = ts
 
-        # 2. LOGIKA NALICZANIA PASSY (STREAK)
-        # Obliczamy sumę minut ze wszystkich kluczowych modułów
+        # 2. Aktualizacja CZASU CAŁKOWITEGO (Nowa kolumna)
+        tts = dict(ud.get("total_time_stats", {}))
+        tts[label] = tts.get(label, 0.0) + delta
+        ud["total_time_stats"] = tts
+
+        # 3. SPRAWDZANIE CELU DNIA I PASSY
         m_codes = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
-        total_sec = sum(stats.get(code, 0) for code in m_codes)
-        total_min = total_sec / 60
-        daily_goal = ud.get("settings", {}).get("daily_goal", 20)
-
-        # Jeśli osiągnięto cel I dzisiaj jeszcze nie naliczono punktu do passy
-        if total_min >= daily_goal and ud.get("last_date") != today_str:
+        total_sec_today = sum(ts.get(code, 0) for code in m_codes)
+        total_min_today = total_sec_today / 60
+        
+        goal = ud.get("settings", {}).get("daily_goal", 20)
+        
+        # Jeśli dziś osiągnięto cel i jeszcze nie zapisano sukcesu
+        if total_min_today >= goal and ud.get("last_date") != today_str:
             ud["streak"] = ud.get("streak", 0) + 1
-            ud["last_date"] = today_str # Zapisujemy datę sukcesu
-            st.toast(f"🔥 Cel dnia osiągnięty! Twoja passa to teraz {ud['streak']} dni!", icon="🚀")
+            ud["last_date"] = today_str
+            st.toast(f"🔥 Cel dnia osiągnięty! Passa: {ud['streak']} dni", icon="🚀")
 
-        # 3. Zapisujemy zaktualizowany profil do bazy
+        # Zapis do bazy
         save_user_data(u, ud)
 
     st.session_state.last_ts_activity = now
@@ -486,8 +492,10 @@ if u:
     if "user_data" not in st.session_state:
         st.session_state.user_data = load_user_data(u)
         st.session_state.flashcards = load_flashcards(u)
+        # Ping bazy przy wejściu
         save_user_data(u, st.session_state.user_data)
 
+    # Co 5 minut wymuszamy pełną synchronizację profilu
     if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
