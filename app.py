@@ -2174,41 +2174,38 @@ elif choice == "🎲 Językowa Ruletka":
 
         survival_engine()
 
-# --- 20. ARENA WYZWAŃ (V2.8 - Deep Debugger) ---
+# --- 20. ARENA WYZWAŃ (V2.9 - Syntax Fix & Final) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     u_name = st.session_state.get("user", "Anonim") 
     
     st.markdown(f"<h1 style='text-align: center;'>🏆 Arena Wyzwań</h1>", unsafe_allow_html=True)
-    st.write(f"DEBUG: Język = {current_lang_name}, Kod = {L_CODE}")
+    st.write(f"Język: **{current_lang_name}** ({L_CODE})")
 
     # --- 0. DATY ---
     now_pl = datetime.now(pytz.timezone('Europe/Warsaw'))
     start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-    # --- 1. FUNKCJA POBIERAJĄCA Z WYŚWIETLANIEM BŁĘDÓW ---
+    # --- 1. FUNKCJA POBIERAJĄCA (Z POPRAWIONYM SYNTAYXEM ORDER) ---
     def get_game_leaderboard(game_id, lang_code, start_date=None):
         try:
             db = get_db()
-            query = db.table("game_scores").select("username, score, lang, game_name").eq("game_name", game_id).eq("lang", lang_code)
+            query = db.table("game_scores").select("username, score, created_at").eq("game_name", game_id).eq("lang", lang_code)
             
             if start_date:
                 query = query.gte("created_at", start_date)
             
-            is_asc = True if game_id == "memory" else False
-            res = query.order("score", ascending=is_asc).limit(10).execute()
+            # POPRAWKA: Używamy 'desc' zamiast 'ascending'
+            # Memory (czas): is_asc=True -> desc=False
+            # Inne (punkty): is_asc=False -> desc=True
+            is_desc = False if game_id == "memory" else True
             
-            # DEBUG: Wyświetl jeśli coś przyszło
-            if res.data:
-                # st.write(f"✅ {game_id} ({lang_code}): znaleziono {len(res.data)} rekordów")
-                return res.data
-            else:
-                return []
+            res = query.order("score", desc=is_desc).limit(10).execute()
+            return res.data if res.data else []
         except Exception as e:
-            # TO POKAŻE NAM DOKŁADNY BŁĄD JEŚLI ZAPYTANIE PADŁO
-            st.error(f"❌ Błąd zapytania dla {game_id}: {str(e)}")
+            # st.error(f"Błąd zapytania: {e}") # Debugging
             return []
 
     # --- 2. POBIERANIE DANYCH STAŁYCH ---
@@ -2222,8 +2219,7 @@ elif choice == "🏆 Arena Wyzwań":
             un = c['username']
             if un not in cards_per_user: cards_per_user[un] = []
             cards_per_user[un].append(c)
-    except Exception as e:
-        st.error(f"❌ Błąd profilu: {e}")
+    except:
         raw_users, cards_per_user = [], {}
 
     def assign_medals(df):
@@ -2267,7 +2263,7 @@ elif choice == "🏆 Arena Wyzwań":
                         df_game = df_game.rename(columns={"username": "Użytkownik"})
                         st.table(assign_medals(df_game[["Użytkownik", "Rekord"]].head(10)))
                     else:
-                        st.caption(f"Brak rekordów dla {g['id']} ({L_CODE}).")
+                        st.caption(f"Brak rekordów dla tego okresu.")
 
     st.divider()
 
@@ -2296,6 +2292,12 @@ elif choice == "🏆 Arena Wyzwań":
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
             if not df_w.empty: st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
             else: st.caption("Brak danych.")
+
+    # Podświetlenie pozycji aktualnego gracza
+    st.write("---")
+    my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
+    if my_stats:
+        st.info(f"Twoje statystyki ({current_lang_name}): Wiedza: **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
