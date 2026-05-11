@@ -406,7 +406,7 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V361 - Fixed NameError & Laboratorium) ---
+# --- 6. SIDEBAR (V370 - Writing Assistant Added) ---
 with st.sidebar:
     # 1. Stylizacja CSS dla minimalistycznego i spójnego menu
     st.markdown("""
@@ -458,8 +458,8 @@ with st.sidebar:
         wiedza = int((strong / len(all_c)) * 100)
 
     current_stats = ud.get("time_stats", {})
-    # Kod "Lab" musi być w liście, aby czas w Laboratorium się naliczał
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab"]
+    # Dodano "Lab" i "Wri" do listy naliczania czasu
+    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
 
@@ -481,8 +481,12 @@ with st.sidebar:
     menu_item("🏠 Start", "🏠 Start")
     choice_now = st.session_state.get("choice", "🏠 Start")
 
-    # GRUPA: NAUKA
-    nauka_options = ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]
+    # GRUPA: NAUKA (Z Laboratorium, Asystentem i Sparing AI)
+    nauka_options = [
+        "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
+        "🧪 Laboratorium", "✍️ Asystent Pisania", "🛠️ Warsztat", 
+        "📝 Testy", "🤖 Sparing AI"
+    ]
     with st.expander("📚 Nauka", expanded=(choice_now in nauka_options)):
         for item in nauka_options:
             menu_item(item, item)
@@ -506,7 +510,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# --- KLUCZOWA LINIA (Naprawia NameError) ---
+# --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
 # --- 7. START (V1.6 - Multilang AI + Fixed Recent Words) ---
@@ -3018,3 +3022,123 @@ elif choice == "🧪 Laboratorium":
             st.markdown("⚪ **TEN (Męski):** spółgłoski (h, k, r, d...)")
             st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
             st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
+
+# --- 30. ASYSTENT PISANIA (V1.0 - Daily & Custom Challenges) ---
+elif choice == "✍️ Asystent Pisania":
+    import openai
+    import hashlib
+
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"✍️ Asystent Pisania: {current_lang_name}")
+    
+    # --- LOGIKA GENEROWANIA TEMATU DNIA ---
+    # Używamy daty jako ziarna (seed), aby każdy użytkownik miał ten sam temat danego dnia
+    today_str = date.today().isoformat()
+    daily_topics = {
+        "de": ["Beschreibe dein Frühstück.", "Was hast du am Wochenende gemacht?", "Erzähle von deinem Traumjob.", "Wie sieht dein idealer Urlaub aus?", "Beschreibe dein Lieblingsbuch."],
+        "cs": ["Popiš svou snídani.", "Co jsi dělal o víkendu?", "Vyprávěj o své vysněné práci.", "Jak vypadá tvá ideální dovolená?", "Popiš svou oblíbenou knihu."]
+    }
+    
+    # Wybieramy temat na podstawie skrótu daty
+    topic_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(daily_topics[L_CODE])
+    topic_of_the_day = daily_topics[L_CODE][topic_idx]
+
+    # --- TABS: DZIENNE VS WŁASNE ---
+    tab_daily, tab_custom = st.tabs(["📅 Zadanie Dnia", "🎯 Wyzwanie Własne"])
+
+    with tab_daily:
+        st.subheader("Dzisiejsze wyzwanie:")
+        st.info(f"**Temat:** {topic_of_the_day}")
+        min_s_daily = 3
+        user_text_daily = st.text_area("Napisz min. 3 zdania:", key="write_daily_area", height=150, placeholder="Wpisz swój tekst tutaj...")
+        
+        if st.button("Wyślij do oceny (Zadanie Dnia)", type="primary"):
+            # Prosta walidacja kropkami
+            sentences_count = len(re.findall(r'[^.!?]+[.!?]', user_text_daily))
+            if sentences_count < min_s_daily:
+                st.warning(f"Twój tekst ma tylko {sentences_count} zdania. Napisz minimum {min_s_daily}.")
+            else:
+                st.session_state.writing_action = ("eval", user_text_daily, topic_of_the_day)
+
+    with tab_custom:
+        st.subheader("Skonfiguruj własne zadanie:")
+        c1, c2 = st.columns([2, 1])
+        custom_topic_in = c1.text_input("Temat zadania:", placeholder="np. Moje hobby / losowy temat")
+        min_s_custom = c2.number_input("Min. zdań:", 3, 15, 3)
+        
+        if st.button("Generuj temat / Rozpocznij"):
+            if not custom_topic_in or custom_topic_in.lower() == "losowy temat":
+                with st.spinner("AI losuje temat..."):
+                    try:
+                        client = openai.OpenAI(api_key=API_KEY)
+                        res = client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=[{"role": "system", "content": f"Podaj krótki, ciekawy temat wypracowania po polsku i {current_lang_name} dla ucznia. Format: Temat_PL ||| Temat_{current_lang_name}"}]
+                        )
+                        st.session_state.custom_topic_active = res.choices[0].message.content
+                    except: st.error("Błąd API.")
+            else:
+                st.session_state.custom_topic_active = f"{custom_topic_in} ||| {custom_topic_in}"
+
+        if "custom_topic_active" in st.session_state:
+            t_pl, t_orig = st.session_state.custom_topic_active.split("|||")
+            st.markdown(f"**Twój temat:** `{t_orig.strip()}` ({t_pl.strip()})")
+            user_text_custom = st.text_area(f"Napisz min. {min_s_custom} zdań:", key="write_custom_area", height=150)
+            
+            if st.button("Wyślij do oceny (Własne)"):
+                sentences_count = len(re.findall(r'[^.!?]+[.!?]', user_text_custom))
+                if sentences_count < min_s_custom:
+                    st.warning(f"Zbyt krótki tekst ({sentences_count}/{min_s_custom} zdań).")
+                else:
+                    st.session_state.writing_action = ("eval", user_text_custom, t_orig)
+
+    # --- LOGIKA OCENY PRZEZ AI ---
+    if "writing_action" in st.session_state:
+        action, text, topic = st.session_state.writing_action
+        with st.spinner("Asystent analizuje Twój tekst..."):
+            try:
+                client = openai.OpenAI(api_key=API_KEY)
+                prompt = f"""Jesteś profesjonalnym nauczycielem języka {current_lang_name}. 
+                Uczeń napisał tekst na temat: "{topic}".
+                Tekst ucznia: "{text}"
+                
+                TWOJE ZADANIA:
+                1. Oceń poziom tekstu w skali CEFR (np. A2, B1).
+                2. Wypunktuj błędy (gramatyka, ortografia, styl) i podaj poprawne wersje.
+                3. Podaj 'Wersję Mistrzowską' - jak ten sam tekst napisałby native speaker na poziomie C1.
+                4. Napisz krótkie podsumowanie motywujące.
+                
+                Odpowiedz w formacie:
+                POZIOM: [Poziom] ||| KOREKTA: [Lista błędów] ||| MISTRZ: [Wersja C1] ||| INFO: [Motywacja]"""
+                
+                resp = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "system", "content": prompt}])
+                raw_eval = resp.choices[0].message.content
+                
+                # Wyświetlanie wyniku
+                parts = raw_eval.split("|||")
+                st.divider()
+                st.balloons()
+                
+                col_res1, col_res2 = st.columns([1, 3])
+                with col_res1:
+                    lvl = parts[0].replace("POZIOM:", "").strip()
+                    st.metric("Twój Poziom", lvl)
+                with col_res2:
+                    st.success(parts[3].replace("INFO:", "").strip())
+                
+                st.subheader("📝 Szczegółowa analiza:")
+                st.warning(parts[1].replace("KOREKTA:", "").strip())
+                
+                with st.expander("✨ Zobacz jak napisałby to Native Speaker (C1)"):
+                    st.write(parts[2].replace("MISTRZ:", "").strip())
+                
+                if st.button("Rozpocznij nowe zadanie"):
+                    del st.session_state.writing_action
+                    if "custom_topic_active" in st.session_state: del st.session_state.custom_topic_active
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Błąd połączenia z asystentem: {e}")
+                del st.session_state.writing_action
