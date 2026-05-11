@@ -1815,76 +1815,7 @@ elif choice == "🎈 Balonowy Wyścig":
             # Uruchomienie fragmentu
             game_fragment()
             
-# --- 20. ARENA WYZWAŃ (V283 - Fix Column Missing Error) ---
-elif choice == "🏆 Arena Wyzwań":
-    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
-    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
-    
-    st.header("🏆 Arena Wyzwań")
-    st.write(f"Rywalizacja w języku {current_lang_name}")
-
-    # 1. POBIERANIE DANYCH (Bezpieczna lista kolumn, które na pewno masz)
-    try:
-        db = get_db()
-        # Wybieramy tylko te kolumny, które standardowo istnieją w Twoim systemie
-        res = db.table("user_data").select("username, streak, memory_scores_de, memory_scores_cs, top_balloons_de, top_balloons_cs").execute()
-        raw_users = res.data if res.data else []
-    except Exception as e:
-        st.error(f"Problem z bazą: {e}")
-        raw_users = []
-
-    leaderboard_data = []
-    
-    for u_row in raw_users:
-        uname = u_row.get("username", "Anonim")
-        streak = u_row.get("streak", 0)
-        
-        # Wiedza: Liczymy na żywo TYLKO dla aktualnego użytkownika (Ciebie)
-        # Dla innych dajemy "---" lub 0, żeby nie przeciążać bazy zapytaniami o ich fiszki
-        wiedza_str = "---"
-        w_raw = 0
-        
-        if uname == u:
-            my_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-            if my_cards:
-                today_dt = date.today()
-                strong = len([c for c in my_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-                w_raw = int((strong / len(my_cards)) * 100)
-                wiedza_str = f"{w_raw}%"
-
-        leaderboard_data.append({
-            "Użytkownik": uname,
-            "Ogień 🔥": streak,
-            "Wiedza 🧠": wiedza_str,
-            "w_raw": w_raw,
-            "memory": u_row.get(f"memory_scores_{L_CODE}", []),
-            "balloons": u_row.get(f"top_balloons_{L_CODE}", [])
-        })
-
-    if not leaderboard_data:
-        st.info("Ranking jest obecnie pusty.")
-    else:
-        # 2. RANKINGI GŁÓWNE
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🔥 Najdłuższa Passa")
-            df_s = pd.DataFrame(leaderboard_data).sort_values("Ogień 🔥", ascending=False).head(10)
-            st.table(df_s[["Użytkownik", "Ogień 🔥"]])
-            
-        with col2:
-            st.subheader(f"🧠 Twoja Wiedza ({current_lang_name})")
-            # Pokazujemy tylko użytkowników, którzy mają policzoną wiedzę (Ciebie)
-            df_w = pd.DataFrame(leaderboard_data)
-            df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False)
-            if not df_w.empty:
-                st.table(df_w[["Użytkownik", "Wiedza 🧠"]])
-            else:
-                st.caption("Ucz się dalej, aby pojawić się w rankingu!")
-
-        st.divider()
-
-        # 3. RANKINGI GIER
+# 3. RANKINGI GIER
         st.subheader("🧩 Rekordy Gier")
         t_mem, t_bal = st.tabs(["⏱️ Memory", "🎈 Balony"])
 
@@ -1893,11 +1824,18 @@ elif choice == "🏆 Arena Wyzwań":
             for entry in leaderboard_data:
                 scores = entry["memory"]
                 if scores and isinstance(scores, list):
-                    best = min([float(s) for s in scores])
-                    mem_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best}s", "val": best})
+                    # Zamiana na float i wyciągnięcie najlepszego (najniższego) czasu
+                    valid_scores = [float(s) for s in scores if str(s).replace('.','',1).isdigit()]
+                    if valid_scores:
+                        best = min(valid_scores)
+                        mem_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best}s", "val": best})
             
             if mem_rank:
-                df_m = pd.DataFrame(mem_rank).sort_values("val").head(10)
+                # Sortowanie od najmniejszego czasu (najszybszy wygrywa)
+                df_m = pd.DataFrame(mem_rank).sort_values("val", ascending=True).head(10)
+                # RESET INDEKSU I NUMEROWANIE OD 1
+                df_m.index = range(1, len(df_m) + 1)
+                df_m.index.name = "Miejsce"
                 st.table(df_m[["Użytkownik", "Rekord"]])
             else:
                 st.caption("Brak rekordów w Memory.")
@@ -1907,20 +1845,20 @@ elif choice == "🏆 Arena Wyzwań":
             for entry in leaderboard_data:
                 scores = entry["balloons"]
                 if scores and isinstance(scores, list):
-                    # Zabezpieczenie przed brakiem rzutowania na int
                     valid_scores = [int(s) for s in scores if str(s).isdigit()]
                     if valid_scores:
                         best = max(valid_scores)
                         bal_rank.append({"Użytkownik": entry["Użytkownik"], "Rekord": f"{best} pkt", "val": best})
             
             if bal_rank:
+                # Sortowanie od największego wyniku (najwięcej punktów wygrywa)
                 df_b = pd.DataFrame(bal_rank).sort_values("val", ascending=False).head(10)
+                # RESET INDEKSU I NUMEROWANIE OD 1
+                df_b.index = range(1, len(df_b) + 1)
+                df_b.index.name = "Miejsce"
                 st.table(df_b[["Użytkownik", "Rekord"]])
             else:
                 st.caption("Brak rekordów w Balonach.")
-
-        # 4. STATUS TWOJEJ POZYCJI
-        st.info(f"Rywalizujesz z {len(leaderboard_data)} użytkownikami. Powodzenia!")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
