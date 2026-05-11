@@ -2015,7 +2015,7 @@ elif choice == "🎈 Balonowy Wyścig":
             game_fragment()
 
 
-# --- 17. JĘZYKOWA RULETKA (V1.1 - Global Leaderboard Sync) ---
+# --- 17. JĘZYKOWA RULETKA (V1.2 - Fast & Reverse Edition) ---
 elif choice == "🎲 Językowa Ruletka":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2033,22 +2033,16 @@ elif choice == "🎲 Językowa Ruletka":
                 box-shadow: 0 10px 30px rgba(255, 75, 75, 0.2);
             }
             .stat-box {
-                font-size: 1.5rem;
-                font-weight: bold;
-                color: #ff4b4b;
-                text-align: center;
+                font-size: 1.5rem; font-weight: bold; color: #ff4b4b; text-align: center;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. PRZYGOTOWANIE BAZY
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
-    
     if len(all_c) < 10:
-        st.warning(f"Dodaj przynajmniej 10 słówek w języku {current_lang_name}, aby odblokować Ruletkę.")
+        st.warning(f"Dodaj min. 10 słówek, aby odblokować Ruletkę.")
         st.stop()
 
-    # 2. FUNKCJE POMOCNICZE (Rodzajniki)
     def extract_gender(word, lang):
         w = word.lower().strip()
         if lang == "de":
@@ -2061,26 +2055,22 @@ elif choice == "🎲 Językowa Ruletka":
             if w.startswith("to "): return "to", word[3:]
         return None, word
 
-    # 3. INICJALIZACJA STANU GRY
     if "surv_state" not in st.session_state or st.session_state.get("surv_lang_ref") != L_CODE:
         st.session_state.surv_state = "START"
         st.session_state.surv_score = 0
         st.session_state.surv_lang_ref = L_CODE
 
-    # --- EKRAN STARTOWY ---
+    # --- EKRAN STARTOWY / GAMEOVER ---
     if st.session_state.surv_state == "START":
-        st.info("⚠️ **ZASADY:** Odpowiadaj poprawnie na kolejne pytania. Jeden błąd kończy grę. Wyzwania stają się trudniejsze wraz z Twoim postępem!")
+        st.info("⚠️ **ZASADY:** Przetrwaj jak najdłużej. Jeden błąd = koniec. Tryby zmieniają się dynamicznie!")
         if st.button("🔥 ROZPOCZNIJ PRZETRWANIE", use_container_width=True, type="primary"):
-            st.session_state.surv_state = "PLAYING"
-            st.session_state.surv_score = 0
+            st.session_state.surv_state = "PLAYING"; st.session_state.surv_score = 0
             if "surv_task" in st.session_state: del st.session_state.surv_task
             st.rerun()
 
-    # --- EKRAN GAMEOVER ---
     elif st.session_state.surv_state == "GAMEOVER":
         st.error(f"### 💀 KONIEC GRY!")
         st.markdown(f"<div class='stat-box'>TWÓJ WYNIK: {st.session_state.surv_score}</div>", unsafe_allow_html=True)
-        
         col1, col2 = st.columns(2)
         if col1.button("🔄 Spróbuj ponownie", use_container_width=True, type="primary"):
             st.session_state.surv_state = "START"; st.rerun()
@@ -2089,57 +2079,72 @@ elif choice == "🎲 Językowa Ruletka":
 
     # --- EKRAN GRY ---
     elif st.session_state.surv_state == "PLAYING":
-        
         @st.fragment
         def survival_engine():
-            # GENEROWANIE ZADANIA
             if "surv_task" not in st.session_state:
                 word = random.choice(all_c)
                 score = st.session_state.surv_score
                 
-                # Progresywna trudność
+                # Losowanie trybu (zależnie od wyniku)
                 if score < 5:
-                    mode = "QUIZ"
+                    mode = random.choice(["QUIZ_DE_PL", "FAST_MATCH"])
                 elif score < 12:
-                    mode = random.choice(["QUIZ", "QUIZ", "LAB", "WRITE"])
+                    mode = random.choice(["QUIZ_DE_PL", "QUIZ_PL_DE", "LAB", "FAST_MATCH"])
                 else:
-                    mode = random.choice(["QUIZ", "LAB", "WRITE", "WRITE"])
+                    mode = random.choice(["QUIZ_PL_DE", "LAB", "WRITE", "FAST_MATCH"])
                 
                 gender, clean = extract_gender(word['de'], L_CODE)
-                if mode == "LAB" and not gender: mode = "QUIZ"
+                if mode == "LAB" and not gender: mode = "QUIZ_DE_PL"
                 
                 task = {"word": word, "mode": mode, "gender": gender, "clean": clean}
                 
-                if mode == "QUIZ":
+                # Przygotowanie opcji Quizu (w obie strony)
+                if mode == "QUIZ_DE_PL":
                     others = [x['pl'] for x in all_c if x['id'] != word['id']]
                     opts = random.sample(others, min(len(others), 3)) + [word['pl']]
-                    random.shuffle(opts)
-                    task["opts"] = opts
-                
+                    random.shuffle(opts); task["opts"] = opts
+                elif mode == "QUIZ_PL_DE":
+                    others = [x['de'] for x in all_c if x['id'] != word['id']]
+                    opts = random.sample(others, min(len(others), 3)) + [word['de']]
+                    random.shuffle(opts); task["opts"] = opts
+                elif mode == "FAST_MATCH":
+                    # 50% szans na poprawną parę
+                    is_correct = random.random() > 0.5
+                    display_pl = word['pl'] if is_correct else random.choice([x['pl'] for x in all_c if x['id'] != word['id']])
+                    task["fast_pl"] = display_pl
+                    task["fast_is_correct"] = is_correct
+
                 st.session_state.surv_task = task
 
-            # INTERFEJS
             t = st.session_state.surv_task
             st.markdown(f"<div style='text-align:right; font-weight:bold; color:#ff4b4b;'>SERIA: {st.session_state.surv_score} 🔥</div>", unsafe_allow_html=True)
             
+            # Karta pytania
+            display_word = t['word']['de']
+            if t['mode'] == 'QUIZ_PL_DE': display_word = t['word']['pl']
+            if t['mode'] == 'LAB': display_word = t['clean']
+            
             st.markdown(f"""
                 <div class="survival-card">
-                    <div style="color:#888; font-size:0.8rem; text-transform:uppercase; margin-bottom:10px;">
-                        Tryb: {t['mode']}
-                    </div>
-                    <div style="font-size:2.5rem; font-weight:bold; color:white;">
-                        {t['word']['de'] if t['mode'] != 'LAB' else t['clean']}
-                    </div>
+                    <div style="color:#888; font-size:0.8rem; text-transform:uppercase; margin-bottom:10px;">Tryb: {t['mode'].replace('_',' ')}</div>
+                    <div style="font-size:2.2rem; font-weight:bold; color:white;">{display_word}</div>
+                    {"<div style='font-size:1.5rem; color:#ff4b4b; margin-top:10px;'>= " + t['fast_pl'] + "?</div>" if t['mode'] == 'FAST_MATCH' else ""}
                 </div>
             """, unsafe_allow_html=True)
 
             user_ans = None
             
-            if t['mode'] == "QUIZ":
+            # Obsługa trybów
+            if t['mode'] in ["QUIZ_DE_PL", "QUIZ_PL_DE"]:
                 cols = st.columns(2)
                 for i, o in enumerate(t['opts']):
                     if cols[i%2].button(o, key=f"surv_q_{i}", use_container_width=True):
-                        user_ans = (o == t['word']['pl'])
+                        user_ans = (o == (t['word']['pl'] if t['mode']=="QUIZ_DE_PL" else t['word']['de']))
+
+            elif t['mode'] == "FAST_MATCH":
+                c1, c2 = st.columns(2)
+                if c1.button("✅ PRAWDA", use_container_width=True): user_ans = (t['fast_is_correct'] == True)
+                if c2.button("❌ FAŁSZ", use_container_width=True): user_ans = (t['fast_is_correct'] == False)
 
             elif t['mode'] == "LAB":
                 options = ["DER", "DIE", "DAS"] if L_CODE == "de" else ["TEN", "TA", "TO"]
@@ -2150,52 +2155,30 @@ elif choice == "🎲 Językowa Ruletka":
 
             elif t['mode'] == "WRITE":
                 with st.form("surv_w_form", clear_on_submit=True):
-                    st.write("Wpisz tłumaczenie na polski:")
-                    u_txt = st.text_input("Odpowiedź...").strip().lower()
+                    u_txt = st.text_input("Wpisz tłumaczenie PL:").strip().lower()
                     if st.form_submit_button("ZATWIERDŹ", use_container_width=True):
                         correct_synonyms = [normalize_text(s) for s in re.split(r'[/,;]', t['word']['pl'])]
                         user_ans = normalize_text(u_txt) in correct_synonyms
 
-            # WALIDACJA WYNIKU
             if user_ans is not None:
                 if user_ans:
                     st.session_state.surv_score += 1
-                    ud = st.session_state.user_data
-                    ud["survival_total_words"] = ud.get("survival_total_words", 0) + 1
                     del st.session_state.surv_task
-                    st.toast("Dobrze! +1", icon="✅")
-                    st.rerun(scope="fragment")
+                    st.toast("Dobrze!", icon="✅"); st.rerun(scope="fragment")
                 else:
-                    # KONIEC GRY - ZAPIS REKORDU (Dual Write)
                     final_score = st.session_state.surv_score
-                    ud = st.session_state.user_data
-                    surv_key = f"survival_scores_{L_CODE}"
-                    
                     try:
                         db = get_db()
-                        # 1. NOWY SYSTEM: Centralna tabela (Językowa Ruletka = 'survival')
-                        db.table("game_scores").insert({
-                            "username": u,
-                            "game_name": "survival",
-                            "lang": L_CODE,
-                            "score": float(final_score)
-                        }).execute()
-
-                        # 2. STARY SYSTEM: Osobiste Top 10
+                        db.table("game_scores").insert({"username": u, "game_name": "survival", "lang": L_CODE, "score": float(final_score)}).execute()
+                        ud = st.session_state.user_data
+                        surv_key = f"survival_scores_{L_CODE}"
                         scores = ud.get(surv_key, [])
                         if not isinstance(scores, list): scores = []
                         scores.append(final_score)
-                        scores = sorted([int(s) for s in scores], reverse=True)[:10]
-                        
-                        ud[surv_key] = scores
-                        ud["survival_total_games"] = ud.get("survival_total_games", 0) + 1
-                        
+                        ud[surv_key] = sorted([int(s) for s in scores], reverse=True)[:10]
                         save_user_data(u, ud)
-                    except:
-                        pass
-                        
-                    st.session_state.surv_state = "GAMEOVER"
-                    st.rerun()
+                    except: pass
+                    st.session_state.surv_state = "GAMEOVER"; st.rerun()
 
         survival_engine()
 
