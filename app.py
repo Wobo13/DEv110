@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V275 - Permissive Text & Fresh Cache Fix) ---
+# --- 8. POWTÓRKI & TRENING (V269 - Fix awarii UI, Tolerancja znaków + Przykłady) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -723,25 +723,33 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     
     st.header(f"{choice}: {current_lang_name}")
     
+    # --- AWARYJNY RESET SESJI (Odblokowuje zacięty stan) ---
+    if st.button("🔄 Wymuś odświeżenie sesji (Kliknij, jeśli coś się zacięło)", type="secondary"):
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith("rep_") or k.startswith("trn_")]
+        for k in keys_to_clear:
+            del st.session_state[k]
+        st.session_state.flashcards = load_flashcards(u)
+        st.rerun()
+        
     pfx = "rep" if is_r else "trn"
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
     # 1. FILTROWANIE SŁÓWEK POD AKTUALNY JĘZYK
-    lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
+    lang_cards = [card for card in st.session_state.flashcards if card.get("lang", "de") == L_CODE]
     
     all_tags = set()
-    for c in lang_cards:
-        all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
+    for card in lang_cards:
+        all_tags.update([t.strip() for t in str(card.get('category','')).split(',') if t.strip()])
     
     sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel")
 
     # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag or st.session_state.get(f"{pfx}_last_lang") != L_CODE:
-        pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
+        pool = [card for card in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(card.get('category','')))]
         if is_r:
             today_str = str(date.today())
-            pool = [c for c in pool if str(c.get("next_review", today_str)) <= today_str]
+            pool = [card for card in pool if str(card.get("next_review", today_str)) <= today_str]
         
         random.shuffle(pool)
         st.session_state[f"{pfx}_list"] = pool
@@ -759,7 +767,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
         st.success("Sesja zakończona! 🏆")
         if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn"):
             for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
-                full_key = f"{pfx}_{k}" if k != "list" and k != "idx" and k != "mode" else f"{pfx}_{k}"
                 if f"{pfx}_{k}" in st.session_state: 
                     del st.session_state[f"{pfx}_{k}"]
             st.rerun()
@@ -771,13 +778,10 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 st.rerun()
                 return
             
-            # --- KLUCZOWY FIX PAMIĘCI (CACHE) ---
-            # Zawsze bierzemy najświeższą wersję słówka z głównej bazy po jego ID!
-            # Dzięki temu omijamy "zapchaną" kolejkę bez przykładów.
-            cached_c = cards[idx]
-            fresh_match = [x for x in st.session_state.flashcards if x['id'] == cached_c['id']]
-            c = fresh_match[0] if fresh_match else cached_c
-            # ------------------------------------
+            # --- BEZPIECZNE POBIERANIE ŚWIEŻEJ KARTY Z BAZY (Ominięcie Cache) ---
+            c_cached = cards[idx]
+            fresh_matches = [x for x in st.session_state.flashcards if x['id'] == c_cached['id']]
+            c = fresh_matches[0] if fresh_matches else c_cached
             
             # Klucz kierunku
             dir_key = f"{pfx}_dir"
@@ -812,30 +816,33 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                # --- BARDZO TOLERANCYJNE SPRAWDZANIE (IGNORUJE BRAK UMLAUTÓW I ZNAKÓW DIKRYTYCZNYCH) ---
-                def permissive_clean(text):
+                def clean_text(text, is_foreign):
                     import unicodedata
                     t = str(text).lower().strip()
-                    # Usuwamy rodzajniki
-                    t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
-                    # Spłaszczamy niemieckie umlauty do zwykłych liter (ä->a), aby tolerować błędy klawiatury
+                    # 1. Usuwamy rodzajniki dla ułatwienia
+                    if is_foreign:
+                        t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
+                    # 2. Spłaszczamy niemieckie umlauty do zwykłych liter, aby tolerować błędy klawiatury
                     t = t.replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
-                    # Usuwamy czeskie/polskie znaki diakrytyczne (NFD)
+                    # Poprawne językowo spłaszczanie umlautów (Dla pewności zachowujemy obie formy!)
+                    t = t.replace("ae", "a").replace("oe", "o").replace("ue", "u")
+                    # 3. Usuwamy czeskie/polskie znaki diakrytyczne
                     t = "".join(char for char in unicodedata.normalize('NFD', t) if unicodedata.category(char) != 'Mn')
                     t = t.replace("ł", "l")
                     return t.strip()
 
-                user_ans_clean = permissive_clean(st.session_state.get(f"{pfx}_user_ans", ""))
+                user_ans_raw = st.session_state.get(f"{pfx}_user_ans", "")
+                user_ans_clean = clean_text(user_ans_raw, is_target_foreign)
                 
                 correct_synonyms = re.split(r'[/,;]', correct_val)
-                correct_synonyms_clean = [permissive_clean(s) for s in correct_synonyms if s.strip()]
+                correct_synonyms_clean = [clean_text(s, is_target_foreign) for s in correct_synonyms if s.strip()]
                 
                 is_correct = user_ans_clean in correct_synonyms_clean
                 
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- OBSŁUGA PRZYKŁADÓW I AUDIO (Dokładnie skopiowane z Sekcji 9) ---
+                # --- OBSŁUGA PRZYKŁADÓW (IDENTYCZNIE JAK W SEKCJI 9) ---
                 exs = c.get("examples", [])
                 example_foreign = None
                 example_pl = None
@@ -843,13 +850,12 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if exs and isinstance(exs, list) and len(exs) > 0:
                     example_foreign = exs[0].get("de")
                     example_pl = exs[0].get("pl")
-                elif c.get('example'): # Fallback
+                elif c.get('example'): 
                     example_foreign = c['example']
 
                 if example_foreign:
                     st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
                 
-                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
                 if auto_audio:
                     play_audio(c['de'], example_foreign, lang=L_CODE)
 
