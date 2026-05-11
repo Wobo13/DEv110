@@ -705,29 +705,28 @@ if choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']} ({r['pl']})")
 
-# --- 8. POWTÓRKI & TRENING (V271 - SYNCHRONIZACJA Z QUIZEM + DIAGNOSTYKA) ---
+# --- 8. POWTÓRKI & TRENING (V275 - Pełna Synchronizacja Audio i Przykładów) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
-    # Jeśli po odświeżeniu nie widzisz tego napisu, szukaj w pliku duplikatu sekcji "Powtórki"!
-    st.error("DEBUG: Moduł Powtórki V271 Aktywny") 
-    
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"{choice}: {current_lang_name}")
     
     pfx = "rep" if is_r else "trn"
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. FILTROWANIE SŁÓWEK (Na świeżo z bazy)
+    # 1. FILTROWANIE SŁÓWEK (Na świeżo z bazy głównej)
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_v271")
+    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_final")
 
-    # 2. INICJALIZACJA KOLEJKI
+    # 2. INICJALIZACJA KOLEJKI (Jeśli zmienił się tag lub język)
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         if is_r:
@@ -743,111 +742,129 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     cards = st.session_state.get(f"{pfx}_list", [])
     
     if not cards:
-        st.success(f"Brak słówek w sekcji {choice}. ✨")
-        if st.button("Odśwież"): st.rerun()
+        st.info(f"Brak słówek w sekcji {choice} dla języka {current_lang_name}. ✨")
+        if st.button("🔄 Odśwież bazę", use_container_width=True):
+            st.session_state.flashcards = load_flashcards(u)
+            st.rerun()
     elif st.session_state[f"{pfx}_idx"] >= len(cards):
         st.balloons()
         st.success("Sesja zakończona! 🏆")
-        if st.button("Zacznij od nowa", key=f"{pfx}_restart_final"):
-            for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans", f"{pfx}_dir"]:
+        if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn_final"):
+            for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
-        # POBIERANIE AKTUALNEGO SŁÓWKA
-        idx = st.session_state[f"{pfx}_idx"]
-        c_cached = cards[idx]
-        # Kluczowe: Pobieramy dane bezpośrednio z głównej listy po ID, aby uniknąć starych danych
-        c = next((item for item in st.session_state.flashcards if item['id'] == c_cached['id']), c_cached)
-
-        # Ustalenie kierunku (DE->PL lub PL->DE)
-        dir_key = f"{pfx}_dir_{idx}"
-        if dir_key not in st.session_state:
-            st.session_state[dir_key] = random.choice([0, 1])
-
-        is_target_foreign = (st.session_state[dir_key] == 1)
-        display_word = c["de"] if not is_target_foreign else c["pl"]
-        target_lang_label = "Polski" if not is_target_foreign else current_lang_name
-        correct_val = c["pl"] if not is_target_foreign else c["de"]
-
-        st.progress(idx / len(cards))
-        st.caption(f"Słówko {idx + 1} z {len(cards)}")
-
-        st.markdown(f'''
-            <div style="font-size:2.6em; text-align:center; padding:40px; background:#111; border:3px solid #4CAF50; border-radius:20px; color:white;">
-                <div style="font-size:0.35em; color:gray;">Tłumaczysz na: {target_lang_label}</div>
-                {display_word}
-            </div>
-        ''', unsafe_allow_html=True)
-
-        if st.session_state[f"{pfx}_mode"] == "ask":
-            with st.form(key=f"form_{pfx}_{idx}"):
-                u_in = st.text_input("Twoja odpowiedź:", key=f"input_{pfx}_{idx}")
-                if st.form_submit_button("SPRAWDŹ", use_container_width=True):
-                    st.session_state[f"{pfx}_user_ans"] = u_in
-                    st.session_state[f"{pfx}_mode"] = "res"
-                    st.rerun()
-        else:
-            # 3. SPRAWDZANIE (Tolerancja na brak umlautów/haczków)
-            def ultra_clean(t):
-                import unicodedata
-                t = str(t).lower().strip()
-                t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
-                # Zamiana umlautów na proste litery (ä -> a, itd.)
-                t = t.replace("ä","a").replace("ö","o").replace("ü","u").replace("ß","ss")
-                # Usuwanie diakrytyki (haczki, ogonki)
-                t = "".join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
-                return t.replace("ł", "l")
-
-            u_ans = ultra_clean(st.session_state.get(f"{pfx}_user_ans", ""))
-            correct_options = [ultra_clean(s) for s in re.split(r'[/,;]', correct_val)]
+        @st.fragment
+        def flashcard_engine():
+            idx = st.session_state[f"{pfx}_idx"]
+            if idx >= len(cards):
+                st.rerun()
+                return
             
-            is_correct = u_ans in correct_options
+            # --- PANCERNE POBIERANIE DANYCH (Omijanie starego cache'u) ---
+            c_cached = cards[idx]
+            # Szukamy świeżych danych o słowie w głównej bazie sesji po ID
+            c = next((item for item in st.session_state.flashcards if item['id'] == c_cached['id']), c_cached)
             
-            if is_correct: st.success(f"✅ Dobrze! Poprawna odpowiedź: {correct_val}")
-            else: st.error(f"❌ Błąd! Poprawna odpowiedź: {correct_val}")
+            # Losowanie kierunku (Tylko raz na słowo)
+            dir_key = f"{pfx}_dir_{c['id']}"
+            if dir_key not in st.session_state:
+                st.session_state[dir_key] = random.choice([0, 1])
 
-            # --- LOGIKA PRZYKŁADÓW (DOKŁADNIE JAK W SEKCYJI 9) ---
-            exs = c.get("examples", [])
-            example_foreign = None
-            example_pl = None
-            
-            if exs and isinstance(exs, list) and len(exs) > 0:
-                example_foreign = exs[0].get("de")
-                example_pl = exs[0].get("pl")
-            elif c.get('example'): 
-                example_foreign = c['example']
+            st.progress(idx / len(cards))
+            st.caption(f"Słówko {idx + 1} z {len(cards)}")
 
-            if example_foreign:
-                st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
-            
-            if auto_audio:
-                play_audio(c['de'], example_foreign, lang=L_CODE)
+            is_target_foreign = (st.session_state[dir_key] == 1)
+            display_word = c["de"] if not is_target_foreign else c["pl"]
+            target_lang_label = "Polski" if not is_target_foreign else current_lang_name
+            correct_val = c["pl"] if not is_target_foreign else c["de"]
 
-            st.divider()
-            # 4. NAWIGACJA
-            if is_r:
-                st.write("Oceń trudność (SRS):")
-                c1, c2, c3 = st.columns(3)
-                if c1.button("🔴 Trudne"): 
-                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=1))})
-                    st.session_state[f"{pfx}_idx"] += 1
-                    st.session_state[f"{pfx}_mode"] = "ask"
-                    st.rerun()
-                if c2.button("🟡 Średnie"): 
-                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=3))})
-                    st.session_state[f"{pfx}_idx"] += 1
-                    st.session_state[f"{pfx}_mode"] = "ask"
-                    st.rerun()
-                if c3.button("🟢 Łatwe"): 
-                    update_word(c['id'], {"next_review": str(date.today() + timedelta(days=7))})
-                    st.session_state[f"{pfx}_idx"] += 1
-                    st.session_state[f"{pfx}_mode"] = "ask"
-                    st.rerun()
+            st.markdown(f'''
+                <div style="font-size:2.6em; text-align:center; padding:40px; 
+                background: #111; border:3px solid {"#4CAF50" if is_r else "#FF9800"}; 
+                border-radius:20px; margin-bottom:10px; color: white; line-height: 1.2;">
+                    <div style="font-size:0.35em; color:gray; margin-bottom:5px; text-transform: uppercase;">
+                        Tłumaczysz na: {target_lang_label}
+                    </div>
+                    {display_word}
+                </div>
+            ''', unsafe_allow_html=True)
+
+            if st.session_state[f"{pfx}_mode"] == "ask":
+                with st.form(key=f"{pfx}_f_{idx}", clear_on_submit=True):
+                    u_in = st.text_input(f"Odpowiedź:", key=f"{pfx}_in_{idx}")
+                    if st.form_submit_button("SPRAWDŹ", use_container_width=True, type="primary"):
+                        st.session_state[f"{pfx}_user_ans"] = u_in
+                        st.session_state[f"{pfx}_mode"] = "res"
+                        st.rerun(scope="fragment")
             else:
-                if st.button("Następne słówko ➡️", type="primary", use_container_width=True):
-                    st.session_state[f"{pfx}_idx"] += 1
-                    st.session_state[f"{pfx}_mode"] = "ask"
-                    st.rerun()
+                # 3. TOLERANCYJNE SPRAWDZANIE (ä -> a, itd.)
+                def permissive_clean(text):
+                    if not text: return ""
+                    t = str(text).lower().strip()
+                    # Usuwanie rodzajników
+                    t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
+                    # Zamiana umlautów na proste litery
+                    t = t.replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
+                    # Usuwanie diakrytyki (haczki, ogonki)
+                    t = "".join(char for char in unicodedata.normalize('NFD', t) if unicodedata.category(char) != 'Mn')
+                    return t.replace("ł", "l").strip()
+
+                user_ans_clean = permissive_clean(st.session_state.get(f"{pfx}_user_ans", ""))
+                correct_synonyms = [permissive_clean(s) for s in re.split(r'[/,;]', correct_val) if s.strip()]
+                
+                is_correct = user_ans_clean in correct_synonyms
+                
+                if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
+                else: st.error(f"❌ Niepoprawnie. ({correct_val})")
+                
+                # --- LOGIKA PRZYKŁADÓW (Identyczna jak w sekcji 9) ---
+                exs = c.get("examples", [])
+                example_foreign = None
+                example_pl = None
+                
+                # Rozpakowanie przykładów (obsługa listy JSONB)
+                if exs and isinstance(exs, list) and len(exs) > 0:
+                    example_foreign = exs[0].get("de")
+                    example_pl = exs[0].get("pl")
+                elif c.get('example'): # Fallback dla starych danych
+                    example_foreign = c['example']
+
+                if example_foreign:
+                    st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
+                
+                # Odtwarzanie Audio (Słowo + Zdanie)
+                if auto_audio:
+                    play_audio(c['de'], example_foreign, lang=L_CODE)
+
+                st.divider()
+                
+                # 4. NAWIGACJA I SRS
+                if is_r:
+                    st.write("Oceń trudność:")
+                    col1, col2, col3 = st.columns(3)
+                    d = None
+                    if col1.button("🔴 Trudne"): d = 1
+                    if col2.button("🟡 Średnie"): d = 3
+                    if col3.button("🟢 Łatwe"): d = 7
+                    
+                    if d:
+                        new_date = str(date.today() + timedelta(days=d))
+                        update_word(c['id'], {"next_review": new_date})
+                        # Odświeżamy datę w lokalnej pamięci
+                        for card in st.session_state.flashcards:
+                            if card['id'] == c['id']: card['next_review'] = new_date; break
+                        
+                        st.session_state[f"{pfx}_idx"] += 1
+                        st.session_state[f"{pfx}_mode"] = "ask"
+                        st.rerun(scope="fragment")
+                else:
+                    if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
+                        st.session_state[f"{pfx}_idx"] += 1
+                        st.session_state[f"{pfx}_mode"] = "ask"
+                        st.rerun(scope="fragment")
+
+        flashcard_engine()
         
 # --- 9. QUIZ (V245 - Full Multilang & Distractor Fix) ---
 elif choice == "🕹️ Quiz":
