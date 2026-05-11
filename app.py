@@ -1440,58 +1440,70 @@ elif choice == "🛠️ Warsztat":
             if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-# --- 14. KONSTRUKTOR SŁÓW (V316 - Surgical Fix) ---
+# --- 14. KONSTRUKTOR SŁÓW (V317 - Ultra-Force Mobile Grid) ---
 elif choice == "🏗️ Konstruktor":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.markdown(f"<h2 style='text-align: center;'>🏗️ Konstruktor</h2>", unsafe_allow_html=True)
 
-    # 1. CSS - TYLKO DLA KLAWIATURY LITER
+    # 1. CSS - NUCLEAR OPTION DLA UKŁADU POZIOMEGO
     st.markdown("""
         <style>
-            /* --- STYL KLAWIATURY LITER --- */
-            /* Szukamy kontenera, który zawiera przyciski z kluczem 'btn_k' */
-            div[data-testid="stHorizontalBlock"]:has(button[kind="secondary"][key*="btn_k"]) {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: wrap !important;
-                justify-content: center !important;
-                gap: 5px !important;
+            /* WYMUSZENIE POZIOMEGO UKŁADU NAWET NA MAŁYCH EKRANACH */
+            @media (max-width: 640px) {
+                /* Celujemy w kontener kolumn dla liter */
+                div[data-testid="stHorizontalBlock"]:has(button[key*="btn_k"]) {
+                    flex-direction: row !important;
+                    flex-wrap: wrap !important;
+                    display: flex !important;
+                    justify-content: center !important;
+                }
+                
+                /* Blokujemy rozciąganie się kolumn do 100% szerokości */
+                div[data-testid="stHorizontalBlock"]:has(button[key*="btn_k"]) div[data-testid="column"] {
+                    width: auto !important;
+                    flex: 0 1 auto !important;
+                    min-width: 50px !important; /* Szerokość przycisku + margines */
+                }
             }
 
-            /* Litery: małe, kwadratowe, obok siebie */
-            div[data-testid="stHorizontalBlock"]:has(button[key*="btn_k"]) div[data-testid="column"] {
-                width: auto !important;
-                flex: 0 1 auto !important;
-                min-width: 42px !important;
-            }
-
+            /* WYGLĄD PRZYCISKÓW-LITEREK (Przywrócenie wyglądu przycisku) */
             button[key*="btn_k"] {
-                height: 45px !important;
-                width: 42px !important;
-                padding: 0 !important;
-                background: rgba(128, 128, 128, 0.1) !important;
+                height: 50px !important;
+                width: 45px !important;
+                background-color: rgba(128, 128, 128, 0.2) !important;
+                border: 2px solid rgba(128, 128, 128, 0.4) !important;
+                border-radius: 10px !important;
                 color: var(--text-color) !important;
-                border: 1px solid rgba(128, 128, 128, 0.3) !important;
                 font-weight: bold !important;
+                font-size: 1.3rem !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+                margin: 2px !important;
             }
 
-            /* --- STYL DLA SLOTU NA ODPOWIEDŹ --- */
+            button[key*="btn_k"]:disabled {
+                opacity: 0.3 !important;
+                border: 1px solid transparent !important;
+                box-shadow: none !important;
+            }
+
+            /* SLOT NA ODPOWIEDŹ */
             .slot-box {
-                font-size: 1.8rem;
-                letter-spacing: 4px;
+                font-size: 2rem;
+                letter-spacing: 5px;
                 text-align: center;
                 background: rgba(255, 75, 75, 0.05);
                 border: 2px dashed #ff4b4b;
-                border-radius: 12px;
+                border-radius: 15px;
                 padding: 15px;
-                margin: 10px 0;
+                margin: 20px 0;
                 color: var(--text-color);
+                min-height: 70px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-
-            /* --- PRZYCISKI FUNKCYJNE (Reset itp.) --- */
-            /* Te przyciski NIE MAJĄ key*="btn_k", więc będą wyglądać normalnie (standard Streamlit) */
         </style>
     """, unsafe_allow_html=True)
 
@@ -1513,20 +1525,23 @@ elif choice == "🏗️ Konstruktor":
             st.session_state.konstr_used_indices = []
             st.session_state.konstr_lang_ref = L_CODE
 
-        # Panel Zadania
+        # Zadanie
         st.info(f"Przetłumacz: **{st.session_state.konstr_pl}**")
 
         # Slot na odpowiedź
-        display_ans = "".join([st.session_state.konstr_ans[i] if i < len(st.session_state.konstr_ans) else "_" for i in range(len(st.session_state.konstr_word))])
+        target_len = len(st.session_state.konstr_word)
+        current_ans = st.session_state.konstr_ans
+        display_ans = "".join([current_ans[i] if i < len(current_ans) else "_" for i in range(target_len)])
         st.markdown(f"<div class='slot-box'>{display_ans}</div>", unsafe_allow_html=True)
 
-        # 3. KLAWIATURA (Tylko litery)
-        cols = st.columns(len(st.session_state.konstr_pool))
+        # 3. KLAWIATURA (Wymuszone kolumny)
+        # Tworzymy rząd liter
+        letter_cols = st.columns(len(st.session_state.konstr_pool))
         for idx, char in enumerate(st.session_state.konstr_pool):
-            with cols[idx]:
+            with letter_cols[idx]:
                 label = "␣" if char == " " else char
-                # SPRAWDZAMY CZY LITERA BYŁA UŻYTA
                 is_used = idx in st.session_state.konstr_used_indices
+                # Klucz przycisku zawiera 'btn_k' dla selektora CSS
                 if st.button(label, key=f"btn_k_{idx}", disabled=is_used):
                     st.session_state.konstr_ans += char
                     st.session_state.konstr_used_indices.append(idx)
@@ -1534,8 +1549,7 @@ elif choice == "🏗️ Konstruktor":
 
         st.write("") # Odstęp
 
-        # 4. PRZYCISKI FUNKCYJNE (Standardowy wygląd Streamlit)
-        # Używamy st.columns, ale bez agresywnego CSS, więc na mobile będą jeden pod drugim (czytelnie)
+        # 4. PRZYCISKI FUNKCYJNE (Standardowe st.columns - będą się układać pionowo na mobile, co jest OK)
         f1, f2, f3 = st.columns(3)
         with f1:
             if st.button("🔄 Reset", key="f_reset", use_container_width=True):
