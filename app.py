@@ -3023,7 +3023,7 @@ elif choice == "🧪 Laboratorium":
             st.markdown("<span style='color:#11457E;'>🔵</span> **TA (Żeński):** -ost, -a, -ice, -ba", unsafe_allow_html=True)
             st.markdown("<span style='color:#D71920;'>🔴</span> **TO (Nijaki):** -o, -í, -e, -um", unsafe_allow_html=True)
 
-# --- 30. ASYSTENT PISANIA (V1.7 - Robust AI Parser & Evaluation Fix) ---
+# --- 30. ASYSTENT PISANIA (V1.8 - Expanded Topics Database - 25 Items) ---
 elif choice == "✍️ Asystent Pisania":
     import openai
     import hashlib
@@ -3045,25 +3045,66 @@ elif choice == "✍️ Asystent Pisania":
             return res.data if res.data else []
         except: return []
 
-    # --- BAZA TEMATÓW ---
+    # --- ROZBUDOWANA BAZA 25 TEMATÓW DNIA Z TŁUMACZENIAMI ---
     daily_topics = {
         "de": [
             {"orig": "Beschreibe deinen Morgen.", "pl": "Opisz swój poranek."},
             {"orig": "Was sind deine Ziele für dieses Jahr?", "pl": "Jakie są Twoje cele na ten rok?"},
             {"orig": "Erzähle von deinem Hobby.", "pl": "Opowiedz o swoim hobby."},
             {"orig": "Warum lernst du Deutsch?", "pl": "Dlaczego uczysz się niemieckiego?"},
-            {"orig": "Wie sieht dein Traumhaus aus?", "pl": "Jak wygląda Twój dom marzeń?"}
+            {"orig": "Wie sieht dein Traumhaus aus?", "pl": "Jak wygląda Twój dom marzeń?"},
+            {"orig": "Beschreibe deinen letzten Urlaub.", "pl": "Opisz swoje ostatnie wakacje."},
+            {"orig": "Was ist deine Lieblingsspeise und warum?", "pl": "Jaka jest Twoja ulubiona potrawa i dlaczego?"},
+            {"orig": "Ein Tag ohne Internet: Was würdest du tun?", "pl": "Dzień bez internetu: co byś robił?"},
+            {"orig": "Erzähle von deiner besten Freundin oder deinem besten Freund.", "pl": "Opowiedz o swojej najlepszej przyjaciółce lub przyjacielu."},
+            {"orig": "Welche Stadt möchtest du besuchen?", "pl": "Jakie miasto chciałbyś odwiedzić?"},
+            {"orig": "Wie sieht ein typischer Arbeitstag bei dir aus?", "pl": "Jak wygląda Twój typowy dzień pracy?"},
+            {"orig": "Was ist dein Lieblingsbuch oder dein Lieblingsfilm?", "pl": "Jaka jest Twoja ulubiona książka lub film?"},
+            {"orig": "Beschreibe dein Haustier (oder dein Traum-Haustier).", "pl": "Opisz swoje zwierzę (lub zwierzę marzeń)."},
+            {"orig": "Was war dein schönstes Kindheitserlebnis?", "pl": "Jakie było Twoje najpiękniejsze wspomnienie z dzieciństwa?"},
+            {"orig": "Wie verbringst du normalerweise deinen Sonntag?", "pl": "Jak zwykle spędzasz niedzielę?"},
+            {"orig": "Welche Rolle spielt Sport in deinem Leben?", "pl": "Jaką rolę odgrywa sport w Twoim życiu?"},
+            {"orig": "Was würdest du tun, wenn du im Lotto gewinnen würdest?", "pl": "Co byś zrobił, gdybyś wygrał w lotto?"},
+            {"orig": "Beschreibe das Wetter heute.", "pl": "Opisz dzisiejszą pogodę."},
+            {"orig": "Kochen oder im Restaurant essen? Was bevorzugst du?", "pl": "Gotowanie czy jedzenie w restauracji? Co wolisz?"},
+            {"orig": "Welche Jahreszeit magst du am meisten?", "pl": "Którą porę roku lubisz najbardziej?"},
+            {"orig": "Erzähle von einer Person, die dich inspiriert.", "pl": "Opowiedz o osobie, która Cię inspiruje."},
+            {"orig": "Wie stellst du dir die Welt in 50 Jahren vor?", "pl": "Jak wyobrażasz sobie świat za 50 lat?"},
+            {"orig": "Was ist dein wichtigster Ratschlag fürs Leben?", "pl": "Jaka jest Twoja najważniejsza rada życiowa?"},
+            {"orig": "Beschreibe deinen Lieblingsort in deiner Stadt.", "pl": "Opisz swoje ulubione miejsce w Twoim mieście."},
+            {"orig": "Was planst du für heute Abend?", "pl": "Co planujesz na dzisiejszy wieczór?"}
         ],
         "cs": [
-            {"orig": "Popiš své ráno.", "pl": "Opiš své ráno."},
-            {"orig": "Jaké jsou tvé cíle pro tento rok?", "pl": "Jaké jsou tvé cíle pro tento rok?"},
-            {"orig": "Vyprávěj o svém koníčku.", "pl": "Vyprávěj o svém koníčku."},
-            {"orig": "Proč se učíš česky?", "pl": "Proč se učíš česky?"},
-            {"orig": "Jak vypadá tvůj dům snů?", "pl": "Jak vypadá tvůj dům snů?"}
+            {"orig": "Popiš své ráno.", "pl": "Opisz swój poranek."},
+            {"orig": "Jaké jsou tvé cíle pro tento rok?", "pl": "Jakie są Twoje cele na ten rok?"},
+            {"orig": "Vyprávěj o svém koníčku.", "pl": "Opowiedz o swoim hobby."},
+            {"orig": "Proč se učíš česky?", "pl": "Dlaczego uczysz się czeskiego?"},
+            {"orig": "Jak vypadá tvůj dům snů?", "pl": "Jak wygląda Twój dom marzeń?"},
+            {"orig": "Popiš svou poslední dovolenou.", "pl": "Opisz swoje ostatnie wakacje."},
+            {"orig": "Jaké je tvé nejoblíbenější jídlo a proč?", "pl": "Jaka jest Twoja ulubiona potrawa i dlaczego?"},
+            {"orig": "Den bez internetu: Co bys dělal?", "pl": "Dzień bez internetu: co byś robił?"},
+            {"orig": "Vyprávěj o svém nejlepším příteli nebo přítelkyni.", "pl": "Opowiedz o swoim najlepszym przyjacielu lub przyjaciółce."},
+            {"orig": "Které město bys chtěl navštívit?", "pl": "Jakie miasto chciałbyś odwiedzić?"},
+            {"orig": "Jak vypadá tvůj typický pracovní den?", "pl": "Jak wygląda Twój typowy dzień pracy?"},
+            {"orig": "Jaká je tvá nejoblíbenější kniha nebo film?", "pl": "Jaka jest Twoja ulubiona książka lub film?"},
+            {"orig": "Popiš svého domácího mazlíčka (nebo vysněné zvíře).", "pl": "Opisz swoje zwierzę (lub zwierzę marzeń)."},
+            {"orig": "Jaký byl tvůj nejkrásnější zážitek z dětství?", "pl": "Jakie było Twoje najpiękniejsze wspomnienie z dzieciństwa?"},
+            {"orig": "Jak obvykle trávíš svou neděli?", "pl": "Jak zwykle spędzasz niedzielę?"},
+            {"orig": "Jakou roli hraje sport ve tvém životě?", "pl": "Jaką rolę odgrywa sport w Twoim życiu?"},
+            {"orig": "Co bys dělal, kdybys vyhrál v loterii?", "pl": "Co byś zrobił, gdybyś wygrał w loterii?"},
+            {"orig": "Popiš dnešní počasí.", "pl": "Opisz dzisiejszą pogodę."},
+            {"orig": "Vaření nebo jídlo v restauraci? Co preferuješ?", "pl": "Gotowanie czy jedzenie w restauracji? Co wolisz?"},
+            {"orig": "Které roční období máš nejraději?", "pl": "Którą porę roku lubisz najbardziej?"},
+            {"orig": "Vyprávěj o osobě, která tě inspiruje.", "pl": "Opowiedz o osobie, która Cię inspiruje."},
+            {"orig": "Jak si představuješ svět za 50 let?", "pl": "Jak wyobrażasz sobie świat za 50 lat?"},
+            {"orig": "Jaká je tvá nejdůležitější rada do života?", "pl": "Jaka jest Twoja najważniejsza rada życiowa?"},
+            {"orig": "Popiš své nejoblíbenější místo ve tvém městě.", "pl": "Opisz swoje ulubione miejsce w Twoim mieście."},
+            {"orig": "Co plánuješ na dnešní večer?", "pl": "Co planujesz na dzisiejszy wieczór?"}
         ]
     }
     
     today_str = date.today().isoformat()
+    # Modulo automatycznie obsłuży 25 elementów
     topic_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(daily_topics[L_CODE])
     daily_obj = daily_topics[L_CODE][topic_idx]
 
@@ -3078,9 +3119,9 @@ elif choice == "✍️ Asystent Pisania":
             with st.expander("👁️ Pokaż tłumaczenie tematu"):
                 st.write(daily_obj['pl'])
             
-            user_text_daily = st.text_area("Twoja wypowiedź (min. 3 zdania):", key="daily_area", height=200)
+            user_text_daily = st.text_area("Twoja wypowiedź (min. 3 zdania):", key="daily_area_v18", height=200)
             
-            if st.button("🚀 Wyślij do oceny", key="btn_daily_v17", disabled=len(user_text_daily.strip()) < 10):
+            if st.button("🚀 Wyślij do oceny", key="btn_daily_v18", disabled=len(user_text_daily.strip()) < 10):
                 s_count = len(re.findall(r'[^.!?]+[.!?]', user_text_daily))
                 if s_count < 3: 
                     st.warning(f"Zbyt krótki tekst ({s_count}/3 zdania).")
@@ -3094,10 +3135,10 @@ elif choice == "✍️ Asystent Pisania":
         if not show_eval:
             st.subheader("Własne zadanie")
             c1, c2 = st.columns([3, 1])
-            custom_t = c1.text_input("Temat:", placeholder="np. Mój ulubiony film", key="custom_t_in_v17")
+            custom_t = c1.text_input("Temat:", placeholder="np. Mój ulubiony film", key="custom_t_in_v18")
             min_s = c2.number_input("Zdania:", 3, 15, 3)
             
-            if st.button("🎲 Losuj / Ustaw temat", key="btn_custom_gen"):
+            if st.button("🎲 Losuj / Ustaw temat", key="btn_custom_gen_v18"):
                 if not custom_t or custom_t.lower() == "losowy temat":
                     with st.spinner("AI losuje..."):
                         client = openai.OpenAI(api_key=API_KEY)
@@ -3114,8 +3155,8 @@ elif choice == "✍️ Asystent Pisania":
                 t_pl = t_parts[0].strip()
                 t_orig = t_parts[1].strip() if len(t_parts) > 1 else t_pl
                 st.markdown(f"📍 Temat: **{t_orig}**")
-                user_text_custom = st.text_area("Pisz tutaj:", key="custom_area_v17", height=200)
-                if st.button("🚀 Oceń wyzwanie", key="btn_custom_eval", disabled=len(user_text_custom.strip()) < 10):
+                user_text_custom = st.text_area("Pisz tutaj:", key="custom_area_v18", height=200)
+                if st.button("🚀 Oceń wyzwanie", key="btn_custom_eval_v18", disabled=len(user_text_custom.strip()) < 10):
                     s_count = len(re.findall(r'[^.!?]+[.!?]', user_text_custom))
                     if s_count < min_s: st.warning(f"Zbyt mało zdań ({s_count}/{min_s}).")
                     else: 
@@ -3134,11 +3175,11 @@ elif choice == "✍️ Asystent Pisania":
                     st.caption("Twoja praca:")
                     st.write(item['user_text'])
                     st.divider()
-                    st.warning(f"**Korekta:**\n{item['corrections']}")
-                    st.success(f"**Wersja Mistrzowska:**\n{item['master_version']}")
+                    st.warning(f"**Analiza i poprawki:**\n{item['corrections']}")
+                    st.success(f"**Wersja Mistrzowska (C1):**\n{item['master_version']}")
                     st.info(f"💡 {item['motivation']}")
 
-    # --- LOGIKA PRZETWARZANIA PRZEZ AI (V1.7 - Robust) ---
+    # --- LOGIKA PRZETWARZANIA PRZEZ AI ---
     if "writing_action" in st.session_state:
         action, text, topic = st.session_state.writing_action
         with st.spinner("Nauczyciel AI analizuje tekst..."):
@@ -3154,18 +3195,13 @@ elif choice == "✍️ Asystent Pisania":
                 ZASADA: Nie pisz żadnych wstępów. Tylko te 4 części."""
                 
                 resp = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
-                
-                # CZYSZCZENIE ODPOWIEDZI
                 raw_res = resp.choices[0].message.content.strip()
                 raw_res = raw_res.replace("```", "").replace("JSON", "").strip()
-                
                 res_parts = raw_res.split("|||")
                 
                 if len(res_parts) < 4:
-                    # Próba ratunkowa: jeśli AI użyło nowych linii zamiast |||
                     res_parts = raw_res.split("\n\n")
-                    if len(res_parts) < 4:
-                        raise Exception("AI zwróciło błędny format. Spróbuj wysłać ponownie.")
+                    if len(res_parts) < 4: raise Exception("Błąd formatu AI.")
 
                 final_res = {
                     "username": u, "lang": L_CODE, "topic": topic,
@@ -3188,17 +3224,13 @@ elif choice == "✍️ Asystent Pisania":
         st.divider()
         st.balloons()
         st.success("✅ Praca oceniona i zapisana!")
-        
         c1, c2 = st.columns([1, 3])
         c1.metric("Poziom", res["level"])
         c2.info(res['motivation'])
-        
         st.subheader("🔍 Szczegółowa korekta")
         st.warning(res["corrections"])
-        
         with st.expander("✨ Wersja Mistrzowska (Native C1)"):
             st.write(res["master_version"])
-            
-        if st.button("Wróć do zadań", use_container_width=True):
+        if st.button("Wróć do zadań", use_container_width=True, key="back_btn_v18"):
             del st.session_state.writing_result
             st.rerun()
