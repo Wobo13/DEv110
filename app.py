@@ -519,12 +519,12 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V1.7 - Multilang + Writing Task Tracker) ---
+# --- 7. START (V1.8 - Multilang + Writing & Detective Trackers) ---
 
 # Pobieramy aktualny wybór z sesji
 current_choice = st.session_state.get("choice", "🏠 Start")
 
-# Aktualizacja czasu aktywności
+# Aktualizacja czasu aktywności (naliczanie minut)
 update_activity(current_choice)
 
 if current_choice == "🏠 Start":
@@ -533,16 +533,15 @@ if current_choice == "🏠 Start":
     
     # 1. ANALIZA DANYCH BIEŻĄCYCH
     all_cards_full = st.session_state.flashcards
+    # Filtrujemy słówka użytkownika pod aktualny język
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     
     ud = st.session_state.user_data
-    today_str = str(date.today())
-    today_iso = date.today().isoformat()
+    today_str = date.today().isoformat() # Format YYYY-MM-DD
     
-    # Statystyki czasu
+    # Statystyki czasu nauki (uwzględniamy nowe moduły)
     current_stats = ud.get("time_stats", {})
-    # Uwzględniamy Wri (Writing) w ogólnym czasie dnia
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri"]
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
@@ -580,22 +579,34 @@ if current_choice == "🏠 Start":
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         
-        # --- LOGIKA SPRAWDZANIA ASYSTENTA PISANIA ---
+        # --- LOGIKA SPRAWDZANIA ZADAŃ (Writing & Detective) ---
         try:
             db = get_db()
-            # Sprawdzamy czy istnieje wpis z dzisiaj dla tego usera i języka
-            res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_iso).execute()
+            # 1. Sprawdzamy Asystenta Pisania
+            res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
             writing_done = len(res_w.data) > 0 if res_w.data else False
+            
+            # 2. Sprawdzamy Detektywa (czy dodano idiom dzisiaj)
+            # Filtrujemy lokalną listę flashcards, aby nie robić zbędnych zapytań do DB
+            det_done = any(
+                c.get("origin") == "Kulturowy Detektyw" and 
+                c.get("lang") == L_CODE and 
+                str(c.get("created_at", today_str))[:10] == today_str 
+                for c in all_cards_full
+            )
         except:
             writing_done = False
+            det_done = False
             
-        t_done = "✅" if study_minutes >= daily_goal else "❌"
-        w_done = "✅" if writing_done else "❌"
+        # Wizualizacja listy zadań
+        t_icon = "✅" if study_minutes >= daily_goal else "❌"
+        w_icon = "✅" if writing_done else "❌"
+        d_icon = "✅" if det_done else "❌"
         
-        st.write(f"{t_done} Cel czasowy: **{daily_goal} min**")
-        st.write(f"{w_done} Asystent Pisania: **Zadanie Dnia**")
-        st.write("✅ Sprawdź sekcję **Warsztat**")
-        st.write("✅ Rozwiąż jeden **Quiz** lub **Test**")
+        st.write(f"{t_icon} Cel czasowy: **{daily_goal} min**")
+        st.write(f"{w_icon} Asystent Pisania: **Zadanie Dnia**")
+        st.write(f"{d_icon} Kulturowy Detektyw: **Sprawa Dnia**")
+        st.write("✅ Rozwiąż min. jeden **Quiz** lub **Test**")
 
     st.divider()
 
@@ -619,6 +630,7 @@ if current_choice == "🏠 Start":
     with col_w:
         with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
             if all_c:
+                # Wyświetlamy 3 faktycznie ostatnie słówka z bazy dla tego języka
                 recent = all_c[-3:]
                 for r in reversed(recent):
                     st.write(f"**{r['de']}**")
