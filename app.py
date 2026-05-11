@@ -715,7 +715,7 @@ if current_choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']}")
 
-# --- 8. POWTÓRKI & TRENING (V268 - Skopiowana logika z Quizu) ---
+# --- 8. POWTÓRKI & TRENING (V269 - Ostateczny Fix Cache'u Słówek) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -770,7 +770,12 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
             if idx >= len(cards):
                 st.rerun()
                 return
-            c = cards[idx]
+            
+            # --- KLUCZOWA ZMIANA: OMIJANIE CACHE'U ---
+            c_cached = cards[idx]
+            # Pobieramy najświeższą wersję karty na podstawie ID, żeby mieć w 100% pewność, że przykłady tam są!
+            c = next((card for card in st.session_state.flashcards if card['id'] == c_cached['id']), c_cached)
+            # -----------------------------------------
             
             # Klucz kierunku
             dir_key = f"{pfx}_dir"
@@ -819,7 +824,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- OBSŁUGA PRZYKŁADÓW I AUDIO (Dokładnie skopiowane z sekcji 9) ---
+                # --- OBSŁUGA PRZYKŁADÓW (Skopiowane z 9, teraz w pełni odświeżone) ---
                 exs = c.get("examples", [])
                 example_foreign = None
                 example_pl = None
@@ -833,7 +838,6 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                 if example_foreign:
                     st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
                 
-                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
                 if auto_audio:
                     play_audio(c['de'], example_foreign, lang=L_CODE)
 
