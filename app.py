@@ -519,7 +519,7 @@ with st.sidebar:
 # --- KLUCZOWA LINIA (Gwarantuje działanie nawigacji) ---
 choice = st.session_state.get("choice", "🏠 Start")
 
-# --- 7. START (V2.3 - Refined Task Logic) ---
+# --- 7. START (V2.5 - Professional Dashboard & Knowledge Pulse) ---
 
 current_choice = st.session_state.get("choice", "🏠 Start")
 update_activity(current_choice)
@@ -528,126 +528,158 @@ if current_choice == "🏠 Start":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. ANALIZA DANYCH
+    # 1. ANALIZA DANYCH BIEŻĄCYCH
     all_cards_full = st.session_state.flashcards
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     ud = st.session_state.user_data
     today_str = date.today().isoformat()
     
-    # Puls Wiedzy (silne słowa: interwał > 6 dni)
+    # Obliczanie "Pulsu Wiedzy" (% słówek z interwałem > 6 dni)
     strong_words = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today_str)).date() - date.today()).days > 6])
     knowledge_pulse = int((strong_words / len(all_c)) * 100) if all_c else 0
 
+    # Statystyki czasu
     current_stats = ud.get("time_stats", {})
     study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    st.header(f"{'Guten Morgen' if L_CODE == 'de' else 'Dobrý den'}, {str(u).capitalize()}! ☀️")
+    # Powitanie
+    hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
+    st.header(f"{hello_msg}, {str(u).capitalize()}! ☀️")
     
-    # 2. METRYKI (KPI)
+    # 2. UKŁAD KAFELKÓW (KPI)
     col1, col2, col3 = st.columns(3)
-    col1.metric(f"Słówek ({current_lang_name})", len(all_c))
-    to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
-    col2.metric("Do powtórki", to_review, delta=-to_review if to_review > 0 else "Czysto!", delta_color="inverse")
-    col3.metric("Dzisiejsza nauka", f"{study_minutes} / {daily_goal} m")
+    with col1:
+        st.metric(f"Słówek ({current_lang_name})", len(all_c))
+    with col2:
+        to_review = len([c for c in all_c if str(c.get("next_review", today_str)) <= today_str])
+        st.metric("Do powtórki", to_review, delta=-to_review if to_review > 0 else "Czysto!", delta_color="inverse")
+    with col3:
+        st.metric("Dzisiejsza nauka", f"{study_minutes} / {daily_goal} m")
 
     st.write("---")
 
     # 3. BRIEFING I ZADANIA
     c1, c2 = st.columns(2)
+    
     with c1:
         st.markdown(f"### 📊 Puls Wiedzy: {current_lang_name}")
         st.write(f"Opanowałeś już **{knowledge_pulse}%** swojej bazy na poziomie trwałym.")
         st.progress(knowledge_pulse / 100)
-        st.caption("💡 Puls rośnie, gdy terminy Twoich powtórek stają się coraz dłuższe.")
+        
+        if knowledge_pulse < 30:
+            st.caption("💡 Twoja baza jest świeża. Skup się na regularnych powtórkach!")
+        elif knowledge_pulse < 70:
+            st.caption("📈 Świetnie! Coraz więcej słów trafia do pamięci długotrwałej.")
+        else:
+            st.caption("🏆 Jesteś mistrzem! Twoja wiedza w tym języku jest bardzo stabilna.")
 
     with c2:
         st.markdown("### 🏆 Zadania na dziś")
         
         try:
             db = get_db()
-            # ASYSTENT PISANIA
+            
+            # --- A. ASYSTENT PISANIA: LOGIKA TEASERA ---
             topics_for_teaser = {
                 "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby.", "Warum lernst du Deutsch?", "Wie sieht dein Traumhaus aus?", "Beschreibe deinen letzten Urlaub.", "Was ist deine Lieblingsspeise?", "Ein Tag ohne Internet.", "Twoja najlepsza przyjaciółka.", "Jakie miasto chcesz odwiedzić?", "Typowy dzień pracy.", "Ulubiona książka/film.", "Opisz swoje zwierzę.", "Wspomnienie z dzieciństwa.", "Jak spędzasz niedzielę?", "Rola sportu.", "Wygrana w lotto.", "Dzisiejsza pogoda.", "Gotowanie czy restauracja?", "Ulubiona pora roku.", "Inspirująca osoba.", "Świat za 50 lat.", "Rada życiowa.", "Ulubione miejsce.", "Plany na wieczór."],
-                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navštívit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
+                "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku.", "Proč se učíš česky?", "Jak vypadá tvůj dům snů?", "Popiš svou poslední dovolenou.", "Jaké je tvé nejoblíbenější jídlo?", "Den bez internetu.", "Nejlepší přítelkyně.", "Které město chceš navstit?", "Typický pracovní den.", "Oblíbená kniha/film.", "Popiš svého mazlíčka.", "Zážitek z dětství.", "Jak trávíš neděli.", "Role sportu.", "Výhra v loterii.", "Dnešní počasí.", "Vaření nebo restaurace?", "Oblíbené roční období.", "Inspirující osoba.", "Svět za 50 lat.", "Rada do života.", "Oblíbené místo.", "Plány na dnešní večer."]
             }
             t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser[L_CODE])
             current_writing_topic = topics_for_teaser[L_CODE][t_idx]
+            
             res_w = db.table("writing_history").select("id").eq("username", u).eq("lang", L_CODE).gte("created_at", today_str).execute()
             writing_done = len(res_w.data) > 0 if res_w.data else False
 
-            # KULTUROWY DETEKTYW
+            # --- B. KULTUROWY DETEKTYW: LOGIKA TEASERA ---
             res_idioms = db.table("idioms_library").select("phrase").eq("lang", L_CODE).execute()
-            daily_phrase = "Brak spraw"
             if res_idioms.data:
                 idx_det = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(res_idioms.data)
                 daily_phrase = res_idioms.data[idx_det]['phrase']
+            else:
+                daily_phrase = "Brak spraw w archiwum"
+
             det_done = any(c.get("de") == daily_phrase and c.get("lang") == L_CODE for c in all_cards_full)
-            
-            # WARSZTAT TRACKER (Cel: 3 słowa)
+
+            # --- C. WARSZTAT: LOGIKA ZADANIA (Language Specific) ---
             wrk_goal = 3
-            # Pobieramy postęp z session_state (inicjalizacja w razie braku)
-            if "wrk_mastered_today" not in st.session_state: st.session_state.wrk_mastered_today = 0
-            mastered_today = st.session_state.wrk_mastered_today
-            workshop_done = mastered_today >= wrk_goal
+            wrk_key = f"wrk_mastered_today_{L_CODE}"
+            if wrk_key not in st.session_state: st.session_state[wrk_key] = 0
             
-            # Ile słów w ogóle kwalifikuje się do warsztatu
+            mastered_today = st.session_state[wrk_key]
+            workshop_done = mastered_today >= wrk_goal
             hard_cards_count = len([c for c in all_c if c.get("level", 0) < 2])
 
         except:
             writing_done = det_done = workshop_done = False
-            current_writing_topic = daily_phrase = "Błąd"
+            current_writing_topic = daily_phrase = "Błąd połączenia z bazą"
             mastered_today = 0
 
-        # UI ZADAŃ
-        t_icon = "✅" if study_minutes >= daily_goal else "❌"
-        st.write(f"{t_icon} Cel czasowy: **{daily_goal} min**")
+        # --- UI ZADAŃ ---
+        time_icon = "✅" if study_minutes >= daily_goal else "❌"
+        st.write(f"{time_icon} Cel czasowy: **{daily_goal} min**")
 
-        # Asystent
+        # Container 1: ASYSTENT PISANIA
         with st.container(border=True):
             w_icon = "✅" if writing_done else "✍️"
             st.markdown(f"**{w_icon} Asystent Pisania**")
             st.markdown(f"📝 *„{current_writing_topic}”*")
             if not writing_done:
                 if st.button("Napisz wypracowanie", key="go_to_write", use_container_width=True):
-                    st.session_state.choice = "✍️ Asystent Pisania"; st.rerun()
+                    st.session_state.choice = "✍️ Asystent Pisania"
+                    st.rerun()
+            else:
+                st.caption("✨ Zadanie zaliczone!")
 
-        # Detektyw
+        # Container 2: KULTUROWY DETEKTYW
         with st.container(border=True):
             d_icon = "✅" if det_done else "🕵️"
             st.markdown(f"**{d_icon} Kulturowy Detektyw**")
             st.markdown(f"🔍 *„{daily_phrase}”*")
             if not det_done:
                 if st.button("Rozwiąż zagadkę", key="go_to_det", use_container_width=True):
-                    st.session_state.choice = "🕵️ Kulturowy Detektyw"; st.rerun()
+                    st.session_state.choice = "🕵️ Kulturowy Detektyw"
+                    st.rerun()
+            else:
+                st.caption("✨ Sprawa rozwiązana!")
 
-        # Dynamiczne Zadanie Warsztatowe
+        # Zadanie Warsztatowe
         wrk_icon = "✅" if workshop_done else "🛠️"
         if hard_cards_count > 0:
-            st.write(f"{wrk_icon} Zadanie: **Opanuj 3 słowa z Warsztatu** ({mastered_today}/3)")
+            st.write(f"{wrk_icon} Zadanie: **Opanuj 3 słowa z Warsztatu** ({mastered_today}/{wrk_goal})")
         else:
-            st.write(f"✅ Warsztat jest pusty! (Wszystkie słowa na poziomie 2+)")
+            st.write("✅ Warsztat jest obecnie czysty!")
 
     st.divider()
 
-    # 4. CYTATY Z TŁUMACZENIEM
+    # 4. CYTATY I OSTATNIE SŁÓWKA
     col_q, col_w = st.columns([2, 1])
+    
     with col_q:
         quotes_db = {
             "de": [
                 {"orig": "Die Grenzen meiner Sprache bedeuten die Grenzen meiner Welt.", "pl": "Granice mojego języka oznaczają granice mojego świata."},
                 {"orig": "Übung macht den Meister!", "pl": "Praktyka czyni mistrza."},
-                {"orig": "Aller Anfang ist schwer.", "pl": "Każdy początek jest trudny."}
+                {"orig": "Aller Anfang ist schwer.", "pl": "Każdy początek jest trudny."},
+                {"orig": "Man lernt nie aus.", "pl": "Człowiek uczy się przez całe życie."},
+                {"orig": "Reden ist Silber, Schweigen ist Gold.", "pl": "Mowa jest srebrem, milczenie złotem."}
             ],
             "cs": [
                 {"orig": "Kolik jazyků znáš, tolikrát jsi člověkem.", "pl": "Ilu języków się nauczysz, tyle razy jesteś człowiekiem."},
                 {"orig": "Trpělivost přináší růže.", "pl": "Cierpliwość przynosi róże."},
-                {"orig": "Učený nikdo z nebe nespadl.", "pl": "Nikt uczony z nieba nie spadł."}
+                {"orig": "Učený nikdo z nebe nespadl.", "pl": "Nikt uczony z nieba nie spadł."},
+                {"orig": "Bez práce nejsou koláče.", "pl": "Bez pracy nie ma kołaczy."},
+                {"orig": "Ranní ptáče dál doskáče.", "pl": "Kto rano wstaje, temu Pan Bóg daje."}
             ]
         }
-        q = random.choice(quotes_db.get(L_CODE, [{"orig": "Lernen!", "pl": "Ucz się!"}]))
+        
+        # Wybieramy cytat na podstawie daty (ten sam przez cały dzień)
+        q_list = quotes_db.get(L_CODE, [{"orig": "Lernen!", "pl": "Ucz się!"}])
+        q_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(q_list)
+        q = q_list[q_idx]
+        
         st.info(f"**{q['orig']}**")
         with st.expander("👁️ Pokaż tłumaczenie cytatu"):
             st.caption(q['pl'])
@@ -655,9 +687,12 @@ if current_choice == "🏠 Start":
     with col_w:
         with st.expander(f"🆕 Ostatnie ({current_lang_name})", expanded=True):
             if all_c:
-                for r in reversed(all_c[-3:]):
+                # Wyświetlamy 3 faktycznie ostatnie słówka z bazy dla tego języka
+                recent = all_c[-3:]
+                for r in reversed(recent):
                     st.write(f"**{r['de']}**")
-            else: st.write("Baza jest pusta.")
+            else:
+                st.write("Baza jest pusta.")
 
 # --- 8. POWTÓRKI & TRENING (V264 - Fix SyntaxError + Multilang) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
@@ -1333,62 +1368,72 @@ elif choice == "🧠 Memory":
         init_memory_game()
         st.rerun()
                 
-# --- 13. WARSZTAT SŁÓWEK (V320 - With Task Tracker Integration) ---
+# --- 13. WARSZTAT SŁÓWEK (V322 - Final Language-Specific Edition) ---
 elif choice == "🛠️ Warsztat":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
+    # Klucz trackera specyficzny dla języka (np. wrk_mastered_today_de)
+    wrk_key = f"wrk_mastered_today_{L_CODE}"
+    
     st.header(f"🛠️ Warsztat Słówek: {current_lang_name}")
-    st.write(f"Tu szlifujesz słowa, które sprawiają Ci trudność. Opanuj 3, aby zaliczyć dzisiejsze zadanie!")
+    st.write(f"Skup się na słowach, które wymagają utrwalenia. Opanuj 3, by zaliczyć zadanie dnia!")
 
-    # 1. IDENTYFIKACJA "TRUDNYCH" SŁÓWEK
+    # 1. INICJALIZACJA LISTY "TRUDNYCH" SŁÓWEK
     if "w_list" not in st.session_state or st.session_state.get("w_lang_ref") != L_CODE:
+        # Pobieramy słówka dla danego języka
         lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
         
-        # Filtrujemy: level 0 lub 1 (najświeższe błędy)
+        # Priorytet: słowa z poziomem 0 lub 1 (najświeższe/najtrudniejsze)
         hard_cards = [c for c in lang_cards if c.get("level", 0) < 2]
         
-        # Failsafe: jeśli nie ma level < 2, weź te z najniższym interwałem
+        # Jeśli masz mało trudnych słów, dobieramy te z najniższym poziomem
         if len(hard_cards) < 5 and lang_cards:
             hard_cards = sorted(lang_cards, key=lambda x: x.get("level", 0))[:10]
 
         random.shuffle(hard_cards)
-        st.session_state.w_list = hard_cards[:15] 
+        st.session_state.w_list = hard_cards[:15] # Sesja warsztatowa to max 15 słów
         st.session_state.w_idx = 0
         st.session_state.w_show = False
         st.session_state.w_lang_ref = L_CODE
 
-    # Inicjalizacja trackera zadania dnia, jeśli nie istnieje
-    if "wrk_mastered_today" not in st.session_state:
-        st.session_state.wrk_mastered_today = 0
+    # Inicjalizacja trackera językowego, jeśli nie istnieje
+    if wrk_key not in st.session_state:
+        st.session_state[wrk_key] = 0
 
+    # 2. LOGIKA WYŚWIETLANIA
     if not st.session_state.w_list:
-        st.success(f"Twoja lista trudnych słówek ({current_lang_name}) jest pusta! ✨")
+        st.success(f"Twoja lista trudnych słówek dla języka {current_lang_name} jest pusta! ✨")
+        if st.button("Odśwież bazę"): st.rerun()
     
     elif st.session_state.w_idx >= len(st.session_state.w_list):
         st.balloons()
-        st.success(f"Warsztat {current_lang_name} zakończony!")
-        if st.button("Zacznij nową sesję warsztatową", use_container_width=True):
+        st.success(f"Sesja warsztatowa ({current_lang_name}) zakończona sukcesem!")
+        if st.button("Zacznij kolejną rundę", use_container_width=True):
             for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
+        # Silnik warsztatu wewnątrz fragmentu dla płynności UI
         @st.fragment
         def workshop_engine():
             idx = st.session_state.w_idx
             w_list = st.session_state.w_list
             curr = w_list[idx]
             
+            # Paski postępu
             st.progress(idx / len(w_list))
-            st.caption(f"Słówko {idx + 1} z {len(w_list)} | Postęp zadania: {st.session_state.wrk_mastered_today}/3")
+            st.caption(f"Słówko {idx + 1} z {len(w_list)} | Dzisiejszy postęp ({current_lang_name}): {st.session_state[wrk_key]}/3")
 
             with st.container(border=True):
+                # Słowo w języku obcym
                 st.markdown(f"<h1 style='text-align: center; margin-bottom: 20px;'>{curr['de']}</h1>", unsafe_allow_html=True)
                 
                 if st.session_state.w_show:
+                    # Tłumaczenie
                     st.markdown(f"<h3 style='text-align: center; color: #FF5252; margin-top: -10px;'>{curr['pl']}</h3>", unsafe_allow_html=True)
                     
-                    # Obsługa przykładów
+                    # Pobieranie przykładu
                     ex_obj = curr.get('examples', [])
                     example_text = ""
                     if ex_obj and isinstance(ex_obj, list) and len(ex_obj) > 0:
@@ -1399,8 +1444,8 @@ elif choice == "🛠️ Warsztat":
                     if example_text:
                         st.info(f"💡 Przykład: {example_text}")
                     
-                    user_settings = st.session_state.user_data.get("settings", {})
-                    if user_settings.get("auto_audio", True):
+                    # Audio (jeśli włączone w ustawieniach)
+                    if st.session_state.user_data.get("settings", {}).get("auto_audio", True):
                         play_audio(curr['de'], example_text if example_text else None, lang=L_CODE)
                 
                 st.write("")
@@ -1410,25 +1455,28 @@ elif choice == "🛠️ Warsztat":
                         st.rerun(scope="fragment")
                 else:
                     col_a, col_b = st.columns(2)
-                    if col_a.button("❌ Nadal trudne", use_container_width=True):
-                        # Przesuwamy na koniec listy
-                        card = st.session_state.w_list.pop(st.session_state.w_idx)
-                        st.session_state.w_list.append(card)
-                        st.session_state.w_show = False
-                        st.rerun(scope="fragment")
+                    with col_a:
+                        if st.button("❌ Nadal trudne", use_container_width=True):
+                            # Przerzucamy na koniec listy, by wróciło w tej sesji
+                            card = st.session_state.w_list.pop(st.session_state.w_idx)
+                            st.session_state.w_list.append(card)
+                            st.session_state.w_show = False
+                            st.rerun(scope="fragment")
                     
-                    if col_b.button("✅ Już rozumiem", use_container_width=True):
-                        # --- KLUCZOWA AKTUALIZACJA TRACKERA ZADANIA ---
-                        st.session_state.wrk_mastered_today += 1
-                        # ----------------------------------------------
-                        st.session_state.w_idx += 1
-                        st.session_state.w_show = False
-                        st.rerun(scope="fragment")
+                    with col_b:
+                        if st.button("✅ Już rozumiem", use_container_width=True):
+                            # INKREMENTACJA TRACKERA DLA WŁAŚCIWEGO JĘZYKA
+                            st.session_state[wrk_key] += 1
+                            
+                            st.session_state.w_idx += 1
+                            st.session_state.w_show = False
+                            st.rerun(scope="fragment")
 
         workshop_engine()
 
-    # Przycisk resetu na wypadek chęci zmiany puli
-    if st.button("Wylosuj inne trudne słówka", type="secondary", use_container_width=True):
+    # Dodatkowe narzędzia pod warsztatem
+    st.divider()
+    if st.button("🔄 Wylosuj inny zestaw słów", type="secondary", use_container_width=True):
         for k in ["w_list", "w_idx", "w_show", "w_lang_ref"]:
             if k in st.session_state: del st.session_state[k]
         st.rerun()
