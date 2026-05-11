@@ -2505,29 +2505,38 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V237 - Memory Sync Fix) ---
+# --- 25. STATYSTYKI (V238 - Live Database Fetch Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # --- KLUCZOWA POPRAWKA: ODŚWIEŻENIE DANYCH Z BAZY ---
-    # To wymusza, aby rekord z Memory był identyczny jak w Arenie Wyzwań
-    with st.spinner("Aktualizuję dane..."):
-        fresh_ud = load_user_data(u)
-        if fresh_ud:
-            st.session_state.user_data = fresh_ud
-
     st.header(f"📊 Statystyki: {current_lang_name}")
+
+    # --- KROK 1: BEZPOŚREDNIE POBRANIE DANYCH Z BAZY (JAK W ARENIE) ---
+    # To omija cache sesji i pobiera to, co pokazałeś na screenie
+    try:
+        db = get_db()
+        res = db.table("user_data").select("*").eq("username", u).execute()
+        if res.data:
+            fresh_ud = res.data[0]
+            # Aktualizujemy session_state, aby reszta apki też widziała zmiany
+            st.session_state.user_data = fresh_ud
+            ud = fresh_ud
+        else:
+            ud = st.session_state.user_data
+    except Exception as e:
+        st.error(f"Błąd odświeżania danych: {e}")
+        ud = st.session_state.user_data
     
-    ud = st.session_state.user_data
     all_cards = st.session_state.flashcards
     
+    # Filtrowanie słówek pod język
     df_full = pd.DataFrame(all_cards)
     if not df_full.empty:
         df = df_full[df_full.get("lang", "de") == L_CODE].copy()
     else:
         df = pd.DataFrame()
-        
+
     if not df.empty:
         # 1. Metryki główne
         c1, c2 = st.columns(2)
@@ -2536,42 +2545,51 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
-        # --- REKORDY GIER ---
+        # --- 2. REKORDY GIER ---
         st.subheader("🏆 Moje Rekordy w Grach")
         t_mem, t_bal, t_snake = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Lingwistyczny Wąż"])
         
         with t_mem:
-            # Używamy odświeżonych danych z bazy
+            # POBIERANIE DOKŁADNIE Z KOLUMNY memory_scores_de / memory_scores_cs
             mem_key = f"memory_scores_{L_CODE}"
             mem_scores = ud.get(mem_key, [])
+            
+            # Obsługa formatu listy z Twojego screena (jsonb)
             if mem_scores and isinstance(mem_scores, list):
-                # Filtrujemy tylko liczby i sortujemy (najlepsze to najniższe czasy)
-                top3_mem = sorted([float(s) for s in mem_scores if str(s).replace('.','',1).isdigit()])[:3]
+                # Konwersja na liczby i wybór 3 najniższych czasów
+                valid_scores = []
+                for s in mem_scores:
+                    try: valid_scores.append(float(s))
+                    except: pass
+                
+                top3_mem = sorted(valid_scores)[:3]
+                
                 if top3_mem:
                     m_cols = st.columns(3)
                     icons = ["🥇", "🥈", "🥉"]
                     for i, score in enumerate(top3_mem):
                         m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
                 else:
-                    st.info("Brak rekordów.")
+                    st.info("Brak poprawnych rekordów.")
             else:
                 st.info(f"Zagraj w Memory, aby ustanowić rekord!")
 
         with t_bal:
-            # Logika Balonów (zgodnie z Twoją prośbą - bez zmian)
+            # Logika Balonów (zgodnie z prośbą - bez zmian)
             bal_key = f"top_balloons_{L_CODE}"
             bal_scores = ud.get(bal_key, [])
-            if bal_scores:
-                top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
-                b_cols = st.columns(3)
-                icons = ["🥇", "🥈", "🥉"]
-                for i, score in enumerate(top3_bal):
-                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
-            else:
-                st.info(f"Brak rekordów.")
+            if bal_scores and isinstance(bal_scores, list):
+                top3_bal = sorted([int(s) for s in bal_scores if str(s).isdigit()], reverse=True)[:3]
+                if top3_bal:
+                    b_cols = st.columns(3)
+                    icons = ["🥇", "🥈", "🥉"]
+                    for i, score in enumerate(top3_bal):
+                        b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
+                else: st.info("Brak rekordów.")
+            else: st.info("Brak rekordów.")
 
         with t_snake:
-            # Logika Węża (zgodnie z Twoją prośbą - bez zmian)
+            # Logika Węża (zgodnie z prośbą - bez zmian)
             s_max = ud.get("snake_best_chain", 0)
             s_wins = ud.get("snake_wins", 0)
             s_loss = ud.get("snake_losses", 0)
@@ -2587,18 +2605,13 @@ elif choice == "📊 Statystyki":
 
         st.write("---")
         
-        # 2. KOLUMNY: Czas nauki oraz Fazy zapamiętywania
+        # --- 3. CZAS NAUKI I FAZY (RESZTA STATYSTYK) ---
         col_top1, col_top2 = st.columns(2)
         
         with col_top1:
             st.subheader("⏱️ Czas nauki (minuty)")
             time_stats = ud.get("time_stats", {})
-            display_names = {
-                "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", 
-                "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory",
-                "War": "Warsztat", "Sta": "Statystyki", "Kon": "Konstruktor",
-                "Wan": "Wąż", "Bal": "Balon"
-            }
+            display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Sta": "Statystyki", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon"}
             nav_order = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Warsztat", "Konstruktor", "Wąż", "Bal", "Statystyki", "Inne"]
             
             aggregated_mins = {name: 0 for name in nav_order}
@@ -2607,76 +2620,42 @@ elif choice == "📊 Statystyki":
                 if name in aggregated_mins: aggregated_mins[name] += sec
                 else: aggregated_mins["Inne"] += sec
             
-            t_data = []
-            for name in nav_order:
-                mins = int(aggregated_mins[name] // 60)
-                if mins > 0 or name in ["Powtórki", "Trening"]:
-                    t_data.append({"Moduł": name, "Minuty": mins})
+            t_data = [{"Moduł": n, "Minuty": int(aggregated_mins[n]//60)} for n in nav_order if aggregated_mins[n] > 0 or n in ["Powtórki", "Trening"]]
             st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
 
         with col_top2:
             st.subheader("🧠 Fazy zapamiętywania")
             today = date.today()
             phase_counts = {"Słaba (1-2 dni)": 0, "Średnia (3-6 dni)": 0, "Silna (7+ dni)": 0}
-            
             for _, row in df.iterrows():
                 try:
-                    rev_str = str(row.get('next_review', today))
-                    rev_date = datetime.strptime(rev_str, "%Y-%m-%d").date()
+                    rev_date = datetime.strptime(str(row.get('next_review', today)), "%Y-%m-%d").date()
                     diff = (rev_date - today).days
                     if diff <= 1: phase_counts["Słaba (1-2 dni)"] += 1
                     elif 2 <= diff <= 6: phase_counts["Średnia (3-6 dni)"] += 1
                     else: phase_counts["Silna (7+ dni)"] += 1
-                except:
-                    phase_counts["Słaba (1-2 dni)"] += 1
-            
-            p_list = [{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]
-            st.dataframe(pd.DataFrame(p_list), use_container_width=True, hide_index=True)
+                except: phase_counts["Słaba (1-2 dni)"] += 1
+            st.dataframe(pd.DataFrame([{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]), use_container_width=True, hide_index=True)
 
         st.write("---")
-        
-        # 3. Tabela z prognozą powtórek
         st.subheader(f"📅 Prognoza powtórek: {current_lang_name}")
         sched = []
         for i in range(10):
             target_date = str(date.today() + timedelta(days=i))
-            if i == 0:
-                count = len(df[df['next_review'] <= target_date])
-                label = "Dzisiaj"
-            else:
-                count = len(df[df['next_review'] == target_date])
-                label = (date.today() + timedelta(days=i)).strftime("%d.%m")
-            sched.append({"Dzień": label, "Liczba słówek": count})
+            count = len(df[df['next_review'] <= target_date]) if i==0 else len(df[df['next_review'] == target_date])
+            sched.append({"Dzień": "Dzisiaj" if i==0 else (date.today() + timedelta(days=i)).strftime("%d.%m"), "Liczba słówek": count})
         st.dataframe(pd.DataFrame(sched), use_container_width=True, hide_index=True)
 
         st.write("---")
-        
-        # 4. Tabele Poziomów i Źródeł
         col_stats1, col_stats2 = st.columns(2)
-        
         with col_stats1:
             st.subheader("📈 Słówka wg poziomu")
-            levels = ["A1", "A2", "B1", "B2", "C1"]
-            level_totals = {lvl: 0 for lvl in levels}
-            level_mastered = {lvl: 0 for lvl in levels}
-            today_str = str(date.today())
-            
-            for _, row in df.iterrows():
-                cat = row.get('category')
-                if pd.isna(cat) or not cat: continue
-                cat_str = str(cat).upper()
-                next_rev = str(row.get('next_review', today_str))
-                is_mastered = next_rev > today_str
-                for lvl in levels:
-                    if lvl in cat_str:
-                        level_totals[lvl] += 1
-                        if is_mastered: level_mastered[lvl] += 1
-            
             level_data = []
-            for lvl in levels:
-                total = level_totals[lvl]
-                mastered = level_mastered[lvl]
-                perc = int(round((mastered / total) * 100)) if total > 0 else 0
+            for lvl in ["A1", "A2", "B1", "B2", "C1"]:
+                subset = df[df['category'].str.contains(lvl, case=False, na=False)]
+                total = len(subset)
+                mastered = len(subset[subset['next_review'] > str(date.today())])
+                perc = int((mastered / total) * 100) if total > 0 else 0
                 level_data.append({"Poziom": lvl, "Słówek": total, "Opanowane": f"{perc}%"})
             st.dataframe(pd.DataFrame(level_data), use_container_width=True, hide_index=True)
             
@@ -2693,17 +2672,12 @@ elif choice == "📊 Statystyki":
     st.write("---")
     st.subheader(f"📝 Historia testów ({current_lang_name})")
     t_hist = ud.get("test_history", [])
-    if t_hist:
-        filtered_hist = [t for t in t_hist if t.get("lang", "de") == L_CODE]
-        if filtered_hist:
-            hist_df = pd.DataFrame(filtered_hist)[::-1]
-            hist_df = hist_df[["date", "score", "total", "perc"]]
-            hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
-            st.dataframe(hist_df, use_container_width=True, hide_index=True)
-        else:
-            st.info(f"Brak rozwiązanych testów w języku {current_lang_name}.")
-    else:
-        st.info("Brak historii testów.")
+    filtered_hist = [t for t in t_hist if t.get("lang", "de") == L_CODE]
+    if filtered_hist:
+        hist_df = pd.DataFrame(filtered_hist)[::-1][["date", "score", "total", "perc"]]
+        hist_df.columns = ["Data", "Wynik", "Suma pytań", "Procent (%)"]
+        st.dataframe(hist_df, use_container_width=True, hide_index=True)
+    else: st.info("Brak historii testów.")
 
 # --- 26. KONTO (V271 - Full Restore + CEFR Levels + Multilang Safety) ---
 elif choice == "⚙️ Konto":
