@@ -406,7 +406,7 @@ if u and "user_data" not in st.session_state:
     if "flashcards" not in st.session_state:
         st.session_state.flashcards = load_flashcards(u)
 
-# --- 6. SIDEBAR (V370 - Writing Assistant Added) ---
+# --- 6. SIDEBAR (V380 - New Structure: Baza słów & Detective) ---
 with st.sidebar:
     # 1. Stylizacja CSS dla minimalistycznego i spójnego menu
     st.markdown("""
@@ -458,8 +458,8 @@ with st.sidebar:
         wiedza = int((strong / len(all_c)) * 100)
 
     current_stats = ud.get("time_stats", {})
-    # Dodano "Lab" i "Wri" do listy naliczania czasu
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri"]
+    # Dodano "Det" do listy naliczania czasu dla Kulturowego Detektywa
+    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
     mins = int(sum(current_stats.get(c, 0) for c in m_list) // 60)
     goal = ud.get("settings", {}).get("daily_goal", 20)
 
@@ -481,11 +481,11 @@ with st.sidebar:
     menu_item("🏠 Start", "🏠 Start")
     choice_now = st.session_state.get("choice", "🏠 Start")
 
-    # GRUPA: NAUKA (Z Laboratorium, Asystentem i Sparing AI)
+    # GRUPA: NAUKA
     nauka_options = [
         "📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", 
-        "🧪 Laboratorium", "✍️ Asystent Pisania", "🛠️ Warsztat", 
-        "📝 Testy", "🤖 Sparing AI"
+        "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", 
+        "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"
     ]
     with st.expander("📚 Nauka", expanded=(choice_now in nauka_options)):
         for item in nauka_options:
@@ -497,9 +497,15 @@ with st.sidebar:
         for item in gry_options:
             menu_item(item, item)
 
-    # Narzędzia
+    # GRUPA: BAZA SŁÓW (Nowa sekcja)
+    baza_options = ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik"]
+    with st.expander("🗂️ Baza słów", expanded=(choice_now in baza_options)):
+        for item in baza_options:
+            menu_item(item, item)
+
+    # Narzędzia dodatkowe
     st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
-    for opt in ["📦 Generator", "📸 Skaner AI", "➕ Dodaj", "📖 Słownik", "📊 Statystyki", "⚙️ Konto"]:
+    for opt in ["📊 Statystyki", "⚙️ Konto"]:
         menu_item(opt, opt)
 
     if u == ADMIN_USER:
@@ -3303,3 +3309,154 @@ elif choice == "✍️ Asystent Pisania":
         if st.button("Wróć do zadań", use_container_width=True, key="back_btn_v19"):
             del st.session_state.writing_result
             st.rerun()
+
+# --- 31. KULTUROWY DETEKTYW (V1.0 - Idioms investigation module) ---
+elif choice == "🕵️ Kulturowy Detektyw":
+    import hashlib
+    current_lang_name = st.session_state.get("current_lang", "Niemiecki")
+    L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    
+    st.header(f"🕵️ Kulturowy Detektyw: {current_lang_name}")
+    st.write("Rozwiązuj zagadki językowe i brzmij jak native speaker.")
+
+    # --- FUNKCJE POMOCNICZE ---
+    def load_idioms_from_db(lang, category=None):
+        try:
+            query = get_db().table("idioms_library").select("*").eq("lang", lang)
+            if category and category != "Wszystkie":
+                query = query.eq("category", category)
+            res = query.execute()
+            return res.data if res.data else []
+        except: return []
+
+    def get_idiom_from_ai(lang, cat, excluded_list):
+        with st.spinner("Przeszukuję archiwa wywiadu (AI)..."):
+            l_full = "niemieckim" if lang == "de" else "czeskim"
+            prompt = f"""Podaj jeden unikalny idiom lub zwrot slangowy w języku {l_full} z kategorii: {cat}.
+            NIE MOŻE to być żadna z tych fraz: {excluded_list}.
+            Zwróć WYŁĄCZNIE JSON:
+            {{
+              "phrase": "...", "literal_pl": "...", "meaning_pl": "...", 
+              "origin_pl": "...", "example_orig": "...", "example_pl": "...", 
+              "formality": "🟢", "category": "{cat}"
+            }}"""
+            try:
+                raw = get_openai_response(prompt) # Twoja funkcja globalna
+                return json.loads(raw)
+            except: return None
+
+    # --- UI: ZAKŁADKI ---
+    tab_daily, tab_search = st.tabs(["📍 Sprawa Dnia", "🔍 Archiwum X (Kategorie)"])
+
+    # Pobieramy Twoje obecne fiszki, żeby nie proponować tego, co już znasz
+    my_idioms = [c['de'].lower() for c in st.session_state.flashcards if "#idiom" in str(c.get('category',''))]
+
+    with tab_daily:
+        # Logika Sprawy Dnia (Seed oparty na dacie)
+        today_str = date.today().isoformat()
+        all_db_idioms = load_idioms_from_db(L_CODE)
+        
+        if all_db_idioms:
+            # Algorytm wyboru "tego samego idiomu dla wszystkich"
+            idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(all_db_idioms)
+            daily_case = all_db_idioms[idx]
+            
+            st.subheader("📍 Dzisiejszy raport terenowy:")
+            
+            # --- WIZUALIZACJA TECZKI DOWODOWEJ ---
+            with st.container(border=True):
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"### 🏷️ `{daily_case['phrase']}`")
+                c2.markdown(f"**Status:** {daily_case['formality']}")
+                
+                st.markdown(f"**📂 Kategoria:** {daily_case['category']}")
+                st.write("---")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.error(f"**🧐 Dosłownie:** {daily_case['literal_pl']}")
+                with col_b:
+                    st.success(f"**🎯 Naprawdę znaczy:** {daily_case['meaning_pl']}")
+                
+                with st.expander("🕵️ Geneza i Dowody (Dlaczego tak mówimy?)"):
+                    st.info(daily_case['origin_pl'])
+                    st.write("**Przykład użycia:**")
+                    st.markdown(f"> *{daily_case['example_orig']}*")
+                    st.caption(f"PL: {daily_case['example_pl']}")
+
+                # PRZYCISK DODAWANIA DO TWOJEJ BAZY
+                if daily_case['phrase'].lower() in my_idioms:
+                    st.button("✅ Masz to już w słowniku", disabled=True, use_container_width=True)
+                else:
+                    if st.button("➕ Dodaj do moich akt (Słownik)", use_container_width=True, type="primary"):
+                        new_card = {
+                            "de": daily_case['phrase'],
+                            "pl": daily_case['meaning_pl'],
+                            "category": f"#idiom, {daily_case['category']}, {daily_case['formality']}",
+                            "lang": L_CODE,
+                            "next_review": str(date.today()),
+                            "level": 0, "origin": "Kulturowy Detektyw",
+                            "examples": [{"de": daily_case['example_orig'], "pl": daily_case['example_pl']}]
+                        }
+                        save_word(u, new_card)
+                        st.session_state.flashcards = load_flashcards(u)
+                        st.toast("Dodano do bazy nauki! 🚀")
+                        st.rerun()
+
+    with tab_search:
+        st.subheader("🔍 Przeszukaj bazę tematyczną")
+        cats = ["Wszystkie", "Jedzenie", "Pieniądze", "Emocje", "Praca", "Pogoda", "Zwierzęta", "Czas", "Ludzie"]
+        sel_cat = st.selectbox("Wybierz kategorię śledztwa:", cats)
+        
+        if st.button("🔎 Rozpocznij dochodzenie", use_container_width=True):
+            # 1. Szukamy w Supabase
+            potential_cases = load_idioms_from_db(L_CODE, sel_cat)
+            # Filtrujemy te, których user jeszcze nie zna
+            new_cases = [i for i in potential_cases if i['phrase'].lower() not in my_idioms]
+            
+            if len(new_cases) >= 1:
+                # Losujemy jeden z bazy
+                st.session_state.active_investigation = random.choice(new_cases)
+            else:
+                # 2. Jeśli brak w bazie -> AI Fallback
+                excluded = [i['phrase'] for i in potential_cases] + my_idioms
+                ai_case = get_idiom_from_ai(L_CODE, sel_cat, excluded[:20])
+                if ai_case:
+                    st.session_state.active_investigation = ai_case
+                    st.warning("🕵️ Znaleziono nowy dowód poza oficjalną bazą (Wygenerowane przez AI)")
+
+        # Wyświetlanie aktywnego śledztwa (jeśli wybrano)
+        if "active_investigation" in st.session_state:
+            case = st.session_state.active_investigation
+            st.write("---")
+            with st.container(border=True):
+                st.markdown(f"### 📂 Sprawa: `{case['phrase']}`")
+                st.write(f"**Znaczenie:** {case['meaning_pl']}")
+                st.caption(f"Dosłownie: {case['literal_pl']}")
+                
+                with st.expander("Zobacz pełne akta"):
+                    st.write(f"💡 {case['origin_pl']}")
+                    st.info(f"💬 {case['example_orig']}\n\n*(PL: {case['example_pl']})*")
+                
+                if st.button("➕ Wpisz do moich akt", key="add_investigation"):
+                    new_card = {
+                        "de": case['phrase'], "pl": case['meaning_pl'],
+                        "category": f"#idiom, {case['category']}, {case['formality']}",
+                        "lang": L_CODE, "next_review": str(date.today()),
+                        "level": 0, "origin": "Kulturowy Detektyw",
+                        "examples": [{"de": case['example_orig'], "pl": case['example_pl']}]
+                    }
+                    save_word(u, new_card)
+                    st.session_state.flashcards = load_flashcards(u)
+                    st.success("Zapisano!")
+                    del st.session_state.active_investigation
+                    st.rerun()
+
+    # --- SIDEBAR: LEGENDA DETEKTYWA ---
+    with st.sidebar:
+        st.divider()
+        st.subheader("🕵️ Legenda Detektywa")
+        st.write("🟢 **Bezpieczny:** Można użyć wszędzie.")
+        st.write("🟡 **Potoczny:** Do znajomych i rodziny.")
+        st.write("🔴 **Uliczny:** Tylko w bardzo luźnych sytuacjach.")
+        st.caption("Każdy idiom dodany do słownika otrzymuje tag #idiom.")
