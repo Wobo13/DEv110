@@ -1712,17 +1712,17 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     snake_engine()
 
-# --- 16. BALONOWY WYŚCIG (V313 - Smooth Timer & Theme Fix) ---
+# --- 16. BALONOWY WYŚCIG (V314 - Logic Master) ---
 elif choice == "🎈 Balonowy Wyścig":
-    import time # Upewnij się, że import jest na górze pliku
-    
+    import time
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
-    # 1. CSS - NAPRAWA TRYBU JASNEGO I KOLORÓW
+    st.markdown(f"<h2 style='text-align: center;'>🎈 Balonowy Wyścig: {current_lang_name}</h2>", unsafe_allow_html=True)
+
+    # 1. CSS - Naprawa motywów i wyglądu
     st.markdown("""
         <style>
-            /* Używamy zmiennych Streamlitowych dla kolorów tekstu */
             .target-card {
                 background: rgba(255, 75, 75, 0.1);
                 border: 3px solid #ff4b4b;
@@ -1732,114 +1732,113 @@ elif choice == "🎈 Balonowy Wyścig":
                 font-size: 2.2rem;
                 font-weight: bold;
                 margin-bottom: 20px;
-                /* Automatyczny kolor tekstu zależny od motywu */
-                color: var(--text-color); 
+                color: var(--text-color);
             }
-            
-            /* Styl dla balonów - zmieniony, by napisy były czytelne wszędzie */
             [data-testid="stMain"] div.stButton > button {
                 background: #ff4b4b !important;
-                color: white !important; /* Tutaj biały jest OK, bo tło przycisku jest zawsze czerwone */
+                color: white !important;
                 border-radius: 30px !important;
                 font-weight: bold !important;
-                height: 70px !important;
+                height: 60px !important;
             }
-            
             .stats-bar {
                 display: flex;
                 justify-content: space-around;
                 font-size: 1.3rem;
                 font-weight: bold;
                 color: var(--text-color);
+                margin-bottom: 10px;
             }
         </style>
     """, unsafe_allow_html=True)
-
-    st.markdown(f"<h2 style='text-align: center;'>🎈 Balonowy Wyścig</h2>", unsafe_allow_html=True)
 
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
     
     if len(lang_cards) < 4:
         st.warning(f"Potrzebujesz min. 4 słówek w języku {current_lang_name}!")
     else:
-        # INICJALIZACJA GRY
-        if "bal_active" not in st.session_state or st.session_state.get("bal_lang_ref") != L_CODE:
-            st.session_state.bal_active = True
-            st.session_state.bal_score = 0
-            st.session_state.bal_start_time = time.time()
-            st.session_state.bal_duration = 30
-            st.session_state.bal_lang_ref = L_CODE
-            if "bal_target" in st.session_state: del st.session_state.bal_target
+        # --- ZARZĄDZANIE STANEM GRY ---
+        if "bal_state" not in st.session_state:
+            st.session_state.bal_state = "START" # Możliwe stany: START, PLAYING, FINISHED
 
-        # MECHANIZM "TYKANIA" ZEGARA
-        # Jeśli gra trwa, wymuszamy odświeżenie co 1 sekunda
-        elapsed = time.time() - st.session_state.bal_start_time
-        time_left = max(0, int(st.session_state.bal_duration - elapsed))
-
-        # KONIEC CZASU
-        if time_left <= 0 and st.session_state.bal_active:
-            st.session_state.bal_active = False
-            st.balloons()
-            st.markdown(f"<div style='text-align:center;'><h1>Koniec czasu! 🏁</h1><h2>Wynik: {st.session_state.bal_score} pkt</h2></div>", unsafe_allow_html=True)
-            if st.button("Zagraj jeszcze raz", use_container_width=True):
-                del st.session_state.bal_active
+        # --- EKRAN 1: START (POCZEKALNIA) ---
+        if st.session_state.bal_state == "START":
+            st.info(f"Masz 30 sekund, aby dopasować jak najwięcej słówek w języku {current_lang_name}. Gotowy?")
+            if st.button("🚀 START", use_container_width=True):
+                st.session_state.bal_state = "PLAYING"
+                st.session_state.bal_score = 0
+                st.session_state.bal_start_time = time.time()
+                st.session_state.bal_duration = 30
+                if "bal_target" in st.session_state: del st.session_state.bal_target
                 st.rerun()
-        
-        # EKRAN GRY
-        elif st.session_state.bal_active:
-            # Losowanie pytania (tylko jeśli go nie ma)
+
+        # --- EKRAN 2: GRA ---
+        elif st.session_state.bal_state == "PLAYING":
+            elapsed = time.time() - st.session_state.bal_start_time
+            time_left = max(0, int(st.session_state.bal_duration - elapsed))
+
+            if time_left <= 0:
+                st.session_state.bal_state = "FINISHED"
+                st.rerun()
+
+            # Losowanie pytania
             if "bal_target" not in st.session_state:
                 target = random.choice(lang_cards)
                 other_options = [c['pl'] for c in lang_cards if c['id'] != target['id']]
-                wrong = random.sample(other_options, min(len(other_options), 2))
+                wrong = random.sample(other_options, min(len(other_options), 3))
                 options = [target['pl']] + wrong
                 random.shuffle(options)
                 st.session_state.bal_target = target
                 st.session_state.bal_options = options
 
-            # UI Statystyk
-            st.markdown(f"""
-                <div class="stats-bar">
-                    <span>⏱️ {time_left}s</span>
-                    <span style='color:#ffbc00;'>⭐ {st.session_state.bal_score}</span>
-                </div>
-            """, unsafe_allow_html=True)
-            
+            st.markdown(f'<div class="stats-bar"><span>⏱️ {time_left}s</span><span>⭐ {st.session_state.bal_score}</span></div>', unsafe_allow_html=True)
             st.markdown(f"<div class='target-card'>{st.session_state.bal_target[L_CODE]}</div>", unsafe_allow_html=True)
 
-            # RENDEROWANIE PRZYCISKÓW
+            # Balony
             cols = st.columns(len(st.session_state.bal_options))
             for i, opt in enumerate(st.session_state.bal_options):
                 with cols[i]:
                     if st.button(opt, key=f"bal_btn_{i}", use_container_width=True):
                         if opt == st.session_state.bal_target['pl']:
                             st.session_state.bal_score += 1
-                            del st.session_state.bal_target # Losuj nowe przy następnym rerun
+                            del st.session_state.bal_target
                         else:
                             st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
                             st.toast("Pudło! ❌")
                         st.rerun()
+            
+            # Przycisk ucieczki w trakcie gry
+            st.write("")
+            if st.button("🚪 Przerwij grę", use_container_width=True):
+                st.session_state.bal_state = "START"
+                st.rerun()
 
-            # KLUCZ DO PŁYNNEGO CZASU:
-            # Ta komenda sprawia, że skrypt odświeży się sam za 1 sekundę
-            time.sleep(0.1) # Mały bufor dla procesora
+            # Odświeżanie zegara
+            time.sleep(0.1)
             st.rerun()
 
-        # PRZYCISK WYJŚCIA - NAPRAWIONY
-        st.write("---")
-        if st.button("🚪 Wyjdź do Menu", use_container_width=True):
-            # 1. Czyścimy sesję gry
-            keys_to_del = ["bal_active", "bal_score", "bal_start_time", "bal_target", "bal_options", "bal_lang_ref"]
-            for k in keys_to_del:
-                if k in st.session_state: del st.session_state[k]
+        # --- EKRAN 3: KONIEC (WYNIK) ---
+        elif st.session_state.bal_state == "FINISHED":
+            st.balloons()
+            st.markdown(f"""
+                <div style='text-align:center;'>
+                    <h1>Koniec czasu! 🏁</h1>
+                    <h2 style='color:#ffbc00;'>Twój wynik: {st.session_state.bal_score} pkt</h2>
+                </div>
+            """, unsafe_allow_html=True)
             
-            # 2. Wymuszamy zmianę w nawigacji (zakładając, że masz st.sidebar.selectbox lub radio)
-            # Musisz ustawić wartość taką, jak nazwa Twojej strony głównej
-            # Jeśli Twoje menu główne nazywa się "🏠 Menu", odkomentuj poniższe:
-            # st.session_state.menu_choice = "🏠 Menu" 
-            
-            st.info("Użyj menu po lewej, aby zmienić moduł.")
-            st.rerun()
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🔄 Zagraj jeszcze raz", use_container_width=True):
+                    st.session_state.bal_state = "PLAYING"
+                    st.session_state.bal_score = 0
+                    st.session_state.bal_start_time = time.time()
+                    if "bal_target" in st.session_state: del st.session_state.bal_target
+                    st.rerun()
+            with col_b:
+                if st.button("🚪 Wyjdź do Menu", use_container_width=True):
+                    st.session_state.bal_state = "START"
+                    st.rerun()
             
 # --- 20. ARENA WYZWAŃ (V283 - Fix Column Missing Error) ---
 elif choice == "🏆 Arena Wyzwań":
