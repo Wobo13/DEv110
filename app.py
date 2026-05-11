@@ -1718,7 +1718,7 @@ elif choice == "🏗️ Konstruktor":
             if st.button("Następne ➡️", key="f_next", type="primary", use_container_width=True):
                 del st.session_state.konstr_word; st.rerun()
 
-# --- 15. LINGWISTYCZNY WĄŻ (V2.3 - Full Fix: Indentation, Logic & DB Save) ---
+# --- 15. LINGWISTYCZNY WĄŻ (V2.4 - Global Leaderboard Sync) ---
 elif choice == "🐍 Lingwistyczny Wąż":
     import re
     import random
@@ -1751,23 +1751,36 @@ elif choice == "🐍 Lingwistyczny Wąż":
         st.warning(f"Masz za mało słówek w bazie {current_lang_name}, by zacząć (wymagane min. 3 nie-czasowniki).")
         st.stop()
 
-    # 3. FUNKCJA ZAPISU WYNIKÓW DO SUPABASE
+    # 3. FUNKCJA ZAPISU WYNIKÓW (Zintegrowana z nową Areną)
     def save_snake_results(is_win):
         ud = st.session_state.user_data
         chain_len = len(st.session_state.snake_chain)
         
-        # Aktualizacja rekordu serii
-        if chain_len > ud.get("snake_best_chain", 0):
-            ud["snake_best_chain"] = chain_len
-            st.toast(f"🔥 NOWY REKORD: {chain_len} słów!", icon="🏆")
-        
-        # Aktualizacja liczników wygranych
-        if is_win:
-            ud["snake_wins"] = ud.get("snake_wins", 0) + 1
-        else:
-            ud["snake_losses"] = ud.get("snake_losses", 0) + 1
+        try:
+            db = get_db()
             
-        save_user_data(u, ud)
+            # A. NOWY SYSTEM: Zapis do tabeli globalnej dla Areny (Tydzień/Miesiąc)
+            db.table("game_scores").insert({
+                "username": u,
+                "game_name": "snake",
+                "lang": L_CODE,
+                "score": chain_len
+            }).execute()
+
+            # B. STARY SYSTEM: Statystyki profilu
+            if chain_len > ud.get("snake_best_chain", 0):
+                ud["snake_best_chain"] = chain_len
+                st.toast(f"🔥 NOWY REKORD: {chain_len} słów!", icon="🏆")
+            
+            if is_win:
+                ud["snake_wins"] = ud.get("snake_wins", 0) + 1
+            else:
+                ud["snake_losses"] = ud.get("snake_losses", 0) + 1
+                
+            save_user_data(u, ud)
+        except Exception as e:
+            # Cichy błąd, by nie przerywać gry
+            pass
 
     # 4. EKRAN STARTOWY
     if "snake_status" not in st.session_state:
@@ -1798,7 +1811,6 @@ elif choice == "🐍 Lingwistyczny Wąż":
 
     # --- KOLEJ GRACZA ---
     if st.session_state.snake_status == "player":
-        # Sprawdzamy czy gracz ma w ogóle czym ruszyć
         player_moves = [c for c in pool if get_clean_text(c[L_CODE]).startswith(req_letter) and c['id'] not in st.session_state.snake_used_ids]
         
         if not player_moves:
@@ -1818,7 +1830,6 @@ elif choice == "🐍 Lingwistyczny Wąż":
                 u_clean = get_clean_text(u_in)
                 found = [c for c in pool if get_clean_text(c[L_CODE]) == u_clean]
                 
-                # --- POPRAWIONY BLOK IF/ELIF (FIX WCIĘĆ I SKŁADNI) ---
                 if not found:
                     st.error("Nie znaleziono tego słowa w Twojej bazie.")
                 elif found[0]['id'] in st.session_state.snake_used_ids:
@@ -1869,7 +1880,7 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
 
 
-# --- 16. BALONOWY WYŚCIG (V316 - Auto-Save Records Fix) ---
+# --- 16. BALONOWY WYŚCIG (V317 - Global Leaderboard Sync) ---
 elif choice == "🎈 Balonowy Wyścig":
     import time
     
@@ -1931,14 +1942,12 @@ elif choice == "🎈 Balonowy Wyścig":
             st.markdown(f"<div style='text-align:center;'><h1>Koniec! 🏁</h1><h2>Wynik: {st.session_state.bal_score} pkt</h2></div>", unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Jeszcze raz", use_container_width=True):
-                    st.session_state.bal_state = "START"; st.rerun()
-            with col2:
-                if st.button("🏠 Powrót", use_container_width=True):
-                    st.session_state.choice = "🏠 Start"; st.rerun()
+            if col1.button("🔄 Jeszcze raz", use_container_width=True):
+                st.session_state.bal_state = "START"; st.rerun()
+            if col2.button("🏆 Arena Wyzwań", use_container_width=True):
+                st.session_state.choice = "🏆 Arena Wyzwań"; st.rerun()
 
-        # --- EKRAN GRY (Zoptymalizowany Fragment) ---
+        # --- EKRAN GRY ---
         elif st.session_state.bal_state == "PLAYING":
             
             @st.fragment(run_every="1s") 
@@ -1946,25 +1955,34 @@ elif choice == "🎈 Balonowy Wyścig":
                 elapsed = time.time() - st.session_state.bal_start_time
                 time_left = max(0, int(30 - elapsed))
 
-                # --- LOGIKA ZAPISU (WYKONYWANA RAZ PRZY KOŃCU CZASU) ---
+                # --- LOGIKA ZAPISU WYNIKU ---
                 if time_left <= 0:
                     final_score = st.session_state.bal_score
                     ud = st.session_state.user_data
                     bal_key = f"top_balloons_{L_CODE}"
                     
-                    # Pobranie obecnej listy wyników
-                    current_scores = ud.get(bal_key, [])
-                    if not isinstance(current_scores, list): current_scores = []
+                    try:
+                        db = get_db()
+                        
+                        # 1. NOWY SYSTEM: Centralna tabela (dla Areny Tydzień/Miesiąc)
+                        db.table("game_scores").insert({
+                            "username": u,
+                            "game_name": "balloons",
+                            "lang": L_CODE,
+                            "score": float(final_score)
+                        }).execute()
+
+                        # 2. STARY SYSTEM: Top 10 w profilu użytkownika
+                        current_scores = ud.get(bal_key, [])
+                        if not isinstance(current_scores, list): current_scores = []
+                        current_scores.append(final_score)
+                        current_scores = sorted([int(s) for s in current_scores], reverse=True)[:10]
+                        
+                        ud[bal_key] = current_scores
+                        save_user_data(u, ud)
+                    except:
+                        pass
                     
-                    # Dodanie nowego wyniku, sortowanie od najwyższego i zachowanie top 10
-                    current_scores.append(final_score)
-                    current_scores = sorted([int(s) for s in current_scores], reverse=True)[:10]
-                    
-                    # Zapis do profilu i do bazy
-                    ud[bal_key] = current_scores
-                    save_user_data(u, ud)
-                    
-                    # Zmiana stanu i wyjście z fragmentu
                     st.session_state.bal_state = "FINISHED"
                     st.rerun()
 
@@ -1997,7 +2015,7 @@ elif choice == "🎈 Balonowy Wyścig":
             game_fragment()
 
 
-# --- 17. JĘZYKOWA RULETKA (V1.0 - Sudden Death Edition) ---
+# --- 17. JĘZYKOWA RULETKA (V1.1 - Global Leaderboard Sync) ---
 elif choice == "🎲 Językowa Ruletka":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2066,7 +2084,7 @@ elif choice == "🎲 Językowa Ruletka":
         col1, col2 = st.columns(2)
         if col1.button("🔄 Spróbuj ponownie", use_container_width=True, type="primary"):
             st.session_state.surv_state = "START"; st.rerun()
-        if col2.button("🏆 Zobacz Arenę", use_container_width=True):
+        if col2.button("🏆 Arena Wyzwań", use_container_width=True):
             st.session_state.choice = "🏆 Arena Wyzwań"; st.rerun()
 
     # --- EKRAN GRY ---
@@ -2074,7 +2092,7 @@ elif choice == "🎲 Językowa Ruletka":
         
         @st.fragment
         def survival_engine():
-            # GENEROWANIE ZADANIA (jeśli brak)
+            # GENEROWANIE ZADANIA
             if "surv_task" not in st.session_state:
                 word = random.choice(all_c)
                 score = st.session_state.surv_score
@@ -2087,13 +2105,11 @@ elif choice == "🎲 Językowa Ruletka":
                 else:
                     mode = random.choice(["QUIZ", "LAB", "WRITE", "WRITE"])
                 
-                # Zabezpieczenie dla trybu LAB (czy słowo ma rodzajnik)
                 gender, clean = extract_gender(word['de'], L_CODE)
                 if mode == "LAB" and not gender: mode = "QUIZ"
                 
                 task = {"word": word, "mode": mode, "gender": gender, "clean": clean}
                 
-                # Przygotowanie opcji dla Quizu
                 if mode == "QUIZ":
                     others = [x['pl'] for x in all_c if x['id'] != word['id']]
                     opts = random.sample(others, min(len(others), 3)) + [word['pl']]
@@ -2106,7 +2122,6 @@ elif choice == "🎲 Językowa Ruletka":
             t = st.session_state.surv_task
             st.markdown(f"<div style='text-align:right; font-weight:bold; color:#ff4b4b;'>SERIA: {st.session_state.surv_score} 🔥</div>", unsafe_allow_html=True)
             
-            # Karta pytania
             st.markdown(f"""
                 <div class="survival-card">
                     <div style="color:#888; font-size:0.8rem; text-transform:uppercase; margin-bottom:10px;">
@@ -2118,7 +2133,6 @@ elif choice == "🎲 Językowa Ruletka":
                 </div>
             """, unsafe_allow_html=True)
 
-            # OBSŁUGA ODPOWIEDZI
             user_ans = None
             
             if t['mode'] == "QUIZ":
@@ -2139,7 +2153,6 @@ elif choice == "🎲 Językowa Ruletka":
                     st.write("Wpisz tłumaczenie na polski:")
                     u_txt = st.text_input("Odpowiedź...").strip().lower()
                     if st.form_submit_button("ZATWIERDŹ", use_container_width=True):
-                        # Tolerancyjne sprawdzanie (używamy Twojej logiki z sekcji 8)
                         correct_synonyms = [normalize_text(s) for s in re.split(r'[/,;]', t['word']['pl'])]
                         user_ans = normalize_text(u_txt) in correct_synonyms
 
@@ -2147,28 +2160,40 @@ elif choice == "🎲 Językowa Ruletka":
             if user_ans is not None:
                 if user_ans:
                     st.session_state.surv_score += 1
-                    # Globalne statystyki
                     ud = st.session_state.user_data
                     ud["survival_total_words"] = ud.get("survival_total_words", 0) + 1
                     del st.session_state.surv_task
                     st.toast("Dobrze! +1", icon="✅")
                     st.rerun(scope="fragment")
                 else:
-                    # KONIEC GRY - ZAPIS REKORDU
+                    # KONIEC GRY - ZAPIS REKORDU (Dual Write)
                     final_score = st.session_state.surv_score
                     ud = st.session_state.user_data
                     surv_key = f"survival_scores_{L_CODE}"
                     
-                    # Pobierz historię, dodaj nowy wynik, posortuj top 10
-                    scores = ud.get(surv_key, [])
-                    if not isinstance(scores, list): scores = []
-                    scores.append(final_score)
-                    scores = sorted([int(s) for s in scores], reverse=True)[:10]
-                    
-                    ud[surv_key] = scores
-                    ud["survival_total_games"] = ud.get("survival_total_games", 0) + 1
-                    
-                    save_user_data(u, ud)
+                    try:
+                        db = get_db()
+                        # 1. NOWY SYSTEM: Centralna tabela (Językowa Ruletka = 'survival')
+                        db.table("game_scores").insert({
+                            "username": u,
+                            "game_name": "survival",
+                            "lang": L_CODE,
+                            "score": float(final_score)
+                        }).execute()
+
+                        # 2. STARY SYSTEM: Osobiste Top 10
+                        scores = ud.get(surv_key, [])
+                        if not isinstance(scores, list): scores = []
+                        scores.append(final_score)
+                        scores = sorted([int(s) for s in scores], reverse=True)[:10]
+                        
+                        ud[surv_key] = scores
+                        ud["survival_total_games"] = ud.get("survival_total_games", 0) + 1
+                        
+                        save_user_data(u, ud)
+                    except:
+                        pass
+                        
                     st.session_state.surv_state = "GAMEOVER"
                     st.rerun()
 
