@@ -2819,24 +2819,23 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V325 - Dual Time Stats & AI Cost Recovery) ---
+# --- 27. ADMIN PRO (V326 - Real-Time Activity & Today Logic Fix) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
-    # Wymuszenie aktualizacji Twojej aktywności jako admina
+    # Wymuszenie aktualizacji Twojej aktywności jako admina w bazie
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
-    # --- 1. FUNKCJA: SEEDER MASTER_VOCAB ---
+    # --- 1. FUNKCJE SEEDERÓW (Baza Wiedzy) ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
         import json
         import time
         l_code = "de" if target_lang == "Niemiecki" else "cs"
-        st.info(f"🚀 Generowanie {total_goal} słów ({target_lvl})...")
+        st.info(f"🚀 Rozpoczynam generowanie {total_goal} słów ({target_lvl})...")
         
         db = get_db()
         progress_bar = st.progress(0)
-        status_text = st.empty()
         current_count = 0
         batch_size = 25 
         
@@ -2844,9 +2843,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             existing_res = db.table("master_vocab").select("word").eq("lang", l_code).eq("level", target_lvl).execute()
             existing_words = [row['word'] for row in existing_res.data] if existing_res.data else []
             
-            prompt = f"""Jesteś lingwistą. Wygeneruj {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}).
+            prompt = f"""Jesteś lingwistą. Wygeneruj listę {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}).
             NIE używaj: {existing_words[-100:]}.
-            Rzeczowniki muszą mieć rodzajnik/zaimek (der/die/das lub ten/ta/to).
+            Rzeczowniki MUSZĄ mieć rodzajnik/zaimek (der/die/das lub ten/ta/to).
             Zwróć TYLKO JSON: {{ "vocab": [ {{ "word":"", "translation":"", "level":"{target_lvl}", "lang":"{l_code}", "category":"{target_lvl}, tag", "example_orig":"", "example_pl":"" }} ] }}"""
             
             try:
@@ -2859,35 +2858,36 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                     progress_bar.progress(min(current_count / total_goal, 1.0))
                 else: break
             except Exception as e:
-                st.error(f"Błąd: {e}")
+                st.error(f"Błąd seeder'a: {e}")
                 break
             time.sleep(0.5)
-        st.success("✅ Gotowe!")
+        st.success(f"✅ Baza zasilona o {current_count} rekordów!")
 
-    # --- 2. FUNKCJE DLA IDIOMÓW I CIEKAWOSTEK (ZACHOWANE) ---
-    def seed_idioms_library():
-        st.info("Generowanie idiomów...") # Uproszczone na potrzeby kodu
-        # (Tutaj Twoja oryginalna funkcja seed_idioms)
-
-    # --- UI: ZARZĄDZANIE BAZAMI (TABS) ---
-    t_vocab, t_idioms, t_trivia, t_users = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"])
+    # --- 2. INTERFEJS ZARZĄDZANIA (TABS) ---
+    t_vocab, t_idioms, t_trivia, t_users = st.tabs([
+        "📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"
+    ])
 
     with t_vocab:
         with st.container(border=True):
+            st.write("**Konfiguracja zasilania bazy:**")
             col_v1, col_v2, col_v3 = st.columns(3)
             v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
-            v_lvl = col_v2.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
-            v_goal = col_v3.number_input("Ilość", 10, 500, 50)
-            if st.button("🏗️ Uruchom Seeder", use_container_width=True):
+            v_lvl = col_v2.selectbox("Poziom CEFR", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
+            v_goal = col_v3.number_input("Ilość do dodania", 10, 500, 50)
+            if st.button("🏗️ Uruchom Generator Vocab", use_container_width=True, type="primary"):
                 seed_master_vocab(v_lang, v_lvl, v_goal)
 
     with t_idioms:
-        if st.button("🏗️ Inicjuj Idiomy (200)"): seed_idioms_library()
+        st.info("Zarządzanie biblioteką idiomów i zwrotów potocznych.")
+        if st.button("🏗️ Inicjuj paczkę idiomów (200)"):
+            # Tutaj możesz wywołać funkcję seed_idioms_library()
+            pass
 
     with t_trivia:
-        st.write("Zarządzanie ciekawostkami...")
+        st.info("Zarządzanie ciekawostkami kulturowymi wyświetlanymi na ekranie Start.")
 
-    # --- 3. GŁÓWNA ANALIZA UŻYTKOWNIKÓW (Nowa Logika) ---
+    # --- 3. ANALIZA UŻYTKOWNIKÓW (FIXED LOGIC) ---
     with t_users:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
@@ -2896,13 +2896,13 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             st.link_button("💸 Billing OpenAI", "https://platform.openai.com/usage", use_container_width=True)
 
         db = get_db()
-        # Pobieramy wszystkich użytkowników
+        # Pobranie profilów i kart
         ud_data = db.table("user_data").select("*").execute().data
-        # Pobieramy fiszki wszystkich użytkowników do statystyk wiedzy
-        all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
+        all_cards_res = db.table("flashcards").select("username", "next_review").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "next_review"])
         
-        today = date.today()
+        today_iso = date.today().isoformat()
+        today_dt = date.today()
         adm_summary = []
         global_daily_time = {}
         display_names = {"Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", "Wan": "Wąż", "Bal": "Balon", "Inn": "Inne"}
@@ -2911,19 +2911,26 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # Obliczanie wiedzy %
-            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - today).days > 6]) if not u_cards.empty else 0
+            # Obliczanie wiedzy (słówka opanowane > 6 dni)
+            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - today_dt).days > 6]) if not u_cards.empty else 0
             wiedza = int((strong / len(u_cards)) * 100) if len(u_cards) > 0 else 0
 
-            # Czas DZISIAJ
-            stats_today = user.get("time_stats", {})
+            # --- LOGIKA "DZIŚ" (Weryfikacja daty ostatniej sesji) ---
+            user_last_visit = user.get("last_visit_date", "2000-01-01")
+            
+            if user_last_visit == today_iso:
+                # Dane w time_stats są faktycznie z dzisiaj
+                stats_today = user.get("time_stats", {})
+            else:
+                # Dane w bazie są stare (użytkownik jeszcze nie wszedł dziś do apki)
+                stats_today = {}
+
             total_sec_today = sum(stats_today.values()) if isinstance(stats_today, dict) else 0
             
-            # Czas CAŁKOWITY (z nowej kolumny)
+            # Czas całkowity (z kolumny total_time_stats)
             stats_total = user.get("total_time_stats", {})
             total_sec_all = sum(stats_total.values()) if isinstance(stats_total, dict) else 0
 
-            # Zbieranie danych do tabeli
             adm_summary.append({
                 "Użytkownik": uname,
                 "Ostatnio": user.get("last_seen", "Brak"),
@@ -2935,27 +2942,33 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "Koszt AI": round(user.get("historical_cost", 0.0), 2)
             })
 
-            # Agregacja do wykresu globalnego (tylko z dziś)
-            if isinstance(stats_today, dict):
+            # Agregacja do statystyk globalnych (tylko dzisiejsza aktywność)
+            if user_last_visit == today_iso:
                 for k, v in stats_today.items():
                     label = display_names.get(k, "Inne")
                     global_daily_time[label] = global_daily_time.get(label, 0) + v
 
-        # Wyświetlanie tabeli głównej
+        # Wyświetlanie głównej tabeli podsumowującej
         st.subheader("📋 Podsumowanie kont")
-        st.dataframe(
-            pd.DataFrame(adm_summary),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                "Dziś (min)": st.column_config.ProgressColumn("Dziś", min_value=0, max_value=60),
-            }
-        )
+        if adm_summary:
+            df_final = pd.DataFrame(adm_summary)
+            # Sortowanie: najbardziej aktywni dzisiaj na górze
+            df_final = df_final.sort_values(by="Dziś (min)", ascending=False)
+            
+            st.dataframe(
+                df_final,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
+                    "Dziś (min)": st.column_config.ProgressColumn("Dziś (postęp)", min_value=0, max_value=60),
+                    "Łącznie (min)": st.column_config.NumberColumn("Suma (min)"),
+                }
+            )
 
-        # Globalny rozkład aktywności (Dzisiaj)
+        # Globalny rozkład aktywności (tylko moduły używane dzisiaj)
         st.divider()
-        st.subheader("📈 Popularność modułów (Dzisiaj)")
+        st.subheader("📈 Popularność modułów (Faktycznie Dzisiaj)")
         if global_daily_time:
             total_global = sum(global_daily_time.values())
             analysis = []
@@ -2967,15 +2980,16 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 })
             st.table(pd.DataFrame(analysis).sort_values("Łączny czas", ascending=False))
         else:
-            st.info("Brak aktywności w dniu dzisiejszym.")
+            st.info("Brak aktywności użytkowników w dniu dzisiejszym.")
 
-        # Szczegółowy podgląd czasu całkowitego
-        with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (od początku)"):
+        # Rozwijany szczegółowy podgląd historii całkowitej
+        with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (historycznie)"):
             detail_data = []
             for user in ud_data:
                 stats = user.get("total_time_stats", {})
                 row = {"Użytkownik": user["username"]}
                 for code, name in display_names.items():
+                    # Przeliczamy sekundy z bazy na minuty
                     row[name] = int(stats.get(code, 0) // 60)
                 detail_data.append(row)
             st.dataframe(pd.DataFrame(detail_data), use_container_width=True, hide_index=True)
