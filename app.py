@@ -3653,109 +3653,122 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             st.success("Dodano ciekawostki!")
         except: st.error("Błąd generatora ciekawostek.")
 
-    # --- 3. LOGIKA I INTERFEJS ---
-    db = get_db()
-    # Pobieramy podstawową listę użytkowników (lekki query)
-    ud_raw = db.table("user_data").select("*").execute().data
-    
-    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
+     # --- 3. INTERFEJS TABS --- 
+     tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"]) 
 
-    with tabs[0]:
-        # --- TAB: ANALIZA (Statystyki i Tabele Globalne) ---
-        # Ciężkie obliczenia tylko tutaj, aby nie spowalniać zakładki Zarządzanie
-        all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
+     db = get_db() 
+     ud_raw = db.table("user_data").select("*").execute().data 
+     all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data 
 
-        col_adm1, col_adm2 = st.columns(2)
-        with col_adm1:
-            if st.button("🔄 Odśwież Dane Analityczne", use_container_width=True): st.rerun()
-        with col_adm2:
-            st.link_button("💸 Koszty OpenAI", "https://platform.openai.com/usage", use_container_width=True)
+     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else 
+pd.DataFrame(columns=["username", "mastery_xp", "origin"]) 
 
-        today_iso = date.today().isoformat()
-        adm_summary = []
-        global_daily = {code: 0.0 for code in ADMIN_ORDER}
-        global_total = {code: 0.0 for code in ADMIN_ORDER}
+     with tabs[0]: 
+         # --- TAB: ANALIZA --- 
+         col_adm1, col_adm2 = st.columns(2) 
+         with col_adm1: 
+             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun() 
+         with col_adm2: 
+             st.link_button("💸 Koszty OpenAI", "https://platform.openai.com/usage", use_container_width=True) 
 
-        for user in ud_raw:
-            uname = user["username"]
-            u_cards = df_cards_all[df_cards_all["username"] == uname]
-            
-            status_pfx = ""
-            if user.get("is_banned"): status_pfx += "🚫 "
-            if user.get("is_shadowbanned"): status_pfx += "👻 "
+         today_iso = date.today().isoformat() 
+         adm_summary = [] 
+         global_daily = {code: 0.0 for code in ADMIN_ORDER} 
+         global_total = {code: 0.0 for code in ADMIN_ORDER} 
 
-            total_words = len(u_cards)
-            oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
-            r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
-            g_count = sum(1 for x in oc if "Generator" in str(x))
-            s_count = sum(1 for x in oc if "Skaner" in str(x))
-            
-            wiedza_str = "0%"
-            if total_words > 0:
-                xp_sum = u_cards["mastery_xp"].fillna(0).sum()
-                w_val = int((xp_sum / (total_words * 150)) * 100)
-                wiedza_str = f"{min(w_val, 100)}%"
+         for user in ud_raw: 
+             uname = user["username"] 
+             u_cards = df_cards_all[df_cards_all["username"] == uname] 
+              
+             # Flagi statusu 
+             status_prefix = "" 
+             if user.get("is_banned"): status_prefix += "🚫 " 
+             if user.get("is_shadowbanned"): status_prefix += "👻 " 
 
-            def process_stats(raw_dict):
-                p = {code: 0.0 for code in ADMIN_ORDER}
-                for k, v in (raw_dict or {}).items():
-                    if k in p: p[k] += v
-                    else: p["Inn"] += v
-                return p
+             total_words = len(u_cards) 
+             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else [] 
+             r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"])) 
+             g_count = sum(1 for x in oc if "Generator" in str(x)) 
+             s_count = sum(1 for x in oc if "Skaner" in str(x)) 
+              
+             wiedza_str = "0%" 
+             if total_words > 0: 
+                 xp_sum = u_cards["mastery_xp"].fillna(0).sum() 
+                 wiedza_val = int((xp_sum / (total_words * 150)) * 100) 
+                 wiedza_str = f"{min(wiedza_val, 100)}%" 
 
-            u_daily = process_stats(user.get("time_stats", {}) if user.get("last_visit_date") == today_iso else {})
-            u_total = process_stats(user.get("total_time_stats", {}))
+             def process_stats(raw_dict): 
+                 processed = {code: 0.0 for code in ADMIN_ORDER} 
+                 for k, v in (raw_dict or {}).items(): 
+                     if k in processed: processed[k] += v 
+                     else: processed["Inn"] += v 
+                 return processed 
 
-            for code in ADMIN_ORDER:
-                global_daily[code] += u_daily[code]
-                global_total[code] += u_total[code]
+             u_daily = process_stats(user.get("time_stats", {}) if user.get("last_visit_date") == today_iso else {}) 
+             u_total = process_stats(user.get("total_time_stats", {})) 
 
-            adm_summary.append({
-                "Użytkownik": f"{status_pfx}{uname}",
-                "Ostatnio": user.get("last_seen", "-"),
-                "🔥": user.get("streak", 0),
-                "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})", 
-                "Wiedza": wiedza_str, 
-                "Dziś (m)": int(sum(u_daily[c] for c in STUDY_MODULES) // 60),
-                "Łącznie (h)": int(sum(u_total.values()) // 3600), 
-                "Koszt": round(user.get("historical_cost", 0.0), 2),
-                "u_total_map": u_total,
-                "raw_uname": uname
-            })
+             for code in ADMIN_ORDER: 
+                 if uname == st.session_state.get("is_admin") and code == "Inn": continue 
+                 global_daily[code] += u_daily[code] 
+                 global_total[code] += u_total[code] 
 
-        adm_summary.sort(key=lambda x: x["raw_uname"].lower())
-        
-        st.subheader("📋 Podsumowanie Kont")
-        st.dataframe(pd.DataFrame(adm_summary).drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True)
+             study_min_today = sum(u_daily[c] for c in STUDY_MODULES) // 60 
+             total_min_all = sum(u_total.values()) // 60 
 
-        st.divider()
-        st.subheader("🕵️ Szczegółowy Czas (minuty historycznie)")
-        hist_table_data = []
-        for item in adm_summary:
-            row = {"Użytkownik": item["Użytkownik"]}
-            for code in ADMIN_ORDER:
-                row[MOD_MAP[code]] = int(item["u_total_map"][code] // 60)
-            hist_table_data.append(row)
-        st.dataframe(pd.DataFrame(hist_table_data), use_container_width=True, hide_index=True)
+             adm_summary.append({ 
+                 "Użytkownik": f"{status_prefix}{uname}", 
+                 "E-mail": user.get("email", "-"), 
+                 "Ostatnio": user.get("last_seen", "-"), 
+                 "🔥": user.get("streak", 0), 
+                 "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})",  
+                 "Wiedza (XP)": wiedza_str,  
+                 "Nauka dziś": int(study_min_today), 
+                 "Łącznie (min)": int(total_min_all),  
+                 "Koszt AI": round(user.get("historical_cost", 0.0), 2), 
+                 "u_total_map": u_total, 
+                 "raw_uname": uname 
+             }) 
 
-        # --- PRZYWRÓCONE TABELE GLOBALNE ---
-        st.divider()
-        col_g1, col_g2 = st.columns(2)
+         def custom_sort_key(x): 
+             name = x["raw_uname"].lower() 
+             if name == "wobo": return (0, "") 
+             if name == "wiola": return (1, "") 
+             return (2, name) 
 
-        def show_full_table(cont, title, data_dict):
-            cont.subheader(title)
-            tot_sec = sum(data_dict.values())
-            rows = []
-            for code in ADMIN_ORDER:
-                v = data_dict[code]
-                perc = f"{round((v/tot_sec)*100, 1)}%" if tot_sec > 0 else "0%"
-                t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
-                rows.append({"Moduł": MOD_MAP[code], "%": perc, "Czas": t_str})
-            cont.table(pd.DataFrame(rows))
+         adm_summary.sort(key=custom_sort_key) 
+          
+         st.subheader("📋 Podsumowanie kont") 
+         df_main = pd.DataFrame(adm_summary) 
+         st.dataframe(df_main.drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True, 
+             column_config={ 
+                 "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60), 
+                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN") 
+             }) 
 
-        show_full_table(col_g1, "📈 Globalnie (Dziś)", global_daily)
-        show_full_table(col_g2, "📊 Globalnie (Historycznie)", global_total)
+         st.divider() 
+         st.subheader("🕵️ Czas w modułach (minuty historycznie)") 
+         hist_table_data = [] 
+         for item in adm_summary: 
+             row = {"Użytkownik": item["Użytkownik"]} 
+             for code in ADMIN_ORDER: 
+                 row[MOD_MAP[code]] = int(item["u_total_map"][code] // 60) 
+             hist_table_data.append(row) 
+         st.dataframe(pd.DataFrame(hist_table_data), use_container_width=True, hide_index=True) 
+
+         st.divider() 
+         col_g1, col_glob2 = st.columns(2) 
+         def show_full_table(cont, title, data_dict): 
+             cont.subheader(title) 
+             total = sum(data_dict.values()) 
+             rows = [] 
+             for code in ADMIN_ORDER: 
+                 v = data_dict[code] 
+                 perc = f"{round((v/total)*100, 1)}%" if total > 0 else "0%" 
+                 t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min" 
+                 rows.append({"Moduł": MOD_MAP[code], "Pop.": perc, "Czas": t_str}) 
+             cont.table(pd.DataFrame(rows)) 
+         show_full_table(col_g1, "📈 Globalnie (Dziś)", global_daily) 
+         show_full_table(col_glob2, "📊 Globalnie (Historycznie)", global_total) 
 
     with tabs[1]:
         # --- TAB: ZARZĄDZANIE ---
