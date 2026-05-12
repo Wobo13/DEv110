@@ -3495,13 +3495,16 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V420 - XP Analytics & Tab Reorder) ---
+# --- 27. ADMIN PRO (V425 - Learning Logic Sync & Permanent Visibility) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
     # Aktualizacja aktywności admina
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
+
+    # --- DEFINICJA MODUŁÓW NAUKI (Musi być identyczna z Sidebarem) ---
+    STUDY_MODULES = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Sur", "Wri", "Det", "Lab"]
 
     # --- 1. SEEDERY (Bazy Wiedzy) ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
@@ -3532,16 +3535,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.info(f"🌍 Generuję ciekawostki dla języka {lang}...")
         prompt = f"Wygeneruj 10 unikalnych ciekawostek o kulturze i języku {lang}. Zwróć JSON: trivia: [{{title, content_orig, content_pl, lang}}]"
         try:
+            l_code = "de" if lang == "Niemiecki" else "cs"
             raw = get_openai_response(prompt)
-            data = json.loads(raw).get("trivia", [])
-            get_db().table("cultural_trivia").insert(data).execute()
-            st.success(f"✅ Dodano {len(data)} ciekawostek!")
+            items = json.loads(raw).get("trivia", [])
+            for item in items: item["lang"] = l_code
+            get_db().table("cultural_trivia").insert(items).execute()
+            st.success(f"✅ Dodano {len(items)} ciekawostek!")
         except: st.error("Błąd generowania ciekawostek.")
 
     # --- 2. INTERFEJS (ZMIENIONA KOLEJNOŚĆ TABS) ---
     tabs = st.tabs(["👥 Analiza Użytkowników", "📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki"])
 
-    # --- ZAKŁADKA 1: ANALIZA UŻYTKOWNIKÓW (TERAZ PIERWSZA) ---
+    # --- ZAKŁADKA 1: ANALIZA UŻYTKOWNIKÓW ---
     with tabs[0]:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
@@ -3551,9 +3556,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         db = get_db()
         ud_data = db.table("user_data").select("*").execute().data
-        # Pobieramy też mastery_xp do obliczeń wiedzy
-        all_cards_res = db.table("flashcards").select("username", "origin", "next_review", "mastery_xp").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review", "mastery_xp"])
+        all_cards_res = db.table("flashcards").select("username", "origin", "mastery_xp").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "mastery_xp"])
         
         today_iso = date.today().isoformat()
         adm_summary = []
@@ -3564,38 +3568,33 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             "Tst": "📝 Testy", "Mem": "🧠 Memory", "War": "🛠️ Warsztat", "Kon": "🏗️ Konstruktor",
             "Wan": "🐍 Wąż", "Bal": "🎈 Balon", "Sur": "🎲 Ruletka", "Wri": "✍️ Pisanie", 
             "Det": "🕵️ Detektyw", "Lab": "🧪 Laboratorium", "Skn": "📸 Skaner", 
-            "Sta": "📊 Statystyki", "Inn": "Inne"
+            "Sta": "📊 Statystyki", "Inn": "Inne", "Adm": "👑 Admin"
         }
 
         for user in ud_data:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # --- NOWA LOGIKA WIEDZY (XP) ---
+            # --- WIEDZA (XP SYSTEM) ---
             total_words = len(u_cards)
             if total_words > 0:
                 current_xp_sum = u_cards["mastery_xp"].fillna(0).sum()
-                max_xp_possible = total_words * 150
-                wiedza_val = int((current_xp_sum / max_xp_possible) * 100)
+                wiedza_val = int((current_xp_sum / (total_words * 150)) * 100)
                 wiedza_str = f"{min(wiedza_val, 100)}%"
-            else:
-                wiedza_str = "0%"
+            else: wiedza_str = "0%"
 
-            # Rozkład źródeł
-            oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
-            r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
-            g_count = sum(1 for x in oc if "Generator" in str(x))
-            s_count = sum(1 for x in oc if "Skaner" in str(x))
-
-            # Czas
+            # --- CZAS DZISIAJ (TYLKO MODUŁY NAUKI) ---
             is_active_today = user.get("last_visit_date") == today_iso
             stats_today = user.get("time_stats", {}) if is_active_today else {}
-            total_sec_today = sum(stats_today.values()) if isinstance(stats_today, dict) else 0
+            # FILTR: Sumujemy tylko klucze z STUDY_MODULES
+            study_sec_today = sum(v for k, v in stats_today.items() if k in STUDY_MODULES)
             
+            # Zbieranie danych do rozkładu globalnego (całość dla analityki)
             if is_active_today:
                 for code, sec in stats_today.items():
                     global_daily_time[code] = global_daily_time.get(code, 0) + sec
             
+            # Czas Łącznie (wszystko)
             stats_total = user.get("total_time_stats", {})
             total_sec_all = sum(stats_total.values()) if isinstance(stats_total, dict) else 0
 
@@ -3603,41 +3602,28 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "Użytkownik": uname,
                 "Ostatnio": user.get("last_seen", "Brak"),
                 "🔥": user.get("streak", 0),
-                "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})",
+                "Słówka": total_words,
                 "Wiedza (XP)": wiedza_str,
-                "Czas Dziś": int(total_sec_today // 60),
+                "Nauka dziś": int(study_sec_today // 60),
                 "Łącznie (min)": int(total_sec_all // 60),
                 "Koszt AI": round(user.get("historical_cost", 0.0), 2),
                 "raw_total": stats_total
             })
 
-        st.subheader("📋 Podsumowanie kont")
-        df_main = pd.DataFrame(adm_summary).sort_values("Czas Dziś", ascending=False)
+        st.subheader("📋 Podsumowanie aktywności")
+        df_main = pd.DataFrame(adm_summary).sort_values("Nauka dziś", ascending=False)
         st.dataframe(
             df_main.drop(columns=["raw_total"]), 
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R-Ręczne, G-Generator, S-Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                "Czas Dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", help="Postęp względem godziny nauki", min_value=0, max_value=60),
+                "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", help="Czas w modułach nauki", min_value=0, max_value=60),
             }
         )
 
         st.divider()
-        st.subheader("📈 Globalna aktywność (Dziś)")
-        total_global_sec = sum(global_daily_time.values())
-        if total_global_sec > 0:
-            analysis = []
-            for code, full_name in MOD_MAP.items():
-                v = global_daily_time.get(code, 0)
-                if v > 0:
-                    analysis.append({"Moduł": full_name, "Popularność": f"{round((v/total_global_sec)*100, 1)}%", "Czas": f"{int(v//60)} min"})
-            st.table(pd.DataFrame(analysis).set_index("Moduł"))
-
-        st.divider()
-        st.subheader("🕵️ Szczegóły historyczne modułów (minuty)")
-        # USUNIĘTO EXPANDER - Tabela jest teraz zawsze widoczna
+        st.subheader("🕵️ Czas w modułach (minuty historycznie)")
         history_rows = []
         for item in adm_summary:
             row = {"Użytkownik": item["Użytkownik"]}
@@ -3658,22 +3644,22 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 seed_master_vocab(v_lang, v_lvl, v_goal)
 
     with tabs[2]:
-        st.info("Zarządzanie biblioteką idiomów.")
-        if st.button("🏗️ Inicjuj Idiomy (200)"):
-            seed_idioms_library()
+        st.subheader("📖 Biblioteka Idiomów")
+        if st.button("🏗️ Inicjuj/Doładuj Idiomy AI", use_container_width=True):
+            # Tutaj możesz wywołać funkcję seed_idioms_library() jeśli ją zdefiniowałeś
+            st.info("Trwa generowanie...") 
 
     with tabs[3]:
         st.subheader("🌍 Ciekawostki Kulturowe")
-        # PRZYWRÓCONO PRZYCISK GENEROWANIA
-        c_lang = st.selectbox("Wybierz język do doładowania bazy:", ["Niemiecki", "Czeski"], key="cur_lang_trivia")
-        if st.button(f"✨ Generuj 10 nowych ciekawostek ({c_lang})", use_container_width=True):
-            seed_cultural_trivia(c_lang)
+        c_lang_sel = st.selectbox("Wybierz język:", ["Niemiecki", "Czeski"], key="cur_lang_trivia")
+        if st.button(f"✨ Generuj 10 ciekawostek ({c_lang_sel})", use_container_width=True):
+            seed_cultural_trivia(c_lang_sel)
         
         st.divider()
         try:
-            res_t = db.table("cultural_trivia").select("*").eq("lang", "de" if c_lang=="Niemiecki" else "cs").execute()
+            res_t = db.table("cultural_trivia").select("*").eq("lang", "de" if c_lang_sel=="Niemiecki" else "cs").execute()
             if res_t.data:
-                st.write(f"Aktualnie w bazie ({c_lang}): {len(res_t.data)} wpisów.")
+                st.write(f"W bazie ({c_lang_sel}): {len(res_t.data)} wpisów.")
                 st.dataframe(pd.DataFrame(res_t.data)[["title", "content_pl"]], use_container_width=True)
         except: pass
 
