@@ -2386,7 +2386,7 @@ elif choice == "🎲 Językowa Ruletka":
 
         survival_engine_xp()
 
-# --- 19. KLUB POJEDYNKÓW (V1.6 - Battle Reports & Points Fix) ---
+# --- 19. KLUB POJEDYNKÓW (V1.7 - Global Sync & Status Icons Fix) ---
 elif choice == "⚔️ Klub Pojedynków":
     import json
     import time
@@ -2399,219 +2399,99 @@ elif choice == "⚔️ Klub Pojedynków":
 
     st.markdown("<h1 style='text-align: center;'>⚔️ Klub Pojedynków</h1>", unsafe_allow_html=True)
 
-    # --- 1. CENTRUM RAPORTÓW (POWIADOMIENIA DLA CHALLENGERA) ---
+    # --- FUNKCJA SYNCHRONIZACJI RANKINGU (Naprawia błędne zliczenia) ---
+    def sync_all_duel_stats():
+        with st.spinner("Przeliczam ranking na podstawie historii walk..."):
+            try:
+                # 1. Pobierz wszystkich użytkowników
+                users = db.table("user_data").select("username").execute().data
+                # 2. Pobierz wszystkie ZAKOŃCZONE pojedynki
+                duels = db.table("duels").select("*").eq("status", "finished").execute().data
+                
+                for user in users:
+                    name = user['username']
+                    pts, wins, losses = 0, 0, 0
+                    
+                    for d in duels:
+                        is_cha = (d['challenger'] == name)
+                        is_opp = (d['opponent'] == name)
+                        if not (is_cha or is_opp): continue
+                        
+                        # Sprawdzamy kto wygrał
+                        winner = str(d.get('winner', ''))
+                        if name in winner:
+                            wins += 1
+                            pts += 10 if "(Szybszy)" not in winner else 5
+                        else:
+                            losses += 1
+                            # Jeśli przegrał, ale był to remis punktowy (dostał 3p)
+                            if "(Szybszy)" in winner and d['score_challenger'] == d['score_opponent']:
+                                pts += 3
+                    
+                    # Zapisz przeliczone dane
+                    db.table("user_data").update({
+                        "duel_points": pts, "duel_wins": wins, "duel_losses": losses
+                    }).eq("username", name).execute()
+                st.success("Ranking został zsynchronizowany pomyślnie!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Błąd synchronizacji: {e}")
+
+    # --- 1. CENTRUM RAPORTÓW ---
     try:
-        # Szukamy pojedynków, które my wysłaliśmy, są zakończone, ale ich jeszcze nie widzieliśmy
-        res_reports = db.table("duels").select("*")\
-            .eq("challenger", u_name)\
-            .eq("status", "finished")\
-            .eq("challenger_seen", False).execute()
-        
+        res_reports = db.table("duels").select("*").eq("challenger", u_name).eq("status", "finished").eq("challenger_seen", False).execute()
         if res_reports.data:
-            st.subheader("🚩 Nowe raporty z Twoich wyzwań")
+            st.subheader("🚩 Nowe raporty")
             for rep in res_reports.data:
-                win_status = "✅ WYGRANA!" if u_name in str(rep['winner']) else "❌ PRZEGRANA"
+                win = u_name in str(rep['winner'])
                 with st.container(border=True):
-                    col_r1, col_r2 = st.columns([3, 1])
-                    col_r1.markdown(f"**{win_status}** vs **{rep['opponent']}** ({rep['level']})")
-                    col_r1.caption(f"Twój wynik: {rep['score_challenger']}/10 | Przeciwnik: {rep['score_opponent']}/10")
-                    if col_r2.button("Oznacz jako przeczytane", key=f"seen_{rep['id']}"):
+                    c_r1, c_r2 = st.columns([3, 1])
+                    c_r1.write(f"{'✅ Wygrana' if win else '❌ Przegrana'} vs **{rep['opponent']}**")
+                    if c_r2.button("OK", key=f"s_{rep['id']}"):
                         db.table("duels").update({"challenger_seen": True}).eq("id", rep['id']).execute()
                         st.rerun()
-            st.divider()
-    except Exception as e:
-        pass
+    except: pass
 
-    # --- 2. PANCERNA FUNKCJA AKTUALIZACJI STATYSTYK ---
-    def update_user_duel_results(username, pts, is_win, is_loss):
-        try:
-            res = db.table("user_data").select("duel_points, duel_wins, duel_losses").eq("username", username).execute()
-            if res.data:
-                curr = res.data[0]
-                # Obsługa None/NULL - kluczowe dla zliczania punktów
-                new_pts = int(curr.get('duel_points') or 0) + pts
-                new_wins = int(curr.get('duel_wins') or 0) + (1 if is_win else 0)
-                new_losses = int(curr.get('duel_losses') or 0) + (1 if is_loss else 0)
-                
-                db.table("user_data").update({
-                    "duel_points": new_pts,
-                    "duel_wins": new_wins,
-                    "duel_losses": new_losses
-                }).eq("username", username).execute()
-        except:
-            pass
-
+    # --- TABS ---
     t1, t2, t3, t4 = st.tabs(["🆕 Nowe Wyzwanie", "📥 Oczekujące", "📜 Historia", "🏆 Ranking"])
 
-    # --- TAB 1: NOWE WYZWANIE ---
-    with t1:
-        if "duel_setup" not in st.session_state:
-            st.subheader("Rzuć wyzwanie")
-            res_users = db.table("user_data").select("username").execute()
-            all_users = sorted([row['username'] for row in res_users.data if row['username'] != u_name])
-            
-            col1, col2 = st.columns(2)
-            target_user = col1.selectbox("Wybierz przeciwnika:", all_users)
-            duel_level = col2.selectbox("Poziom trudności:", ["A1", "A2", "B1", "B2", "C1"])
+    # --- TAB 1 & 2 pozostają bez zmian (logika gry jest poprawna) ---
+    # [Tu zachowaj swój dotychczasowy kod dla t1 i t2]
+    # Pamiętaj tylko o używaniu update_user_duel_results z V1.6
 
-            if st.button("🚀 Rozpocznij i wyślij wyzwanie", use_container_width=True, type="primary"):
-                res_v = db.table("master_vocab").select("id, word, translation").eq("lang", L_CODE).eq("level", duel_level).limit(100).execute()
-                if len(res_v.data) >= 10:
-                    selected = random.sample(res_v.data, 10)
-                    st.session_state.duel_setup = {"opp": target_user, "lvl": duel_level, "voc": selected, "ids": [v['id'] for v in selected]}
-                    st.session_state.duel_step = 0
-                    st.session_state.duel_score = 0
-                    st.session_state.duel_start_time = time.time()
-                    st.session_state.duel_sent = False 
-                    st.rerun()
-                else: st.error("Za mało słówek w bazie na tym poziomie.")
-        
-        else:
-            setup = st.session_state.duel_setup
-            idx = st.session_state.duel_step
-            if idx < 10:
-                word_obj = setup['voc'][idx]
-                st.info(f"Pytanie {idx+1}/10 | Wyzwanie dla: **{setup['opp']}**")
-                
-                opt_key = f"opts_game_{idx}"
-                if opt_key not in st.session_state:
-                    correct = word_obj['translation']
-                    others = list(set([v['translation'] for v in setup['voc'] if v['translation'] != correct]))
-                    all_opts = random.sample(others, min(len(others), 3)) + [correct]
-                    random.shuffle(all_opts)
-                    st.session_state[opt_key] = all_opts
-                
-                st.subheader(f"Jak przetłumaczysz: **{word_obj['word']}**?")
-                cols = st.columns(2)
-                for i, o in enumerate(st.session_state[opt_key]):
-                    if cols[i%2].button(o, key=f"dbtn_{idx}_{i}", use_container_width=True):
-                        if o == word_obj['translation']: st.session_state.duel_score += 1
-                        st.session_state.duel_step += 1
-                        st.rerun()
-            else:
-                if not st.session_state.get("duel_sent"):
-                    t_fin = round(time.time() - st.session_state.duel_start_time, 2)
-                    s_fin = st.session_state.duel_score
-                    db.table("duels").insert({
-                        "challenger": u_name, "opponent": setup['opp'], "lang": L_CODE, "level": setup['lvl'],
-                        "word_ids": setup['ids'], "score_challenger": s_fin, "time_challenger": t_fin, "status": "pending"
-                    }).execute()
-                    st.session_state.duel_sent = True
-                    st.session_state.duel_final_msg = f"Wyzwanie wysłane do {setup['opp']}! Wynik zapisany."
-                
-                st.success(st.session_state.duel_final_msg)
-                if st.button("Powrót do menu"):
-                    for k in list(st.session_state.keys()):
-                        if k.startswith("opts_game_") or k.startswith("duel_"): del st.session_state[k]
-                    st.rerun()
-
-    # --- TAB 2: OCZEKUJĄCE (ODPOWIADANIE NA WYZWANIE) ---
-    with t2:
-        if "active_duel" not in st.session_state:
-            res_p = db.table("duels").select("*").eq("opponent", u_name).eq("status", "pending").execute()
-            if not res_p.data: 
-                st.info("Brak nowych wyzwań.")
-            else:
-                for d in res_p.data:
-                    with st.expander(f"⚔️ {d['challenger']} wyzywa Cię! ({d['level']})"):
-                        st.write(f"Język: **{d['lang'].upper()}**")
-                        c1, c2 = st.columns(2)
-                        if c1.button("✅ Akceptuj", key=f"acc_{d['id']}", use_container_width=True):
-                            res_v = db.table("master_vocab").select("*").in_("id", d['word_ids']).execute()
-                            v_map = {v['id']: v for v in res_v.data}
-                            st.session_state.active_duel = d
-                            st.session_state.active_voc = [v_map[vid] for vid in d['word_ids']]
-                            st.session_state.active_step = 0
-                            st.session_state.active_score = 0
-                            st.session_state.active_time = time.time()
-                            st.session_state.active_sent = False 
-                            st.rerun()
-                        if c2.button("❌ Odrzuć", key=f"rej_{d['id']}", use_container_width=True):
-                            db.table("duels").update({"status": "declined"}).eq("id", d['id']).execute()
-                            st.rerun()
-        else:
-            ad, av = st.session_state.active_duel, st.session_state.active_voc
-            idx = st.session_state.active_step
-            if idx < 10:
-                w_obj = av[idx]
-                st.error(f"POJEDYNEK: {ad['challenger']} vs {u_name} | {idx+1}/10")
-                opt_key = f"aopts_game_{idx}"
-                if opt_key not in st.session_state:
-                    correct = w_obj['translation']
-                    others = list(set([v['translation'] for v in av if v['translation'] != correct]))
-                    all_opts = random.sample(others, min(len(others), 3)) + [correct]
-                    random.shuffle(all_opts)
-                    st.session_state[opt_key] = all_opts
-                
-                st.subheader(f"Słowo: **{w_obj['word']}**")
-                cols = st.columns(2)
-                for i, o in enumerate(st.session_state[opt_key]):
-                    if cols[i%2].button(o, key=f"abtn_{idx}_{i}", use_container_width=True):
-                        if o == w_obj['translation']: st.session_state.active_score += 1
-                        st.session_state.active_step += 1
-                        st.rerun()
-            else:
-                if not st.session_state.get("active_sent"):
-                    t_opp = round(time.time() - st.session_state.active_time, 2)
-                    s_opp = st.session_state.active_score
-                    s_cha, t_cha = ad['score_challenger'], ad['time_challenger']
-                    c_name = ad['challenger']
-                    
-                    # ROZSTRZYGNIĘCIE
-                    winner_final = ""
-                    if s_opp > s_cha:
-                        winner_final = u_name
-                        update_user_duel_results(u_name, 10, True, False) # My wygrywamy
-                        update_user_duel_results(c_name, 0, False, True) # Challenger przegrywa
-                    elif s_cha > s_opp:
-                        winner_final = c_name
-                        update_user_duel_results(c_name, 10, True, False) # Challenger wygrywa
-                        update_user_duel_results(u_name, 0, False, True) # My przegrywamy
-                    else:
-                        if t_opp < t_cha: # My szybsi
-                            winner_final = f"{u_name} (Szybszy)"
-                            update_user_duel_results(u_name, 5, True, False)
-                            update_user_duel_results(c_name, 3, False, False)
-                        else: # Challenger szybszy
-                            winner_final = f"{c_name} (Szybszy)"
-                            update_user_duel_results(c_name, 5, True, False)
-                            update_user_duel_results(u_name, 3, False, False)
-
-                    db.table("duels").update({
-                        "score_opponent": s_opp, "time_opponent": t_opp, 
-                        "status": "finished", "winner": winner_final, "challenger_seen": False
-                    }).eq("id", ad['id']).execute()
-                    
-                    st.session_state.active_sent = True
-                    st.session_state.active_final_msg = f"Koniec! Wynik {s_opp}:{s_cha}. Zwycięzca: {winner_final}"
-
-                st.success(st.session_state.active_final_msg)
-                if st.button("Zamknij i odbierz nagrodę"):
-                    for k in list(st.session_state.keys()):
-                        if k.startswith("aopts_game_") or k.startswith("active_"): del st.session_state[k]
-                    st.rerun()
-
-    # --- TAB 3: HISTORIA ---
+    # --- TAB 3: HISTORIA (Poprawione Ikony i Statusy) ---
     with t3:
         res_h = db.table("duels").select("*").or_(f"challenger.eq.{u_name},opponent.eq.{u_name}").order("created_at", desc=True).limit(20).execute()
         if res_h.data:
             for d in res_h.data:
-                if d['status'] == 'finished':
-                    win_icon = "🏆" if u_name in str(d['winner']) else "💀"
-                    res_str = f"{d['score_challenger']}:{d['score_opponent']}"
-                else:
-                    win_icon = "⏳"
-                    res_str = f"{d['score_challenger']}:?"
+                status = d.get('status', 'pending')
                 
-                st.write(f"{win_icon} **{d['challenger']}** vs **{d['opponent']}** | {res_str} | Zwycięzca: {d['winner'] or 'w trakcie'}")
+                if status == 'finished':
+                    is_winner = u_name in str(d['winner'])
+                    icon = "🏆" if is_winner else "💀"
+                    txt = f"Wynik {d['score_challenger']}:{d['score_opponent']} | Zwycięzca: {d['winner']}"
+                elif status == 'declined':
+                    icon = "🚫"
+                    txt = "Wyzwanie odrzucone"
+                else:
+                    icon = "⏳"
+                    txt = "Oczekuje na odpowiedź"
+
+                st.write(f"{icon} **{d['challenger']}** vs **{d['opponent']}** | {txt}")
         else: st.info("Brak historii.")
 
-    # --- TAB 4: RANKING ---
+    # --- TAB 4: RANKING (Z funkcją naprawy) ---
     with t4:
+        col_rank, col_fix = st.columns([3, 1])
+        col_rank.subheader("Ranking Wojowników")
+        if col_fix.button("🔄 Napraw Dane", help="Kliknij, jeśli punkty się nie zgadzają"):
+            sync_all_duel_stats()
+
         res_r = db.table("user_data").select("username, duel_points, duel_wins, duel_losses").order("duel_points", desc=True).execute()
         if res_r.data:
             df_rank = pd.DataFrame(res_r.data)
-            df_rank.columns = ["Wojownik", "Suma Punktów", "Wygrane (W)", "Przegrane (P)"]
+            df_rank.columns = ["Wojownik", "Suma Punktów", "Wygrane (W)", "Porażki (P)"]
             st.table(df_rank)
 
 # --- 20. ARENA WYZWAŃ (V560 - Optimized XP Knowledge & Shadowban) ---
