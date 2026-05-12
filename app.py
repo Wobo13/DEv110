@@ -699,7 +699,7 @@ with st.sidebar:
                 del st.session_state[key]
         st.rerun()
 
-# --- 7. START (V3.1 - Dashboard + Duel Alerts) ---
+# --- 7. START (V3.5 - Dashboard + System Announcements + Study Time Fix) ---
 
 choice = st.session_state.get("choice", "🏠 Start")
 update_activity(choice)
@@ -708,7 +708,33 @@ if choice == "🏠 Start":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     u_name = st.session_state.get("user", "Anonim")
+    db = get_db()
     
+    # --- 0. OGŁOSZENIA SYSTEMOWE (Nowość) ---
+    try:
+        # Pobieramy aktywne ogłoszenia skierowane do wszystkich ('all') lub konkretnie do tego użytkownika
+        res_ann = db.table("system_announcements")\
+            .select("*")\
+            .or_(f"target.eq.all,target.eq.{u_name}")\
+            .eq("is_active", True)\
+            .order("created_at", desc=True)\
+            .execute()
+        
+        announcements = res_ann.data if res_ann.data else []
+        
+        for ann in announcements:
+            icon = ann.get("icon", "📢")
+            color = ann.get("color", "#2E86C1") # Domyślny niebieski
+            st.markdown(f"""
+                <div style="background-color: {color}; padding: 12px; border-radius: 10px; 
+                            color: white; margin-bottom: 10px; border-left: 5px solid rgba(0,0,0,0.2);">
+                    <span style="font-size: 1.2rem; margin-right: 10px;">{icon}</span>
+                    <b>{ann['title']}</b>: {ann['message']}
+                </div>
+            """, unsafe_allow_html=True)
+    except:
+        pass # Jeśli tabela jeszcze nie istnieje w SQL, pomijamy bez błędu
+
     # --- 1. ANALIZA DANYCH BIEŻĄCYCH ---
     all_cards_full = st.session_state.flashcards
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
@@ -718,9 +744,12 @@ if choice == "🏠 Start":
     due_cards = [c for c in all_c if str(c.get("next_review", today_str)) <= today_str]
     hard_cards = [c for c in all_c if c.get("level", 0) < 2]
 
-    # Statystyki czasu
+    # --- POPRAWKA CZASU NAUKI: Dodano brakujące moduły (Sur, Spa, Due, Skn) ---
     current_stats = ud.get("time_stats", {})
-    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
+    study_modules = [
+        "Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", 
+        "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due", "Skn"
+    ]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
@@ -729,9 +758,8 @@ if choice == "🏠 Start":
     hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
     st.markdown(f"<h3 style='margin-bottom: 0px; font-size: 1.4rem;'>{hello_msg}, {str(u_name).capitalize()}! ☀️</h3>", unsafe_allow_html=True)
 
-    # --- NOWOŚĆ: CENTRUM DOWODZENIA (ALERTY POJEDYNKÓW) ---
+    # --- CENTRUM DOWODZENIA (ALERTY POJEDYNKÓW) ---
     try:
-        db = get_db()
         # Sprawdzamy czy są jakieś oczekujące wyzwania dla nas
         res_pending = db.table("duels").select("challenger")\
             .eq("opponent", u_name).eq("status", "pending").execute()
@@ -784,8 +812,8 @@ if choice == "🏠 Start":
     try:
         # A. Pisanie
         topics_for_teaser = {
-            "de": ["Beschreibe deinen Morgen.", "Was są Twoje cele?", "Erzähle von deinem Hobby."],
-            "cs": ["Popiš své ráno.", "Jaké są Twoje cele?", "Vyprávěj o svém koníčku."]
+            "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby."],
+            "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku."]
         }
         t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser.get(L_CODE, ["..."]))
         current_writing_topic = topics_for_teaser.get(L_CODE, ["..."])[t_idx]
@@ -3620,7 +3648,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V556 - Analytics Visual Fix & Full Restoration) ---
+# --- 27. ADMIN PRO (V570 - Announcements Engine & Analytics) ---
 elif choice == "👑 Admin" and st.session_state.get("is_admin"):
     st.header("👑 Panel Administratora")
 
@@ -3698,7 +3726,8 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
     db = get_db()
     ud_raw = db.table("user_data").select("*").execute().data
     
-    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
+    # NOWA STRUKTURA TABS
+    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie", "📢 Ogłoszenia"])
 
     with tabs[0]:
         # Pobieranie słówek dla analizy origin (R|G|S)
@@ -3865,6 +3894,69 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
         with g3:
             cl = st.selectbox("Język", ["Niemiecki", "Czeski"], key="g3l")
             if st.button("Generuj 10 Ciekawostek"): seed_cultural_trivia(cl)
+
+    with tabs[2]:
+        # --- NOWA TAB: OGŁOSZENIA SYSTEMOWE ---
+        st.subheader("📢 Zarządzanie Ogłoszeniami")
+        
+        with st.form("new_announcement_form"):
+            st.write("**Wyślij nową wiadomość systemową**")
+            col_an1, col_ann2 = st.columns([3, 1])
+            
+            ann_title = col_an1.text_input("Tytuł ogłoszenia:", placeholder="np. Nowa aktualizacja!")
+            ann_target = col_ann2.selectbox("Adresat:", ["all"] + [u["username"] for u in ud_raw])
+            
+            ann_message = st.text_area("Treść wiadomości:", placeholder="Wpisz co chcesz przekazać użytkownikom...")
+            
+            col_an3, col_ann4, col_ann5 = st.columns([1, 2, 1])
+            ann_icon = col_an3.text_input("Ikona (Emoji):", value="📢")
+            ann_color = col_ann4.color_picker("Kolor tła wiadomości:", value="#2E86C1")
+            
+            submit_ann = st.form_submit_button("🚀 Opublikuj ogłoszenie", use_container_width=True)
+            
+            if submit_ann:
+                if ann_title and ann_message:
+                    try:
+                        db.table("system_announcements").insert({
+                            "title": ann_title,
+                            "message": ann_message,
+                            "target": ann_target,
+                            "icon": ann_icon,
+                            "color": ann_color,
+                            "is_active": True
+                        }).execute()
+                        st.success("Ogłoszenie zostało wysłane!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd bazy: {e}. Czy stworzyłeś tabelę system_announcements?")
+                else:
+                    st.warning("Tytuł i treść nie mogą być puste.")
+
+        st.divider()
+        st.write("**Aktywne ogłoszenia**")
+        try:
+            ann_res = db.table("system_announcements").select("*").order("created_at", desc=True).execute()
+            if ann_res.data:
+                for a in ann_res.data:
+                    with st.expander(f"{a['icon']} {a['title']} (Dla: {a['target']})"):
+                        st.write(a['message'])
+                        st.caption(f"Utworzono: {a['created_at']} | Kolor: {a['color']}")
+                        c_ann1, c_ann2 = st.columns(2)
+                        
+                        # Przełącznik aktywności
+                        new_state = not a['is_active']
+                        if c_ann1.button(f"{'✅ Aktywuj' if new_state else '⚪ Dezaktywuj'}", key=f"state_{a['id']}"):
+                            db.table("system_announcements").update({"is_active": new_state}).eq("id", a['id']).execute()
+                            st.rerun()
+                            
+                        # Usuwanie
+                        if c_ann2.button("🗑️ Usuń trwale", key=f"del_ann_{a['id']}"):
+                            db.table("system_announcements").delete().eq("id", a['id']).execute()
+                            st.rerun()
+            else:
+                st.info("Brak ogłoszeń w historii.")
+        except:
+            st.error("Nie można załadować listy ogłoszeń. Sprawdź strukturę bazy danych.")
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
