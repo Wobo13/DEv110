@@ -643,7 +643,7 @@ with st.sidebar:
         menu_item(opt, opt)
 
     # Sekcja Admina
-    if u == ADMIN_USER:
+    if st.session_state.get("is_admin"):
         st.markdown("<hr>", unsafe_allow_html=True)
         st.write("🏁 **STREFA VIP**")
         menu_item("👑 Admin", "👑 Admin")
@@ -3579,10 +3579,11 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V550 - User Control & Profile Editor) ---
-elif choice == "👑 Admin" and u == ADMIN_USER:
+# --- 27. ADMIN PRO (V551 - Security Hardened Admin Check) ---
+elif choice == "👑 Admin" and st.session_state.get("is_admin"):
     st.header("👑 Panel Administratora")
 
+    # Aktualizacja czasu ostatniej aktywności admina
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
@@ -3661,7 +3662,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
 
     with tabs[0]:
-        # --- TAB: ANALIZA ---
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
@@ -3677,7 +3677,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # Flagi statusu
             status_prefix = ""
             if user.get("is_banned"): status_prefix += "🚫 "
             if user.get("is_shadowbanned"): status_prefix += "👻 "
@@ -3705,7 +3704,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             u_total = process_stats(user.get("total_time_stats", {}))
 
             for code in ADMIN_ORDER:
-                if uname == ADMIN_USER and code == "Inn": continue
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
 
@@ -3726,13 +3724,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "raw_uname": uname
             })
 
-        def custom_sort_key(x):
-            name = x["raw_uname"].lower()
-            if name == "wobo": return (0, "")
-            if name == "wiola": return (1, "")
-            return (2, name)
-
-        adm_summary.sort(key=custom_sort_key)
+        adm_summary.sort(key=lambda x: x["raw_uname"].lower())
         
         st.subheader("📋 Podsumowanie kont")
         df_main = pd.DataFrame(adm_summary)
@@ -3752,23 +3744,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             hist_table_data.append(row)
         st.dataframe(pd.DataFrame(hist_table_data), use_container_width=True, hide_index=True)
 
-        st.divider()
-        col_g1, col_glob2 = st.columns(2)
-        def show_full_table(cont, title, data_dict):
-            cont.subheader(title)
-            total = sum(data_dict.values())
-            rows = []
-            for code in ADMIN_ORDER:
-                v = data_dict[code]
-                perc = f"{round((v/total)*100, 1)}%" if total > 0 else "0%"
-                t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
-                rows.append({"Moduł": MOD_MAP[code], "Pop.": perc, "Czas": t_str})
-            cont.table(pd.DataFrame(rows))
-        show_full_table(col_g1, "📈 Globalnie (Dziś)", global_daily)
-        show_full_table(col_glob2, "📊 Globalnie (Historycznie)", global_total)
-
     with tabs[1]:
-        # --- TAB: ZARZĄDZANIE ---
         st.subheader("👤 Kontrola Użytkowników (Edytor Profili)")
         
         user_list = [u["username"] for u in ud_raw]
@@ -3782,17 +3758,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 with col_ed1:
                     new_email = st.text_input("Adres E-mail:", value=target_data.get("email", ""))
                     new_pass = st.text_input("Zresetuj Hasło (zostaw puste, by nie zmieniać):", type="password")
-                    admin_notes = st.text_area("Notatki Admina (niewidoczne dla użytkownika):", value=target_data.get("admin_notes", ""))
+                    admin_notes = st.text_area("Notatki Admina:", value=target_data.get("admin_notes", ""))
                 
                 with col_ed2:
                     is_banned = st.checkbox("🚫 Zablokuj konto (BAN)", value=target_data.get("is_banned", False))
-                    is_shadow = st.checkbox("👻 Shadowban (ukryj z rankingów)", value=target_data.get("is_shadowbanned", False))
-                    st.warning("BAN uniemożliwi logowanie. Shadowban pozwala na naukę, ale ukrywa wyniki przed innymi.")
+                    is_admin_flag = st.checkbox("👑 Uprawnienia Admina", value=target_data.get("is_admin", False))
+                    is_shadow = st.checkbox("👻 Shadowban", value=target_data.get("is_shadowbanned", False))
 
                 if st.button(f"💾 Zapisz zmiany dla {selected_target}", use_container_width=True, type="primary"):
                     upd = {
                         "email": new_email,
                         "is_banned": is_banned,
+                        "is_admin": is_admin_flag,
                         "is_shadowbanned": is_shadow,
                         "admin_notes": admin_notes
                     }
@@ -3807,13 +3784,11 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         st.subheader("📂 Kopie zapasowe (Backup)")
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            st.write("📜 **Tabela Flashcards**")
             if st.button("Przygotuj Backup Flashcards", use_container_width=True):
                 data_fc = db.table("flashcards").select("*").execute().data
                 df_fc = pd.DataFrame(data_fc)
                 st.download_button("⬇️ Pobierz CSV", df_fc.to_csv(index=False).encode('utf-8'), "flashcards.csv", "text/csv")
         with col_b2:
-            st.write("👤 **Tabela User Data**")
             if st.button("Przygotuj Backup User Data", use_container_width=True):
                 data_ud = db.table("user_data").select("*").execute().data
                 df_ud = pd.DataFrame(data_ud)
