@@ -2533,7 +2533,7 @@ elif choice == "⚔️ Klub Pojedynków":
             })
             st.table(df_rank)
 
-# --- 20. ARENA WYZWAŃ (V550 - Shadowban Filter) ---
+# --- 20. ARENA WYZWAŃ (V560 - Optimized XP Knowledge & Shadowban) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2551,33 +2551,30 @@ elif choice == "🏆 Arena Wyzwań":
     def get_game_leaderboard(game_id, lang_code, start_date=None):
         try:
             db = get_db()
-            # Pobieramy rekordy wraz z flagą shadowban z powiązanej tabeli user_data
             query = db.table("game_scores").select("username, score, created_at, user_data(is_shadowbanned)").eq("game_name", game_id).eq("lang", lang_code)
             
             if start_date:
                 query = query.gte("created_at", start_date)
             
             is_desc = False if game_id == "memory" else True
-            
-            # Pobieramy dane bez limitu, aby odfiltrować shadowbany w pamięci (Pandas)
             res = query.order("score", desc=is_desc).execute()
             data = res.data if res.data else []
             
             if not data: return []
             
-            # Filtrowanie: zostawiamy tylko tych, którzy NIE mają shadowbana
+            # Filtrowanie shadowbanów
             filtered = [d for d in data if not (d.get('user_data') and d['user_data'].get('is_shadowbanned'))]
-            
-            return filtered[:10] # Zwracamy top 10 po filtracji
+            return filtered[:10]
         except Exception as e:
             return []
 
-    # --- 2. POBIERANIE DANYCH STAŁYCH (Z uwzględnieniem flag shadowban) ---
+    # --- 2. POBIERANIE DANYCH DO RANKINGÓW OGÓLNYCH ---
     try:
         db = get_db()
-        # Pobieramy wszystkich użytkowników, aby móc wyliczyć wiedzę i passę
+        # Pobieramy statusy użytkowników
         raw_users = db.table("user_data").select("username, streak, is_shadowbanned").execute().data or []
-        all_cards_global = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute().data or []
+        # Optymalizacja: Pobieramy mastery_xp zamiast dat, aby zliczyć wiedzę wg nowego systemu
+        all_cards_global = db.table("flashcards").select("username, mastery_xp").eq("lang", L_CODE).execute().data or []
         
         cards_per_user = {}
         for c in all_cards_global:
@@ -2612,13 +2609,7 @@ elif choice == "🏆 Arena Wyzwań":
     for g in games_config:
         with g["tab"]:
             st_all, st_month, st_week = st.tabs(["🏆 Wszech czasów", "📅 Ten miesiąc", "⏳ Ten tydzień"])
-            
-            periods = [
-                {"tab": st_all, "date": None},
-                {"tab": st_month, "date": start_of_month},
-                {"tab": st_week, "date": start_of_week}
-            ]
-            
+            periods = [{"tab": st_all, "date": None}, {"tab": st_month, "date": start_of_month}, {"tab": st_week, "date": start_of_week}]
             for p in periods:
                 with p["tab"]:
                     data = get_game_leaderboard(g["id"], L_CODE, p["date"])
@@ -2632,26 +2623,31 @@ elif choice == "🏆 Arena Wyzwań":
 
     st.divider()
 
-    # --- 5. PASSA I WIEDZA ---
+    # --- 5. PASSA I WIEDZA (Zoptymalizowana pod Mastery XP) ---
     col1, col2 = st.columns(2)
     leaderboard_data = []
-    visible_leaderboard = [] # Lista tylko dla osób bez shadowbana
+    visible_leaderboard = []
     
-    today_dt = date.today()
     for u_row in raw_users:
         uname = u_row.get("username", "Anonim")
         is_ghost = u_row.get("is_shadowbanned", False)
         u_cards = cards_per_user.get(uname, [])
+        
         w_raw = 0
-        if u_cards:
-            strong = len([c for c in u_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
-            w_raw = int((strong / len(u_cards)) * 100)
+        total_words = len(u_cards)
+        
+        if total_words > 0:
+            # NOWA LOGIKA: Sumujemy XP i dzielimy przez max możliwy XP (ilość słów * 150)
+            # Zgodne z algorytmem z Sekcji 27
+            xp_sum = sum(c.get('mastery_xp', 0) or 0 for c in u_cards)
+            wiedza_val = int((xp_sum / (total_words * 150)) * 100)
+            w_raw = min(wiedza_val, 100)
         
         entry = {
             "Użytkownik": uname, 
             "Ogień 🔥": int(u_row.get("streak", 0)), 
             "w_raw": w_raw, 
-            "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"
+            "Wiedza 🧠": f"{w_raw}%" if total_words > 0 else "---"
         }
         
         leaderboard_data.append(entry)
@@ -2665,17 +2661,19 @@ elif choice == "🏆 Arena Wyzwań":
             st.table(assign_medals(df_s.reset_index(drop=True))[["Użytkownik", "Ogień 🔥"]])
         with col2:
             st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
+            # Sortujemy po surowej wartości XP (w_raw)
             df_w = pd.DataFrame(visible_leaderboard)
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
-            if not df_w.empty: st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
-            else: st.caption("Brak danych.")
+            if not df_w.empty: 
+                st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
+            else: 
+                st.caption("Brak danych.")
 
-    # Podświetlenie pozycji aktualnego gracza (działa nawet jeśli gracz ma shadowbana)
+    # Podświetlenie pozycji aktualnego gracza
     st.write("---")
     my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
     if my_stats:
-        # Informacja dla użytkownika - on widzi swoje statystyki normalnie
-        st.info(f"Twoje statystyki ({current_lang_name}): Wiedza: **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
+        st.info(f"Twoje statystyki ({current_lang_name}): Wiedza (Mastery XP): **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
 elif choice == "📦 Generator":
