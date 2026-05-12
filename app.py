@@ -3650,7 +3650,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V570 - Announcements Engine & Analytics) ---
+# --- 27. ADMIN PRO (V571 - Rerun Exception Fix & Analytics) ---
 elif choice == "👑 Admin" and st.session_state.get("is_admin"):
     st.header("👑 Panel Administratora")
 
@@ -3694,7 +3694,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                     current_count += len(items)
                     progress_bar.progress(min(current_count / total_goal, 1.0))
                 else: break
-            except: break
+            except Exception: break
             time.sleep(0.5)
         st.success("Gotowe!")
 
@@ -3709,7 +3709,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             for item in items: item["lang"] = l_code
             get_db().table("idioms").insert(items).execute()
             st.success("Dodano idiomy!")
-        except: st.error("Błąd generatora idiomów.")
+        except Exception: st.error("Błąd generatora idiomów.")
 
     def seed_cultural_trivia(lang):
         import json
@@ -3722,17 +3722,15 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             for item in items: item["lang"] = l_code
             get_db().table("cultural_trivia").insert(items).execute()
             st.success("Dodano ciekawostki!")
-        except: st.error("Błąd generatora ciekawostek.")
+        except Exception: st.error("Błąd generatora ciekawostek.")
 
     # --- 3. LOGIKA DANYCH ---
     db = get_db()
     ud_raw = db.table("user_data").select("*").execute().data
     
-    # NOWA STRUKTURA TABS
     tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie", "📢 Ogłoszenia"])
 
     with tabs[0]:
-        # Pobieranie słówek dla analizy origin (R|G|S)
         all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
         df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
 
@@ -3751,42 +3749,31 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             is_u_admin = user.get("is_admin", False)
-            
             status_prefix = ""
             if user.get("is_banned"): status_prefix += "🚫 "
             if user.get("is_shadowbanned"): status_prefix += "👻 "
-
-            # Wykaz słówek (R|G|S)
             total_words = len(u_cards)
             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
             r_cnt = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
             g_cnt = sum(1 for x in oc if "Generator" in str(x))
             s_cnt = sum(1 for x in oc if "Skaner" in str(x))
-            
-            # Wiedza %
             w_str = "0%"
             if total_words > 0:
                 xp_sum = u_cards["mastery_xp"].fillna(0).sum()
                 w_val = int((xp_sum / (total_words * 150)) * 100)
                 w_str = f"{min(w_val, 100)}%"
-
-            # Statystyki czasu
             def proc_stats(raw_dict):
                 p = {code: 0.0 for code in ADMIN_ORDER}
                 for k, v in (raw_dict or {}).items():
                     if k in p: p[k] += v
                     else: p["Inn"] += v
                 return p
-
             u_daily = proc_stats(user.get("time_stats", {}) if user.get("last_visit_date") == today_iso else {})
             u_total = proc_stats(user.get("total_time_stats", {}))
-
-            # Agregacja globalna (bez Inne dla adminów)
             for code in ADMIN_ORDER:
                 if is_u_admin and code == "Inn": continue
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
-
             adm_summary.append({
                 "Użytkownik": f"{status_prefix}{uname}",
                 "Ostatnio": user.get("last_seen", "-"),
@@ -3799,26 +3786,18 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 "u_total_map": u_total,
                 "raw_uname": uname.lower()
             })
-
-        # Sortowanie: wobo -> wiola -> alpha
         def adm_sort(x):
             n = x["raw_uname"]
             if n == "wobo": return (0, "")
             if n == "wiola": return (1, "")
             return (2, n)
-        
         adm_summary.sort(key=adm_sort)
-        
         st.subheader("📋 Podsumowanie Kont")
         df_main = pd.DataFrame(adm_summary)
         st.dataframe(df_main.drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True,
             column_config={
-                "Nauka dziś": st.column_config.ProgressColumn(
-                    "Nauka dziś (cel 60m)", 
-                    min_value=0, max_value=60, format="%d min"
-                )
+                "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60, format="%d min")
             })
-
         st.divider()
         st.subheader("🕵️ Szczegółowy Czas (minuty)")
         hist_table = []
@@ -3828,8 +3807,6 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 row[MOD_MAP[code]] = int(item["u_total_map"][code] // 60)
             hist_table.append(row)
         st.dataframe(pd.DataFrame(hist_table), use_container_width=True, hide_index=True)
-
-        # Tabele Globalne
         st.divider()
         cg1, cg2 = st.columns(2)
         def show_glob(cont, title, d_dict):
@@ -3842,17 +3819,14 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
                 rows.append({"Moduł": MOD_MAP[code], "%": p, "Czas": t_str})
             cont.table(pd.DataFrame(rows))
-        
         show_glob(cg1, "📈 Globalnie (Dziś)", global_daily)
         show_glob(cg2, "📊 Globalnie (Historycznie)", global_total)
 
     with tabs[1]:
-        # --- TAB: ZARZĄDZANIE ---
         st.subheader("👤 Edytor Profili")
         u_list = [d["username"] for d in ud_raw]
         sel_u = st.selectbox("Wybierz konto:", u_list)
         t_data = next((i for i in ud_raw if i["username"] == sel_u), None)
-        
         if t_data:
             with st.expander(f"🛠️ Narzędzia: {sel_u}", expanded=True):
                 ce1, ce2 = st.columns(2)
@@ -3864,13 +3838,11 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                     is_b = st.checkbox("🚫 Zablokuj (BAN)", value=t_data.get("is_banned", False))
                     is_a = st.checkbox("👑 Admin", value=t_data.get("is_admin", False))
                     is_s = st.checkbox("👻 Shadowban", value=t_data.get("is_shadowbanned", False))
-                
                 if st.button(f"💾 Zapisz: {sel_u}", use_container_width=True, type="primary"):
                     upd = {"email": n_mail, "is_banned": is_b, "is_admin": is_a, "is_shadowbanned": is_s, "admin_notes": a_notes}
                     if n_pass: upd["password"] = n_pass
                     db.table("user_data").update(upd).eq("username", sel_u).execute()
                     st.success("Zaktualizowano!"); st.rerun()
-
         st.divider()
         st.subheader("📂 Backupy")
         cb1, cb2 = st.columns(2)
@@ -3882,7 +3854,6 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             if st.button("👤 Backup Users", use_container_width=True):
                 d_ud = db.table("user_data").select("*").execute().data
                 st.download_button("⬇️ Pobierz CSV", pd.DataFrame(d_ud).to_csv(index=False).encode('utf-8'), "users_backup.csv", "text/csv")
-
         st.divider()
         st.subheader("🤖 AI Seeders")
         g1, g2, g3 = st.tabs(["📚 Vocab", "📖 Idiomy", "🌍 Trivia"])
@@ -3898,67 +3869,57 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             if st.button("Generuj 10 Ciekawostek"): seed_cultural_trivia(cl)
 
     with tabs[2]:
-        # --- NOWA TAB: OGŁOSZENIA SYSTEMOWE ---
         st.subheader("📢 Zarządzanie Ogłoszeniami")
-        
         with st.form("new_announcement_form"):
             st.write("**Wyślij nową wiadomość systemową**")
             col_an1, col_ann2 = st.columns([3, 1])
-            
             ann_title = col_an1.text_input("Tytuł ogłoszenia:", placeholder="np. Nowa aktualizacja!")
             ann_target = col_ann2.selectbox("Adresat:", ["all"] + [u["username"] for u in ud_raw])
-            
             ann_message = st.text_area("Treść wiadomości:", placeholder="Wpisz co chcesz przekazać użytkownikom...")
-            
             col_an3, col_ann4, col_ann5 = st.columns([1, 2, 1])
             ann_icon = col_an3.text_input("Ikona (Emoji):", value="📢")
             ann_color = col_ann4.color_picker("Kolor tła wiadomości:", value="#2E86C1")
-            
-            submit_ann = st.form_submit_button("🚀 Opublikuj ogłoszenie", use_container_width=True)
-            
-            if submit_ann:
+            if st.form_submit_button("🚀 Opublikuj ogłoszenie", use_container_width=True):
                 if ann_title and ann_message:
                     try:
-                        db.table("system_announcements").insert({
-                            "title": ann_title,
-                            "message": ann_message,
-                            "target": ann_target,
-                            "icon": ann_icon,
-                            "color": ann_color,
-                            "is_active": True
-                        }).execute()
+                        db.table("system_announcements").insert({"title": ann_title, "message": ann_message, "target": ann_target, "icon": ann_icon, "color": ann_color, "is_active": True}).execute()
                         st.success("Ogłoszenie zostało wysłane!")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Błąd bazy: {e}. Czy stworzyłeś tabelę system_announcements?")
-                else:
-                    st.warning("Tytuł i treść nie mogą być puste.")
+                    except Exception as e: st.error(f"Błąd bazy: {e}")
+                else: st.warning("Tytuł i treść nie mogą być puste.")
 
         st.divider()
-        st.write("**Aktywne ogłoszenia**")
+        st.write("**Historia ogłoszeń**")
+        
+        ann_data = []
         try:
+            # Pobieramy dane bezpiecznie
             ann_res = db.table("system_announcements").select("*").order("created_at", desc=True).execute()
-            if ann_res.data:
-                for a in ann_res.data:
-                    with st.expander(f"{a['icon']} {a['title']} (Dla: {a['target']})"):
-                        st.write(a['message'])
-                        st.caption(f"Utworzono: {a['created_at']} | Kolor: {a['color']}")
-                        c_ann1, c_ann2 = st.columns(2)
+            ann_data = ann_res.data if ann_res.data else []
+        except Exception as e:
+            st.error(f"Błąd ładowania: {e}")
+
+        if ann_data:
+            for a in ann_data:
+                # Dodajemy status wizualny do nagłówka expandera
+                status_label = "✅ AKTYWNE" if a['is_active'] else "⚪ WYŁĄCZONE"
+                with st.expander(f"{a['icon']} {a['title']} ({status_label} | Dla: {a['target']})"):
+                    st.write(a['message'])
+                    st.caption(f"Utworzono: {a['created_at']} | Kolor: {a['color']}")
+                    c_ann1, c_ann2 = st.columns(2)
+                    
+                    # Logika przycisku zmiany stanu
+                    new_state = not a['is_active']
+                    btn_text = "✅ Aktywuj" if new_state else "⚪ Dezaktywuj"
+                    if c_ann1.button(btn_text, key=f"state_{a['id']}", use_container_width=True):
+                        db.table("system_announcements").update({"is_active": new_state}).eq("id", a['id']).execute()
+                        st.rerun()
                         
-                        # Przełącznik aktywności
-                        new_state = not a['is_active']
-                        if c_ann1.button(f"{'✅ Aktywuj' if new_state else '⚪ Dezaktywuj'}", key=f"state_{a['id']}"):
-                            db.table("system_announcements").update({"is_active": new_state}).eq("id", a['id']).execute()
-                            st.rerun()
-                            
-                        # Usuwanie
-                        if c_ann2.button("🗑️ Usuń trwale", key=f"del_ann_{a['id']}"):
-                            db.table("system_announcements").delete().eq("id", a['id']).execute()
-                            st.rerun()
-            else:
-                st.info("Brak ogłoszeń w historii.")
-        except:
-            st.error("Nie można załadować listy ogłoszeń. Sprawdź strukturę bazy danych.")
+                    if c_ann2.button("🗑️ Usuń trwale", key=f"del_ann_{a['id']}", use_container_width=True):
+                        db.table("system_announcements").delete().eq("id", a['id']).execute()
+                        st.rerun()
+        else:
+            st.info("Brak ogłoszeń w historii.")
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
