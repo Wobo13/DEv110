@@ -1904,14 +1904,16 @@ elif choice == "🐍 Lingwistyczny Wąż":
             st.rerun()
 
 
-# --- 16. BALONOWY WYŚCIG (V317 - Global Leaderboard Sync) ---
+# --- 16. BALONOWY WYŚCIG (V3.18 - Rules & Global Leaderboard Sync) ---
 elif choice == "🎈 Balonowy Wyścig":
     import time
+    import random
     
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    u = st.session_state.get("user", "Anonim")
     
-    # 1. CSS
+    # 1. STYLIZACJA CSS
     st.markdown("""
         <style>
             .target-card {
@@ -1939,104 +1941,131 @@ elif choice == "🎈 Balonowy Wyścig":
         </style>
     """, unsafe_allow_html=True)
 
-    # Przygotowanie danych
+    # 2. PRZYGOTOWANIE PULI SŁÓWEK
     if "bal_cards_pool" not in st.session_state or st.session_state.get("bal_lang_ref") != L_CODE:
         st.session_state.bal_cards_pool = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
         st.session_state.bal_lang_ref = L_CODE
 
     if len(st.session_state.bal_cards_pool) < 4:
-        st.warning(f"Potrzebujesz min. 4 słówek w języku {current_lang_name}!")
-    else:
-        if "bal_state" not in st.session_state:
-            st.session_state.bal_state = "START"
+        st.warning(f"Potrzebujesz przynajmniej 4 słówek w języku {current_lang_name}, aby rozpocząć wyścig!")
+        st.stop()
 
-        # --- EKRAN STARTOWY ---
-        if st.session_state.bal_state == "START":
-            st.markdown("<h2 style='text-align: center;'>🎈 Przygotuj się!</h2>", unsafe_allow_html=True)
-            if st.button("🚀 START", use_container_width=True):
-                st.session_state.bal_state = "PLAYING"
-                st.session_state.bal_score = 0
-                st.session_state.bal_start_time = time.time()
-                if "bal_target" in st.session_state: del st.session_state.bal_target
+    if "bal_state" not in st.session_state:
+        st.session_state.bal_state = "START"
+
+    # --- EKRAN STARTOWY ---
+    if st.session_state.bal_state == "START":
+        st.markdown("<h2 style='text-align: center;'>🎈 Balonowy Wyścig</h2>", unsafe_allow_html=True)
+        
+        st.info("""
+        🚀 **ZASADY WYŚCIGU:**
+        * Masz równe **30 sekund** na zdobycie jak największej liczby punktów.
+        * Dopasuj polskie tłumaczenie do słowa wyświetlonego na głównej karcie.
+        * **Punktacja:** Poprawna odpowiedź to **+1 pkt**, błędna to **-1 pkt**.
+        * Walcz o jak najwyższy wynik, aby wspiąć się na szczyt **Areny Wyzwań**!
+        """)
+        
+        if st.button("🚀 ROZPOCZNIJ WYŚCIG", use_container_width=True, type="primary"):
+            st.session_state.bal_state = "PLAYING"
+            st.session_state.bal_score = 0
+            st.session_state.bal_start_time = time.time()
+            if "bal_target" in st.session_state: del st.session_state.bal_target
+            st.rerun()
+
+    # --- EKRAN WYNIKÓW (GAME OVER) ---
+    elif st.session_state.bal_state == "FINISHED":
+        st.balloons()
+        st.markdown(f"""
+            <div style='text-align:center;'>
+                <h1>Koniec Wyścigu! 🏁</h1>
+                <h2 style='color:#ff4b4b;'>TWÓJ WYNIK: {st.session_state.bal_score} pkt</h2>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        if col1.button("🔄 Spróbuj ponownie", use_container_width=True):
+            st.session_state.bal_state = "START"
+            st.rerun()
+        if col2.button("🏆 Zobacz Arenę", use_container_width=True):
+            st.session_state.choice = "🏆 Arena Wyzwań"
+            st.rerun()
+
+    # --- EKRAN GRY ---
+    elif st.session_state.bal_state == "PLAYING":
+        
+        @st.fragment(run_every="1s") 
+        def game_fragment():
+            elapsed = time.time() - st.session_state.bal_start_time
+            time_left = max(0, int(30 - elapsed))
+
+            # --- LOGIKA ZAKOŃCZENIA I ZAPISU ---
+            if time_left <= 0:
+                final_score = st.session_state.bal_score
+                ud = st.session_state.user_data
+                bal_key = f"top_balloons_{L_CODE}"
+                
+                try:
+                    db = get_db()
+                    # 1. Zapis do globalnej tabeli rankingowej
+                    db.table("game_scores").insert({
+                        "username": u,
+                        "game_name": "balloons",
+                        "lang": L_CODE,
+                        "score": float(final_score)
+                    }).execute()
+
+                    # 2. Aktualizacja lokalnego Top 10 użytkownika
+                    current_scores = ud.get(bal_key, [])
+                    if not isinstance(current_scores, list): current_scores = []
+                    current_scores.append(final_score)
+                    current_scores = sorted([int(s) for s in current_scores], reverse=True)[:10]
+                    
+                    ud[bal_key] = current_scores
+                    save_user_data(u, ud)
+                except:
+                    pass # Zabezpieczenie przed błędem połączenia
+                
+                st.session_state.bal_state = "FINISHED"
                 st.rerun()
 
-        # --- EKRAN WYNIKÓW ---
-        elif st.session_state.bal_state == "FINISHED":
-            st.balloons()
-            st.markdown(f"<div style='text-align:center;'><h1>Koniec! 🏁</h1><h2>Wynik: {st.session_state.bal_score} pkt</h2></div>", unsafe_allow_html=True)
+            # GENEROWANIE NOWEGO ZADANIA
+            if "bal_target" not in st.session_state:
+                pool = st.session_state.bal_cards_pool
+                target = random.choice(pool)
+                # Przygotowanie błędnych opcji
+                others = [c['pl'] for c in pool if c['id'] != target['id']]
+                wrong = random.sample(others, min(len(others), 2))
+                options = [target['pl']] + wrong
+                random.shuffle(options)
+                
+                st.session_state.bal_target = target
+                st.session_state.bal_options = options
+
+            # INTERFEJS GRY
+            st.markdown(f"""
+                <div style='display:flex; justify-content:space-between; font-weight:bold; font-size:1.5rem;'>
+                    <span>⏱️ Pozostało: {time_left}s</span>
+                    <span style='color:#ffbc00;'>⭐ Wynik: {st.session_state.bal_score}</span>
+                </div>
+            """, unsafe_allow_html=True)
             
-            col1, col2 = st.columns(2)
-            if col1.button("🔄 Jeszcze raz", use_container_width=True):
-                st.session_state.bal_state = "START"; st.rerun()
-            if col2.button("🏆 Arena Wyzwań", use_container_width=True):
-                st.session_state.choice = "🏆 Arena Wyzwań"; st.rerun()
+            st.markdown(f"<div class='target-card'>{st.session_state.bal_target[L_CODE]}</div>", unsafe_allow_html=True)
 
-        # --- EKRAN GRY ---
-        elif st.session_state.bal_state == "PLAYING":
-            
-            @st.fragment(run_every="1s") 
-            def game_fragment():
-                elapsed = time.time() - st.session_state.bal_start_time
-                time_left = max(0, int(30 - elapsed))
-
-                # --- LOGIKA ZAPISU WYNIKU ---
-                if time_left <= 0:
-                    final_score = st.session_state.bal_score
-                    ud = st.session_state.user_data
-                    bal_key = f"top_balloons_{L_CODE}"
+            cols = st.columns(3)
+            for i, opt in enumerate(st.session_state.bal_options):
+                if cols[i].button(opt, key=f"bal_btn_{i}", use_container_width=True):
+                    if opt == st.session_state.bal_target['pl']:
+                        st.session_state.bal_score += 1
+                        st.toast("Świetnie! +1", icon="✅")
+                    else:
+                        st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
+                        st.toast("Błąd! -1", icon="❌")
                     
-                    try:
-                        db = get_db()
-                        
-                        # 1. NOWY SYSTEM: Centralna tabela (dla Areny Tydzień/Miesiąc)
-                        db.table("game_scores").insert({
-                            "username": u,
-                            "game_name": "balloons",
-                            "lang": L_CODE,
-                            "score": float(final_score)
-                        }).execute()
-
-                        # 2. STARY SYSTEM: Top 10 w profilu użytkownika
-                        current_scores = ud.get(bal_key, [])
-                        if not isinstance(current_scores, list): current_scores = []
-                        current_scores.append(final_score)
-                        current_scores = sorted([int(s) for s in current_scores], reverse=True)[:10]
-                        
-                        ud[bal_key] = current_scores
-                        save_user_data(u, ud)
-                    except:
-                        pass
-                    
-                    st.session_state.bal_state = "FINISHED"
+                    # Usunięcie celu wymusza losowanie nowego przy następnym fragmencie
+                    del st.session_state.bal_target
                     st.rerun()
 
-                # Losowanie celu
-                if "bal_target" not in st.session_state:
-                    pool = st.session_state.bal_cards_pool
-                    target = random.choice(pool)
-                    others = [c['pl'] for c in pool if c['id'] != target['id']]
-                    wrong = random.sample(others, min(len(others), 2))
-                    options = [target['pl']] + wrong
-                    random.shuffle(options)
-                    st.session_state.bal_target = target
-                    st.session_state.bal_options = options
-
-                # Interfejs
-                st.markdown(f"<div style='display:flex; justify-content:space-between; font-weight:bold; font-size:1.5rem;'><span>⏱️ {time_left}s</span><span style='color:#ffbc00;'>⭐ {st.session_state.bal_score}</span></div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='target-card'>{st.session_state.bal_target[L_CODE]}</div>", unsafe_allow_html=True)
-
-                cols = st.columns(3)
-                for i, opt in enumerate(st.session_state.bal_options):
-                    if cols[i].button(opt, key=f"bal_btn_{i}", use_container_width=True):
-                        if opt == st.session_state.bal_target['pl']:
-                            st.session_state.bal_score += 1
-                        else:
-                            st.session_state.bal_score = max(0, st.session_state.bal_score - 1)
-                        
-                        del st.session_state.bal_target
-                        st.rerun()
-
-            game_fragment()
+        game_fragment()
 
 
 # --- 17. JĘZYKOWA RULETKA (V1.2 - Fast & Reverse Edition) ---
