@@ -252,7 +252,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V562 - Stable Schema) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V563 - Atomic RPC Registration) ---
 
 import hmac
 import base64
@@ -260,8 +260,9 @@ import time
 import hashlib
 import re
 
-# Pomocnicza funkcja do pobierania klucza
+# Pomocnicza funkcja do pobierania klucza podpisu
 def get_signature_key():
+    """Pobiera klucz do weryfikacji tokenów sesji."""
     key = SUPABASE_KEY
     if not key:
         st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony. Aplikacja wstrzymana.")
@@ -269,7 +270,7 @@ def get_signature_key():
     return key
 
 def generate_secure_token(username, days_valid=30):
-    """Tworzy bezpieczny token z kryptograficznym podpisem."""
+    """Tworzy bezpieczny token z kryptograficznym podpisem HMAC."""
     secret = get_signature_key()
     expires = int(time.time()) + (days_valid * 86400)
     message = f"{username}.{expires}"
@@ -278,7 +279,7 @@ def generate_secure_token(username, days_valid=30):
     return base64.urlsafe_b64encode(token_raw.encode()).decode()
 
 def verify_secure_token(token_b64):
-    """Weryfikuje token i jego integralność."""
+    """Weryfikuje integralność i datę ważności tokena."""
     try:
         secret = get_signature_key()
         token_raw = base64.urlsafe_b64decode(token_b64.encode()).decode()
@@ -294,13 +295,15 @@ def verify_secure_token(token_b64):
     return None
 
 def is_valid_email(email):
-    """Prosta walidacja formatu e-mail."""
+    """Walidacja formatu adresu e-mail za pomocą wyrażenia regularnego."""
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
+# Inicjalizacja stanu autoryzacji w sesji
 if "auth" not in st.session_state:
     st.session_state.auth = False
     st.session_state.is_admin = False
     
+    # Próba automatycznego logowania przez token w URL
     if "token" in st.query_params:
         secure_token = st.query_params["token"]
         verified_user = verify_secure_token(secure_token)
@@ -322,6 +325,7 @@ if "auth" not in st.session_state:
             st.query_params.clear()
             st.rerun()
 
+# Wyświetlanie ekranu logowania, jeśli użytkownik nie jest uwierzytelniony
 if not st.session_state.auth:
     st.markdown("""
         <style>
@@ -379,11 +383,13 @@ if not st.session_state.auth:
         st.caption("📧 E-mail jest wymagany do bezpiecznego odzyskiwania hasła.")
 
         if st.button("Załóż konto", use_container_width=True):
+            # 1. Podstawowa walidacja długości danych
             if len(rn) < 3 or len(rp) < 4:
                 st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
             elif not re_mail or not is_valid_email(re_mail):
                 st.error("Podaj poprawny adres e-mail!")
             else:
+                # 2. Sprawdzenie, czy dane nie są już zajęte w systemie auth
                 check_user = db.table("users_auth").select("username").eq("username", rn).execute()
                 check_email = db.table("users_auth").select("username").eq("email", re_mail).execute()
                 
@@ -392,31 +398,26 @@ if not st.session_state.auth:
                 elif check_email.data:
                     st.error("Ten adres e-mail jest już przypisany do innego konta!")
                 else:
+                    # 3. ATOMOWA REJESTRACJA (Obie tabele jednocześnie)
                     try:
-                        # 1. Rejestracja w tabeli technicznej (hasło szyfrowane)
-                        db.table("users_auth").insert({
-                            "username": rn, 
-                            "password_hash": hash_pw(rp),
-                            "email": re_mail 
-                        }).execute()
-
-                        # 2. Rejestracja profilu (bez kolumny password, której nie ma w bazie)
-                        db.table("user_data").insert({
-                            "username": rn, 
-                            "email": re_mail,
-                            "is_banned": False, 
-                            "is_admin": False,
-                            "is_shadowbanned": False,
-                            "provider": "legacy"
+                        # Wywołujemy funkcję bazodanową RPC, która gwarantuje spójność danych
+                        db.rpc("register_user_v2", {
+                            "new_username": rn,
+                            "new_email": re_mail,
+                            "new_password_hash": hash_pw(rp),
+                            "new_provider": "legacy"
                         }).execute()
                         
+                        # Inicjalizacja sesji użytkownika
                         load_user_data(rn)
                         st.success("Konto gotowe! Logowanie...")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
+                        # W razie błędu baza automatycznie wycofa zmiany w obu tabelach
                         st.error(f"Błąd podczas tworzenia konta: {e}")
 
+    # Zatrzymanie renderowania głównego interfejsu dla gości
     st.stop()
 
 # --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V560 - Robust Safety Sync) ---
