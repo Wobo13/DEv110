@@ -519,7 +519,7 @@ if u:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
 
-# --- 6. SIDEBAR (V388 - Club & Arena Integration) ---
+# --- 6. SIDEBAR (V400 - Mastery XP Engine Integration) ---
 with st.sidebar:
     st.markdown("""
         <style>
@@ -573,16 +573,24 @@ with st.sidebar:
 
     L_CODE = LANG_MAP[st.session_state.current_lang]["code"]
 
-    # 3. STATYSTYKI WIEDZY I CELU DNIA
+    # 3. STATYSTYKI WIEDZY (Oparte na Mastery XP) ORAZ CELU DNIA
     all_c = [c for c in st.session_state.flashcards if c.get("lang") == L_CODE]
     
     wiedza = 0
     if all_c:
-        today = date.today()
-        strong = len([c for c in all_c if (pd.to_datetime(c.get('next_review', today)).date() - today).days > 6])
-        wiedza = int((strong / len(all_c)) * 100)
+        # LICZENIE WIEDZY NA PODSTAWIE XP:
+        # Przyjmujemy, że 150 XP to 100% opanowania jednego słowa (Poziom 5)
+        current_total_xp = sum(c.get("mastery_xp", 0) for c in all_c)
+        max_possible_xp = len(all_c) * 150
+        
+        if max_possible_xp > 0:
+            wiedza = int((current_total_xp / max_possible_xp) * 100)
+        
+        # Zabezpieczenie, żeby nie przekroczyć 100% (jeśli ktoś ma słówka > 150 XP)
+        wiedza = min(wiedza, 100)
 
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det"]
+    # Cel dnia (czasowy)
+    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur"]
     time_stats = ud.get("time_stats", {})
     total_sec = sum(time_stats.get(c, 0) for c in m_list)
     
@@ -613,7 +621,7 @@ with st.sidebar:
         for item in ["📅 Powtórki", "🚀 Trening", "🕹️ Quiz", "🎴 Fiszki", "🧪 Laboratorium", "✍️ Asystent Pisania", "🕵️ Kulturowy Detektyw", "🛠️ Warsztat", "📝 Testy", "🤖 Sparing AI"]:
             menu_item(item, item)
 
-    # Sekcja GRY (Z nowym Klubem Pojedynków)
+    # Sekcja GRY
     list_gry = ["🧠 Memory", "🏗️ Konstruktor", "🐍 Lingwistyczny Wąż", "🎈 Balonowy Wyścig", "🎲 Językowa Ruletka", "⚔️ Klub Pojedynków", "🏆 Arena Wyzwań"]
     with st.expander("🎮 Gry", expanded=(choice_now in list_gry)):
         for item in list_gry:
@@ -640,7 +648,8 @@ with st.sidebar:
     if st.button("🚪 Wyloguj", use_container_width=True, key="logout_btn"):
         st.query_params.clear()
         for key in list(st.session_state.keys()):
-            del st.session_state[key]
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
 # --- 7. START (V3.1 - Dashboard + Duel Alerts) ---
