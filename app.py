@@ -2755,7 +2755,7 @@ elif choice == "📦 Generator":
             del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V451 - Syntax Fix & Mass Category Editor) ---
+# --- 22. SKANER AI (V452 - Robust Syntax Fix) ---
 elif choice == "📸 Skaner AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2801,12 +2801,15 @@ elif choice == "📸 Skaner AI":
                 try:
                     res_raw = get_openai_response(prompt, img_obj=img_obj).strip()
                     
-                    # POPRAWIONA LINIA (Wszystko w jednej linii, bez błędów składni)
-                    if res_raw.startswith("```"):
-                        res_raw = res_raw.replace("
-```json", "").replace("```", "").strip()
+                    # --- BARDZIEJ ODPORNE OCZYSZCZANIE JSON ---
+                    # Usuwamy backticki i frazę 'json' w sposób odporny na błędy kopiowania
+                    cleaned_res = res_raw.strip()
+                    if cleaned_res.startswith("```"):
+                        cleaned_res = cleaned_res.strip("`").strip()
+                        if cleaned_res.lower().startswith("json"):
+                            cleaned_res = cleaned_res[4:].strip()
                         
-                    data = json.loads(res_raw)
+                    data = json.loads(cleaned_res)
                     st.session_state.scanner_results = data.get("flashcards", [])
                     st.success(f"Znaleziono {len(st.session_state.scanner_results)} słówek!")
                 except Exception as e:
