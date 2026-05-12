@@ -2998,8 +2998,11 @@ elif choice == "➕ Dodaj":
                 del st.session_state.single_temp
                 st.rerun()
 
-# --- 24. SŁOWNIK (V400 - Mastery XP Visualization) ---
+# --- 24. SŁOWNIK (V450 - Mass Edit & Alpha Filter) ---
 elif choice == "📖 Słownik":
+    import re
+    import unicodedata
+
     # Pobieramy aktualny język i kody z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -3010,58 +3013,87 @@ elif choice == "📖 Słownik":
     # 1. Filtrowanie słówek pod wybrany język
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
-    # 2. Pobieranie unikalnych tagów dla filtrów
+    # 2. Pomocnicza funkcja do wyciągania litery (pomijanie rodzajników)
+    def get_sort_char(text):
+        t = text.lower().strip()
+        # Usuwanie rodzajników DE i CS
+        t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
+        # Normalizacja diakrytyki (np. Ä -> A)
+        t = "".join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+        return t[0].upper() if t else "#"
+
+    # 3. Pobieranie unikalnych tagów i dostępnych liter
     all_tags = set()
+    available_letters = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
+        available_letters.add(get_sort_char(c['de']))
     
-    # --- UI WYSZUKIWARKI I DUBLE ---
-    col1, col2, col3 = st.columns([1, 2, 1])
-    f_tag = col1.selectbox(f"Kategorie:", ["Wszystkie"] + sorted(list(all_tags)))
-    search = col2.text_input("Szukaj słowa:", placeholder=f"Szukaj w {current_lang_name} lub PL...")
-    
-    # Przycisk trybu dubli
-    if "show_dupes" not in st.session_state:
-        st.session_state.show_dupes = False
-    
-    dupe_btn_label = "🔙 Pokaż wszystko" if st.session_state.show_dupes else "👯 Znajdź duble"
-    if col3.button(dupe_btn_label, use_container_width=True):
+    # --- UI FILTRÓW ---
+    with st.container(border=True):
+        col1, col2, col3 = st.columns([1.5, 2, 1])
+        f_tag = col1.selectbox(f"Kategorie:", ["Wszystkie"] + sorted(list(all_tags)))
+        search = col2.text_input("Szukaj słowa:", placeholder="Szukaj w obu językach...")
+        
+        # Opcje dodatkowe
+        show_all = col3.toggle("Pokaż wszystkie", value=False, help="Wyłącza limit 50 wyników")
+        mass_edit_mode = col3.toggle("Masowa edycja", value=False, help="Pozwala zmieniać tagi wielu słów na raz")
+
+    # Filtr alfabetyczny (poziomy pasek)
+    alphabet = sorted(list(available_letters))
+    selected_letter = st.radio("Litera:", ["Wszystkie"] + alphabet, horizontal=True)
+
+    # Przyciski akcji (Dubla)
+    if "show_dupes" not in st.session_state: st.session_state.show_dupes = False
+    dupe_btn_label = "🔙 Powrót" if st.session_state.show_dupes else "👯 Znajdź duble"
+    if st.button(dupe_btn_label, use_container_width=True):
         st.session_state.show_dupes = not st.session_state.show_dupes
         st.rerun()
 
-    # 3. Logika wyszukiwania / Wykrywania dubli
+    # 4. Logika wyszukiwania / Dubli
     if st.session_state.show_dupes:
-        # Grupowanie słówek po znormalizowanym tekście
         from collections import defaultdict
         groups = defaultdict(list)
         for c in lang_cards:
             norm = normalize_text(c['de'])
             groups[norm].append(c)
-        
-        # Zostawiamy tylko te grupy, które mają więcej niż 1 element
-        filtered = []
-        for norm, cards in groups.items():
-            if len(cards) > 1:
-                filtered.extend(cards)
-        
-        st.warning(f"Tryb wyszukiwania duplikatów włączony. Znaleziono {len(filtered)} powtórzonych wpisów.")
+        filtered = [c for norm, cards in groups.items() if len(cards) > 1 for c in cards]
+        st.warning(f"Tryb duplikatów: Znaleziono {len(filtered)} wpisów.")
     else:
-        # Standardowe wyszukiwanie
         filtered = [
             c for c in lang_cards 
             if (f_tag == "Wszystkie" or f_tag in str(c.get('category',''))) 
             and (search.lower() in str(c.get('de','')).lower() or search.lower() in str(c.get('pl','')).lower())
+            and (selected_letter == "Wszystkie" or get_sort_char(c['de']) == selected_letter)
         ]
 
     st.write("---")
+    
+    # --- MASOWA EDYCJA ---
+    if mass_edit_mode and filtered:
+        with st.expander("🛠️ Panel Masowej Edycji", expanded=True):
+            st.info("Zaznacz słówka na liście poniżej, wpisz nową kategorię i zatwierdź.")
+            new_cat = st.text_input("Nowa kategoria dla wybranych:", placeholder="np. Dom, Praca")
+            if st.button("ZASTOSUJ DO ZAZNACZONYCH", type="primary", use_container_width=True):
+                selected_ids = [idx for idx, val in st.session_state.items() if str(idx).startswith("sel_") and val is True]
+                if selected_ids and new_cat:
+                    for s_id in selected_ids:
+                        real_id = s_id.replace("sel_", "")
+                        update_word(real_id, {"category": new_cat})
+                    st.session_state.flashcards = load_flashcards(u)
+                    st.success(f"Zaktualizowano {len(selected_ids)} słówek! ✅")
+                    st.rerun()
+                else:
+                    st.error("Musisz wybrać słówka i wpisać nazwę kategorii!")
+
     st.subheader(f"Liczba słówek: {len(filtered)}")
     
     # Zabezpieczenie wydajności
-    MAX_DISPLAY = 100 if st.session_state.show_dupes else 50
-    display_list = filtered[:MAX_DISPLAY]
+    limit = len(filtered) if show_all else 50
+    display_list = filtered[:limit]
     
-    if len(filtered) > MAX_DISPLAY:
-        st.warning(f"Wyświetlam pierwsze {MAX_DISPLAY} wyników.")
+    if len(filtered) > limit:
+        st.warning(f"Wyświetlam pierwsze {limit} wyników. Użyj filtrów lub 'Pokaż wszystkie'.")
         
     if not display_list:
         st.info(f"Brak słówek spełniających kryteria.")
@@ -3071,14 +3103,18 @@ elif choice == "📖 Słownik":
         flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
         header_color = "⚠️" if st.session_state.show_dupes else flag
         
-        with st.expander(f"{header_color} {c['de']} ➔ 🇵🇱 {c['pl']}"):
+        # Checkbox dla masowej edycji
+        cols = st.columns([0.1, 0.9]) if mass_edit_mode else [st.container()]
+        
+        if mass_edit_mode:
+            is_selected = cols[0].checkbox("", key=f"sel_{c['id']}")
+            
+        with cols[-1].expander(f"{header_color} {c['de']} ➔ 🇵🇱 {c['pl']}"):
             # Metadata
             st.caption(f"🗓️ Powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')} | ID: {c['id']}")
             
-            # --- NOWOŚĆ: WIZUALIZACJA XP I POZIOMU ---
+            # Wizualizacja XP
             xp = int(c.get("mastery_xp", 0))
-            
-            # Definicja nazw poziomów na podstawie punktów
             if xp <= 10: lvl_name, lvl_color = "Nowicjusz", "gray"
             elif xp <= 30: lvl_name, lvl_color = "Zaznajomiony", "#FF8C00"
             elif xp <= 60: lvl_name, lvl_color = "Uczeń", "#1E90FF"
@@ -3086,55 +3122,41 @@ elif choice == "📖 Słownik":
             elif xp <= 150: lvl_name, lvl_color = "Ekspert", "#228B22"
             else: lvl_name, lvl_color = "Mistrz 🏆", "#FFD700"
 
-            col_xp1, col_xp2 = st.columns([3, 1])
-            with col_xp1:
-                st.progress(min(xp / 150, 1.0))
-            with col_xp2:
-                st.markdown(f"<div style='text-align: right; color: {lvl_color}; font-weight: bold; font-size: 0.85rem;'>{lvl_name} ({xp} XP)</div>", unsafe_allow_html=True)
-            # ----------------------------------------
+            c_xp1, c_xp2 = st.columns([3, 1])
+            c_xp1.progress(min(xp / 150, 1.0))
+            c_xp2.markdown(f"<div style='text-align: right; color: {lvl_color}; font-weight: bold; font-size: 0.85rem;'>{lvl_name} ({xp} XP)</div>", unsafe_allow_html=True)
 
-            # Pobieranie tekstu przykładu
+            # Przykłady
             exs = c.get("examples", [])
             example_to_play = None
-            
             if exs and isinstance(exs, list) and len(exs) > 0:
-                st.markdown("**Przykłady użycia:**")
+                st.markdown("**Przykłady:**")
                 for ex in exs:
                     st.write(f"🔹 **{ex.get('de')}**")
                     st.write(f"&nbsp;&nbsp;&nbsp;&nbsp;*{ex.get('pl')}*")
                     if not example_to_play: example_to_play = ex.get('de')
             elif c.get('example'):
-                st.markdown("**Przykład użycia:**")
                 st.write(f"🔹 **{c['example']}**")
                 example_to_play = c['example']
 
-            st.write("")
-            
-            # Przycisk Audio
-            if st.button(f"🔊 Odsłuchaj wymowę ({L_LABEL})", key=f"audio_{c['id']}", use_container_width=True):
+            # Akcje
+            col_a1, col_a2 = st.columns(2)
+            if col_a1.button(f"🔊 Odsłuchaj", key=f"audio_{c['id']}", use_container_width=True):
                 play_audio(c['de'], example_to_play, lang=L_CODE)
-            
-            st.divider()
             
             # --- FORMULARZ EDYCJI ---
             with st.form(f"ed_form_{c['id']}"):
-                st.markdown("🔍 **Edytuj dane słówka:**")
-                n_de = st.text_input(f"Słowo ({current_lang_name})", c['de'])
-                n_pl = st.text_input("Tłumaczenie (PL)", c['pl'])
-                n_ca = st.text_input("Kategorie / Tagi", c.get('category',''))
-                
-                if st.form_submit_button("💾 Zapisz zmiany", use_container_width=True):
+                n_de = st.text_input("Słowo", c['de'])
+                n_pl = st.text_input("Tłumaczenie", c['pl'])
+                n_ca = st.text_input("Kategorie", c.get('category',''))
+                if st.form_submit_button("💾 Zapisz", use_container_width=True):
                     update_word(c['id'], {"de": n_de, "pl": n_pl, "category": n_ca, "lang": L_CODE})
                     st.session_state.flashcards = load_flashcards(u)
-                    st.toast("Zaktualizowano! ✅")
                     st.rerun()
             
-            # Przycisk Usuwania
-            if st.button("🗑️ Usuń to słówko", key=f"del_btn_{c['id']}", type="primary", use_container_width=True):
+            if st.button("🗑️ Usuń", key=f"del_{c['id']}", type="primary", use_container_width=True):
                 delete_word(c['id'])
-                # Aktualizujemy lokalną bazę
                 st.session_state.flashcards = [card for card in st.session_state.flashcards if card['id'] != c['id']]
-                st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
 # --- 25. STATYSTYKI (V411 - Robust XP Analytics Fix) ---
