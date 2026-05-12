@@ -252,43 +252,44 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V293 + Ban Security) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V294 - Security Hardened) ---
 
 import hmac
 import base64
 import time
 import hashlib
 
-# Pomocnicze funkcje do generowania i weryfikacji bezpiecznego tokena
+# Pomocnicza funkcja do pobierania klucza - usunięto hardcoded fallback
+def get_signature_key():
+    key = SUPABASE_KEY # Klucz pobierany ze st.secrets
+    if not key:
+        # Jeśli klucz nie jest skonfigurowany, blokujemy aplikację zamiast używać słabego klucza
+        st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony. Aplikacja wstrzymana.")
+        st.stop()
+    return key
+
 def generate_secure_token(username, days_valid=30):
-    """Tworzy bezpieczny token z datą ważności i kryptograficznym podpisem."""
-    secret = SUPABASE_KEY if SUPABASE_KEY else "fallback-secret-key-123"
-    expires = int(time.time()) + (days_valid * 86400) # 86400 sekund = 1 dzień
+    """Tworzy bezpieczny token z kryptograficznym podpisem."""
+    secret = get_signature_key()
+    expires = int(time.time()) + (days_valid * 86400)
     message = f"{username}.{expires}"
     
-    # Tworzymy cyfrowy podpis
     signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     token_raw = f"{message}.{signature}"
-    
-    # Kodujemy do Base64, żeby URL nie zawierał znaków specjalnych
     return base64.urlsafe_b64encode(token_raw.encode()).decode()
 
 def verify_secure_token(token_b64):
-    """Weryfikuje token, jego podpis i datę ważności."""
+    """Weryfikuje token i jego integralność."""
     try:
-        secret = SUPABASE_KEY if SUPABASE_KEY else "fallback-secret-key-123"
-        # Dekodujemy z Base64
+        secret = get_signature_key()
         token_raw = base64.urlsafe_b64decode(token_b64.encode()).decode()
         parts = token_raw.split('.')
         
         if len(parts) != 3: return None
         username, expires, signature = parts
         
-        # Sprawdzamy czy token nie wygasł
-        if int(time.time()) > int(expires): 
-            return None 
-            
-        # Sprawdzamy oryginalność podpisu
+        if int(time.time()) > int(expires): return None
+        
         expected_sig = hmac.new(secret.encode(), f"{username}.{expires}".encode(), hashlib.sha256).hexdigest()
         
         if hmac.compare_digest(signature, expected_sig):
@@ -297,76 +298,61 @@ def verify_secure_token(token_b64):
         return None
     return None
 
-
 if "auth" not in st.session_state:
     st.session_state.auth = False
+    st.session_state.is_admin = False # Inicjalizacja bezpiecznej flagi admina
     
-    # --- BEZPIECZNE SPRAWDZANIE TOKENA Z URL ---
     if "token" in st.query_params:
         secure_token = st.query_params["token"]
         verified_user = verify_secure_token(secure_token)
         
         if verified_user:
-            # Dodatkowa weryfikacja czy użytkownik z tokena nie dostał bana w międzyczasie
             db = get_db()
-            check_ban = db.table("user_data").select("is_banned").eq("username", verified_user).execute()
-            if check_ban.data and check_ban.data[0].get("is_banned"):
-                st.query_params.clear()
-                st.error("Twoja sesja wygasła lub konto zostało zablokowane.")
-                st.stop()
+            # Pobieramy dane użytkownika, aby sprawdzić bana i uprawnienia admina
+            res = db.table("user_data").select("is_banned, is_admin").eq("username", verified_user).execute()
             
-            st.session_state.auth, st.session_state.user = True, verified_user
+            if res.data:
+                user_info = res.data[0]
+                if user_info.get("is_banned"):
+                    st.query_params.clear()
+                    st.error("Twoja sesja wygasła lub konto zostało zablokowane.")
+                    st.stop()
+                
+                st.session_state.auth = True
+                st.session_state.user = verified_user
+                # Bezpieczne ustawienie flagi admina z bazy danych
+                st.session_state.is_admin = user_info.get("is_admin", False)
         else:
             st.query_params.clear()
             st.rerun()
 
-
 if not st.session_state.auth:
-    # --- RESPNSYWNY TYTUŁ ---
-    st.markdown("""
-        <style>
-            .mobile-title {
-                font-size: 8vw;
-                font-weight: bold;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                margin-bottom: 20px;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-            @media (min-width: 768px) {
-                .mobile-title {
-                    font-size: 40px;
-                }
-            }
-        </style>
-        <div class="mobile-title">
-            <span>🚀</span>
-            <span>Niemiecki Master</span>
-        </div>
-    """, unsafe_allow_html=True)
+    # Stylizacja tytułu... (zachowaj swój CSS)
+    st.markdown('<div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>', unsafe_allow_html=True)
 
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
+    
     with t1:
         un = st.text_input("Użytkownik", key="l_u").lower().strip()
         pw = st.text_input("Hasło", type="password", key="l_p")
-        
         remember_me = st.checkbox("Zapamiętaj mnie na tym urządzeniu", value=True)
         
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
-            # 1. Weryfikacja danych auth
-            res = db.table("users_auth").select("*").eq("username", un).execute()
-            if res.data and res.data[0]["password_hash"] == hash_pw(pw):
+            res_auth = db.table("users_auth").select("*").eq("username", un).execute()
+            if res_auth.data and res_auth.data[0]["password_hash"] == hash_pw(pw):
                 
-                # 2. Weryfikacja czy użytkownik nie jest zbanowany w tabeli user_data
-                ban_res = db.table("user_data").select("is_banned").eq("username", un).execute()
-                if ban_res.data and ban_res.data[0].get("is_banned"):
-                    st.error("🚫 Twoje konto zostało zablokowane. Skontaktuj się z administratorem.")
+                # Pobieramy status bana i flagę admina przy logowaniu
+                res_data = db.table("user_data").select("is_banned, is_admin").eq("username", un).execute()
+                
+                if res_data.data and res_data.data[0].get("is_banned"):
+                    st.error("🚫 Twoje konto zostało zablokowane.")
                 else:
-                    st.session_state.auth, st.session_state.user = True, un
+                    st.session_state.auth = True
+                    st.session_state.user = un
+                    # Zapisujemy status admina w sesji na podstawie bazy danych
+                    st.session_state.is_admin = res_data.data[0].get("is_admin", False) if res_data.data else False
+                    
                     if remember_me:
                         st.query_params["token"] = generate_secure_token(un)
                     else:
@@ -376,18 +362,18 @@ if not st.session_state.auth:
                 st.error("Błędne dane logowania")
                 
     with t2:
+        # Rejestracja (zachowaj swoją logikę, dodaj tylko domyślne is_admin: False)
         rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
         rp = st.text_input("Hasło", type="password", key="r_p")
         if st.button("Załóż konto", use_container_width=True):
             if len(rn) > 2 and len(rp) > 3:
                 check = db.table("users_auth").select("*").eq("username", rn).execute()
                 if not check.data:
-                    # Dodajemy użytkownika do auth
                     db.table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
-                    # Inicjalizujemy pusty profil w user_data z podstawowymi flagami
                     db.table("user_data").insert({
                         "username": rn, 
                         "is_banned": False, 
+                        "is_admin": False, # Domyślnie zwykły użytkownik
                         "is_shadowbanned": False,
                         "provider": "legacy"
                     }).execute()
@@ -399,7 +385,7 @@ if not st.session_state.auth:
                 else:
                     st.error("Ten użytkownik jest już zajęty!")
             else:
-                st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+                st.error("Login i Hasło są za krótkie.")
     st.stop()
 
 # --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V500 - Safety & Ban Sync) ---
