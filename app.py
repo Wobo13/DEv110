@@ -3008,7 +3008,7 @@ elif choice == "➕ Dodaj":
                 del st.session_state.single_temp
                 st.rerun()
 
-# --- 24. SŁOWNIK (V276 - Multilang + Duplicate Finder) ---
+# --- 24. SŁOWNIK (V400 - Mastery XP Visualization) ---
 elif choice == "📖 Słownik":
     # Pobieramy aktualny język i kody z sesji
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -3079,12 +3079,30 @@ elif choice == "📖 Słownik":
     # 5. Renderowanie listy wyników
     for c in display_list:
         flag = "🇩🇪" if L_CODE == "de" else "🇨🇿"
-        # Jeśli jesteśmy w trybie dubli, kolorujemy nagłówek na żółto dla widoczności
         header_color = "⚠️" if st.session_state.show_dupes else flag
         
         with st.expander(f"{header_color} {c['de']} ➔ 🇵🇱 {c['pl']}"):
+            # Metadata
             st.caption(f"🗓️ Powtórka: {c.get('next_review', 'Brak')} | 🏷️ Tagi: {c.get('category', 'Brak')} | ID: {c['id']}")
             
+            # --- NOWOŚĆ: WIZUALIZACJA XP I POZIOMU ---
+            xp = int(c.get("mastery_xp", 0))
+            
+            # Definicja nazw poziomów na podstawie punktów
+            if xp <= 10: lvl_name, lvl_color = "Nowicjusz", "gray"
+            elif xp <= 30: lvl_name, lvl_color = "Zaznajomiony", "#FF8C00"
+            elif xp <= 60: lvl_name, lvl_color = "Uczeń", "#1E90FF"
+            elif xp <= 100: lvl_name, lvl_color = "Średniozaawansowany", "#9932CC"
+            elif xp <= 150: lvl_name, lvl_color = "Ekspert", "#228B22"
+            else: lvl_name, lvl_color = "Mistrz 🏆", "#FFD700"
+
+            col_xp1, col_xp2 = st.columns([3, 1])
+            with col_xp1:
+                st.progress(min(xp / 150, 1.0))
+            with col_xp2:
+                st.markdown(f"<div style='text-align: right; color: {lvl_color}; font-weight: bold; font-size: 0.85rem;'>{lvl_name} ({xp} XP)</div>", unsafe_allow_html=True)
+            # ----------------------------------------
+
             # Pobieranie tekstu przykładu
             exs = c.get("examples", [])
             example_to_play = None
@@ -3129,15 +3147,15 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V240 - Duel Breakdown & Live Sync Test) ---
+# --- 25. STATYSTYKI (V410 - Mastery Distribution & XP Analytics) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
-    u = st.session_state.get("user", "Anonim") # Upewnijmy się, że mamy nazwę użytkownika
+    u = st.session_state.get("user", "Anonim")
     
     st.header(f"📊 Statystyki: {current_lang_name}")
 
-    # --- KROK 1: BEZPOŚREDNIE POBRANIE DANYCH Z BAZY ---
+    # --- KROK 1: POBRANIE DANYCH ---
     try:
         db = get_db()
         res = db.table("user_data").select("*").eq("username", u).execute()
@@ -3151,10 +3169,9 @@ elif choice == "📊 Statystyki":
         st.error(f"Błąd odświeżania danych: {e}")
         ud = st.session_state.user_data
     
-    # --- NOWOŚĆ: SZCZEGÓŁOWA ANALIZA POJEDYNKÓW (TEST SYNCHRONIZACJI) ---
+    # --- SZCZEGÓŁOWA ANALIZA POJEDYNKÓW ---
     st.subheader("⚔️ Moje Statystyki Pojedynków")
     try:
-        # Pobieramy historię zakończonych pojedynków użytkownika
         res_duels = db.table("duels").select("*").or_(f"challenger.eq.{u},opponent.eq.{u}").eq("status", "finished").execute()
         
         d_total = len(res_duels.data)
@@ -3170,31 +3187,24 @@ elif choice == "📊 Statystyki":
             my_time = d['time_challenger'] if is_challenger else d['time_opponent']
             opp_time = d['time_opponent'] if is_challenger else d['time_challenger']
 
-            if my_score > opp_score:
-                d_win_pts += 1
-            elif opp_score > my_score:
-                d_loss_pts += 1
-            else: # Remis punktowy - patrzymy na czas
-                if my_time < opp_time:
-                    d_win_time += 1
-                else:
-                    d_loss_time += 1
+            if my_score > opp_score: d_win_pts += 1
+            elif opp_score > my_score: d_loss_pts += 1
+            else:
+                if my_time < opp_time: d_win_time += 1
+                else: d_loss_time += 1
 
-        # Wyświetlamy zgrabną tabelkę
         duel_summary = {
             "Kategoria": ["Wszystkie gry", "Wygrane (Punkty)", "Wygrane (Czas)", "Przegrane (Czas)", "Przegrane (Punkty)"],
             "Liczba": [d_total, d_win_pts, d_win_time, d_loss_time, d_loss_pts]
         }
         st.dataframe(pd.DataFrame(duel_summary), use_container_width=True, hide_index=True)
-        
-        # Mały akcent motywacyjny
         st.caption(f"Łączne punkty w rankingu: **{ud.get('duel_points', 0)} pkt**")
-
-    except Exception as e:
+    except:
         st.info("Rozegraj swój pierwszy pojedynek, aby zobaczyć tu statystyki!")
 
     st.write("---")
 
+    # --- KROK 2: ANALIZA BAZY SŁÓWEK ---
     all_cards = st.session_state.flashcards
     df_full = pd.DataFrame(all_cards)
     if not df_full.empty:
@@ -3210,56 +3220,96 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
+        # --- NOWOŚĆ: ROZKŁAD BIEGŁOŚCI (SYSTEM XP) ---
+        st.subheader("📈 Rozwój Biegłości Słownictwa")
+        
+        # Funkcja kategoryzująca XP
+        def get_xp_label(xp):
+            xp = int(xp or 0)
+            if xp <= 10: return "Nowicjusz"
+            if xp <= 30: return "Zaznajomiony"
+            if xp <= 60: return "Uczeń"
+            if xp <= 100: return "Średniozaawansowany"
+            if xp <= 150: return "Ekspert"
+            return "Mistrz 🏆"
+
+        # Przygotowanie danych do tabeli biegłości
+        df['Biegłość'] = df['mastery_xp'].apply(get_xp_label)
+        order = ["Nowicjusz", "Zaznajomiony", "Uczeń", "Średniozaawansowany", "Ekspert", "Mistrz 🏆"]
+        
+        dist = df['Biegłość'].value_counts().reindex(order, fill_value=0).reset_index()
+        dist.columns = ['Poziom Biegłości', 'Liczba słówek']
+        
+        # Wyświetlenie "zgrabnej" tabeli z paskiem postępu
+        st.dataframe(
+            dist,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Poziom Biegłości": st.column_config.TextColumn("Stopień Opanowania"),
+                "Liczba słówek": st.column_config.ProgressColumn(
+                    "Ilość Słów",
+                    help="Liczba słówek na danym poziomie",
+                    format="%d",
+                    min_value=0,
+                    max_value=int(dist['Liczba słówek'].max() or 1)
+                )
+            }
+        )
+        
+        # Dodatkowy wykres kołowy dla wizualizacji proporcji
+        import plotly.express as px
+        fig = px.pie(dist, values='Liczba słówek', names='Poziom Biegłości', 
+                     color='Poziom Biegłości',
+                     color_discrete_map={
+                         "Nowicjusz": "gray", "Zaznajomiony": "#FF8C00", "Uczeń": "#1E90FF",
+                         "Średniozaawansowany": "#9932CC", "Ekspert": "#228B22", "Mistrz 🏆": "#FFD700"
+                     },
+                     hole=0.4)
+        fig.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.write("---")
+
         # --- 2. REKORDY GIER ---
         st.subheader("🏆 Moje Rekordy w Grach")
         t_mem, t_bal, t_snake, t_surv = st.tabs(["🧩 Memory", "🎈 Balony", "🐍 Wąż", "🎲 Językowa Ruletka"])
         
         with t_mem:
-            mem_key = f"memory_scores_{L_CODE}"
-            mem_scores = ud.get(mem_key, [])
-            if mem_scores and isinstance(mem_scores, list):
-                valid_scores = [float(s) for s in mem_scores if str(s).replace('.','',1).isdigit()]
-                top3_mem = sorted(valid_scores)[:3]
-                if top3_mem:
-                    m_cols = st.columns(3)
-                    icons = ["🥇", "🥈", "🥉"]
-                    for i, score in enumerate(top3_mem):
-                        m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
-                else: st.info("Brak rekordów.")
-            else: st.info(f"Zagraj w Memory!")
+            mem_scores = ud.get(f"memory_scores_{L_CODE}", [])
+            if mem_scores:
+                valid_scores = sorted([float(s) for s in mem_scores])[:3]
+                m_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(valid_scores):
+                    m_cols[i].metric(f"{icons[i]} Miejsce", f"{score}s")
+            else: st.info("Zagraj w Memory!")
 
         with t_bal:
-            bal_key = f"top_balloons_{L_CODE}"
-            bal_scores = ud.get(bal_key, [])
-            if bal_scores and isinstance(bal_scores, list):
-                top3_bal = sorted([int(s) for s in bal_scores if str(s).isdigit()], reverse=True)[:3]
-                if top3_bal:
-                    b_cols = st.columns(3)
-                    icons = ["🥇", "🥈", "🥉"]
-                    for i, score in enumerate(top3_bal):
-                        b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
-                else: st.info("Brak rekordów.")
+            bal_scores = ud.get(f"top_balloons_{L_CODE}", [])
+            if bal_scores:
+                top3_bal = sorted([int(s) for s in bal_scores], reverse=True)[:3]
+                b_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(top3_bal):
+                    b_cols[i].metric(f"{icons[i]} Miejsce", f"{score} pkt")
             else: st.info("Brak rekordów.")
 
         with t_snake:
-            s_max = ud.get("snake_best_chain", 0)
-            s_wins = ud.get("snake_wins", 0)
-            s_loss = ud.get("snake_losses", 0)
             s_c1, s_c2, s_c3 = st.columns(3)
-            s_c1.metric("Najdłuższa seria", f"{s_max} słów")
-            s_c2.metric("Wygrane", f"{s_wins}")
-            s_c3.metric("Przegrane", f"{s_loss}")
+            s_c1.metric("Najdłuższa seria", f"{ud.get('snake_best_chain', 0)} słów")
+            s_c2.metric("Wygrane", f"{ud.get('snake_wins', 0)}")
+            s_c3.metric("Przegrane", f"{ud.get('snake_losses', 0)}")
 
         with t_surv:
-            surv_key = f"survival_scores_{L_CODE}"
-            surv_scores = ud.get(surv_key, [])
-            if surv_scores and isinstance(surv_scores, list):
-                top3_surv = sorted([int(s) for s in surv_scores if str(s).isdigit()], reverse=True)[:3]
-                if top3_surv:
-                    s_cols = st.columns(3)
-                    icons = ["🥇", "🥈", "🥉"]
-                    for i, score in enumerate(top3_surv):
-                        s_cols[i].metric(f"{icons[i]} Miejsce", f"{score} popr.")
+            surv_scores = ud.get(f"survival_scores_{L_CODE}", [])
+            if surv_scores:
+                top3_surv = sorted([int(s) for s in surv_scores], reverse=True)[:3]
+                s_cols = st.columns(3)
+                icons = ["🥇", "🥈", "🥉"]
+                for i, score in enumerate(top3_surv):
+                    s_cols[i].metric(f"{icons[i]} Miejsce", f"{score} popr.")
+            else: st.info("Zagraj w Ruletkę!")
 
         st.write("---")
         
@@ -3271,33 +3321,27 @@ elif choice == "📊 Statystyki":
             display_names = {
                 "Pow": "Powtórki", "Trn": "Trening", "Qiz": "Quiz", "Fis": "Fiszki", 
                 "Tst": "Testy", "Mem": "Memory", "War": "Warsztat", "Kon": "Konstruktor", 
-                "Wan": "Wąż", "Bal": "Balon", "Wri": "Asystent Pisania", "Det": "Detektyw", 
-                "Lab": "Laboratorium", "Skn": "Skaner AI", "Sta": "Statystyki"
+                "Wan": "Wąż", "Bal": "Balon", "Sur": "Ruletka", "Sta": "Statystyki"
             }
-            nav_order = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Wąż", "Bal", "Statystyki", "Inne"]
+            nav_order = ["Powtórki", "Trening", "Quiz", "Fiszki", "Testy", "Memory", "Ruletka", "Wąż", "Bal", "Statystyki"]
             
             aggregated_mins = {name: 0 for name in nav_order}
             for code, sec in time_stats.items():
                 name = display_names.get(code, "Inne")
                 if name in aggregated_mins: aggregated_mins[name] += sec
-                else: aggregated_mins["Inne"] += sec
             
             t_data = [{"Moduł": n, "Minuty": int(aggregated_mins[n]//60)} for n in nav_order if aggregated_mins[n] > 0]
             st.dataframe(pd.DataFrame(t_data), use_container_width=True, hide_index=True)
 
         with col_top2:
-            st.subheader("🧠 Fazy zapamiętywania")
+            st.subheader("📅 Plan powtórek")
             today = date.today()
-            phase_counts = {"Słaba (1-2 dni)": 0, "Średnia (3-6 dni)": 0, "Silna (7+ dni)": 0}
-            for _, row in df.iterrows():
-                try:
-                    rev_date = datetime.strptime(str(row.get('next_review', today)), "%Y-%m-%d").date()
-                    diff = (rev_date - today).days
-                    if diff <= 1: phase_counts["Słaba (1-2 dni)"] += 1
-                    elif 2 <= diff <= 6: phase_counts["Średnia (3-6 dni)"] += 1
-                    else: phase_counts["Silna (7+ dni)"] += 1
-                except: phase_counts["Słaba (1-2 dni)"] += 1
-            st.dataframe(pd.DataFrame([{"Faza": k, "Słówek": v} for k, v in phase_counts.items()]), use_container_width=True, hide_index=True)
+            sched = []
+            for i in range(7):
+                target = str(today + timedelta(days=i))
+                count = len(df[df['next_review'] <= target]) if i==0 else len(df[df['next_review'] == target])
+                sched.append({"Dzień": "Dziś" if i==0 else (today + timedelta(days=i)).strftime("%d.%m"), "Słówka": count})
+            st.dataframe(pd.DataFrame(sched), use_container_width=True, hide_index=True)
 
     else:
         st.info(f"Baza słówek ({current_lang_name}) jest pusta.")
@@ -3450,7 +3494,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V331 - Full Suite + Ruletka Analytics) ---
+# --- 27. ADMIN PRO (V420 - XP Analytics & Tab Reorder) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3468,8 +3512,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         current_count = 0
         batch_size = 25 
         while current_count < total_goal:
-            existing_res = db.table("master_vocab").select("word").eq("lang", l_code).eq("level", target_lvl).execute()
-            existing_words = [row['word'] for row in existing_res.data] if existing_res.data else []
             prompt = f"Wygeneruj {batch_size} UNIKALNYCH słów dla poziomu {target_lvl} ({target_lang}). Rzeczowniki z rodzajnikami. Zwróć JSON: vocab: [{{word, translation, level, lang, category, example_orig, example_pl}}]"
             try:
                 raw_res = get_openai_response(prompt)
@@ -3484,28 +3526,22 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             time.sleep(0.5)
         st.success(f"✅ Dodano {current_count} rekordów!")
 
-    # --- 2. INTERFEJS (TABS) ---
-    tabs = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki", "👥 Analiza Użytkowników"])
+    def seed_cultural_trivia(lang):
+        import json
+        st.info(f"🌍 Generuję ciekawostki dla języka {lang}...")
+        prompt = f"Wygeneruj 10 unikalnych ciekawostek o kulturze i języku {lang}. Zwróć JSON: trivia: [{{title, content_orig, content_pl, lang}}]"
+        try:
+            raw = get_openai_response(prompt)
+            data = json.loads(raw).get("trivia", [])
+            get_db().table("cultural_trivia").insert(data).execute()
+            st.success(f"✅ Dodano {len(data)} ciekawostek!")
+        except: st.error("Błąd generowania ciekawostek.")
 
+    # --- 2. INTERFEJS (ZMIENIONA KOLEJNOŚĆ TABS) ---
+    tabs = st.tabs(["👥 Analiza Użytkowników", "📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki"])
+
+    # --- ZAKŁADKA 1: ANALIZA UŻYTKOWNIKÓW (TERAZ PIERWSZA) ---
     with tabs[0]:
-        with st.container(border=True):
-            col_v1, col_v2, col_v3 = st.columns(3)
-            v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
-            v_lvl = col_v2.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
-            v_goal = col_v3.number_input("Ilość", 10, 500, 50)
-            if st.button("🏗️ Uruchom Seeder", use_container_width=True, type="primary"):
-                seed_master_vocab(v_lang, v_lvl, v_goal)
-
-    with tabs[1]:
-        st.info("Zarządzanie biblioteką idiomów.")
-        if st.button("🏗️ Inicjuj Idiomy (200)"):
-            seed_idioms_library()
-
-    with tabs[2]:
-        st.info("Zarządzanie ciekawostkami kulturowymi.")
-
-    # --- 3. ANALIZA UŻYTKOWNIKÓW (ZAKŁADKA 4) ---
-    with tabs[3]:
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
@@ -3514,14 +3550,14 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         db = get_db()
         ud_data = db.table("user_data").select("*").execute().data
-        all_cards_res = db.table("flashcards").select("username", "origin", "next_review").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review"])
+        # Pobieramy też mastery_xp do obliczeń wiedzy
+        all_cards_res = db.table("flashcards").select("username", "origin", "next_review", "mastery_xp").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "origin", "next_review", "mastery_xp"])
         
         today_iso = date.today().isoformat()
         adm_summary = []
         global_daily_time = {}
         
-        # Słownik mapowania kodów na ładne nazwy (ZAKTUALIZOWANY O RULETKĘ)
         MOD_MAP = {
             "Pow": "📅 Powtórki", "Trn": "🚀 Trening", "Qiz": "🕹️ Quiz", "Fis": "🎴 Fiszki",
             "Tst": "📝 Testy", "Mem": "🧠 Memory", "War": "🛠️ Warsztat", "Kon": "🏗️ Konstruktor",
@@ -3534,18 +3570,23 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # --- LOGIKA ROZKŁADU SŁÓWEK (R|G|S) ---
+            # --- NOWA LOGIKA WIEDZY (XP) ---
             total_words = len(u_cards)
+            if total_words > 0:
+                current_xp_sum = u_cards["mastery_xp"].fillna(0).sum()
+                max_xp_possible = total_words * 150
+                wiedza_val = int((current_xp_sum / max_xp_possible) * 100)
+                wiedza_str = f"{min(wiedza_val, 100)}%"
+            else:
+                wiedza_str = "0%"
+
+            # Rozkład źródeł
             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
             r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
             g_count = sum(1 for x in oc if "Generator" in str(x))
             s_count = sum(1 for x in oc if "Skaner" in str(x))
 
-            # Wiedza %
-            strong = len([c for c in u_cards["next_review"] if (pd.to_datetime(c).date() - date.today()).days > 6]) if not u_cards.empty else 0
-            wiedza = int((strong / total_words) * 100) if total_words > 0 else 0
-
-            # Czas Dziś
+            # Czas
             is_active_today = user.get("last_visit_date") == today_iso
             stats_today = user.get("time_stats", {}) if is_active_today else {}
             total_sec_today = sum(stats_today.values()) if isinstance(stats_today, dict) else 0
@@ -3554,7 +3595,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 for code, sec in stats_today.items():
                     global_daily_time[code] = global_daily_time.get(code, 0) + sec
             
-            # Czas Łącznie
             stats_total = user.get("total_time_stats", {})
             total_sec_all = sum(stats_total.values()) if isinstance(stats_total, dict) else 0
 
@@ -3563,55 +3603,78 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "Ostatnio": user.get("last_seen", "Brak"),
                 "🔥": user.get("streak", 0),
                 "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})",
-                "Wiedza": f"{wiedza}%",
-                "Dziś (min)": int(total_sec_today // 60),
+                "Wiedza (XP)": wiedza_str,
+                "Czas Dziś": int(total_sec_today // 60),
                 "Łącznie (min)": int(total_sec_all // 60),
                 "Koszt AI": round(user.get("historical_cost", 0.0), 2),
                 "raw_total": stats_total
             })
 
-        # --- TABELA 1: PODSUMOWANIE KONT ---
         st.subheader("📋 Podsumowanie kont")
-        df_main = pd.DataFrame(adm_summary).sort_values("Dziś (min)", ascending=False)
+        df_main = pd.DataFrame(adm_summary).sort_values("Czas Dziś", ascending=False)
         st.dataframe(
             df_main.drop(columns=["raw_total"]), 
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R - Ręczne, G - Generator, S - Skaner"),
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R-Ręczne, G-Generator, S-Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                "Dziś (min)": st.column_config.ProgressColumn("Dziś", min_value=0, max_value=60),
+                "Czas Dziś": st.column_config.ProgressColumn("Dziś (cel 60m)", help="Postęp względem godziny nauki", min_value=0, max_value=60),
             }
         )
 
-        # --- TABELA 2: GLOBALNY ROZKŁAD AKTYWNOŚCI ---
         st.divider()
-        st.subheader("📈 Globalny rozkład aktywności (Dzisiaj)")
+        st.subheader("📈 Globalna aktywność (Dziś)")
         total_global_sec = sum(global_daily_time.values())
         if total_global_sec > 0:
             analysis = []
             for code, full_name in MOD_MAP.items():
                 v = global_daily_time.get(code, 0)
                 if v > 0:
-                    analysis.append({
-                        "Moduł": full_name,
-                        "Popularność (%)": f"{round((v/total_global_sec)*100, 1)}%",
-                        "Łączny czas": f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
-                    })
+                    analysis.append({"Moduł": full_name, "Popularność": f"{round((v/total_global_sec)*100, 1)}%", "Czas": f"{int(v//60)} min"})
             st.table(pd.DataFrame(analysis).set_index("Moduł"))
-        else:
-            st.info("Brak aktywności użytkowników w dniu dzisiejszym.")
 
-        # --- TABELA 3: SZCZEGÓŁY HISTORYCZNE (Z RULETKĄ) ---
-        with st.expander("🔍 Zobacz całkowity czas spędzony w modułach (historycznie)"):
-            history_rows = []
-            for item in adm_summary:
-                row = {"Użytkownik": item["Użytkownik"]}
-                for code, full_name in MOD_MAP.items():
-                    val_sec = item["raw_total"].get(code, 0)
-                    row[full_name] = int(val_sec // 60)
-                history_rows.append(row)
-            st.dataframe(pd.DataFrame(history_rows), use_container_width=True, hide_index=True)
+        st.divider()
+        st.subheader("🕵️ Szczegóły historyczne modułów (minuty)")
+        # USUNIĘTO EXPANDER - Tabela jest teraz zawsze widoczna
+        history_rows = []
+        for item in adm_summary:
+            row = {"Użytkownik": item["Użytkownik"]}
+            for code, full_name in MOD_MAP.items():
+                val_sec = item["raw_total"].get(code, 0)
+                row[full_name] = int(val_sec // 60)
+            history_rows.append(row)
+        st.dataframe(pd.DataFrame(history_rows), use_container_width=True, hide_index=True)
+
+    with tabs[1]:
+        st.subheader("🏗️ Generator Master Vocab")
+        with st.container(border=True):
+            col_v1, col_v2, col_v3 = st.columns(3)
+            v_lang = col_v1.selectbox("Język", ["Niemiecki", "Czeski"], key="v_lang_adm")
+            v_lvl = col_v2.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="v_lvl_adm")
+            v_goal = col_v3.number_input("Ilość", 10, 500, 50)
+            if st.button("🏗️ Uruchom Seeder Słówek", use_container_width=True, type="primary"):
+                seed_master_vocab(v_lang, v_lvl, v_goal)
+
+    with tabs[2]:
+        st.info("Zarządzanie biblioteką idiomów.")
+        if st.button("🏗️ Inicjuj Idiomy (200)"):
+            seed_idioms_library()
+
+    with tabs[3]:
+        st.subheader("🌍 Ciekawostki Kulturowe")
+        # PRZYWRÓCONO PRZYCISK GENEROWANIA
+        c_lang = st.selectbox("Wybierz język do doładowania bazy:", ["Niemiecki", "Czeski"], key="cur_lang_trivia")
+        if st.button(f"✨ Generuj 10 nowych ciekawostek ({c_lang})", use_container_width=True):
+            seed_cultural_trivia(c_lang)
+        
+        st.divider()
+        try:
+            res_t = db.table("cultural_trivia").select("*").eq("lang", "de" if c_lang=="Niemiecki" else "cs").execute()
+            if res_t.data:
+                st.write(f"Aktualnie w bazie ({c_lang}): {len(res_t.data)} wpisów.")
+                st.dataframe(pd.DataFrame(res_t.data)[["title", "content_pl"]], use_container_width=True)
+        except: pass
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
