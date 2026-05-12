@@ -3800,7 +3800,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60, format="%d min")
             })
         st.divider()
-        st.subheader("🕵️ Szczegółowy Czas (minuty)")
+        st.subheader("🕵️ Szczegółowy Czas Historyczny (minuty)")
         hist_table = []
         for item in adm_summary:
             row = {"Użytkownik": item["Użytkownik"]}
