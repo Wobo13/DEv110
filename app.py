@@ -3776,6 +3776,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 global_total[code] += u_total[code]
             adm_summary.append({
                 "Użytkownik": f"{status_prefix}{uname}",
+                "E-mail": user.get("email", "-"),
                 "Ostatnio": user.get("last_seen", "-"),
                 "🔥": user.get("streak", 0),
                 "Słówka (R|G|S)": f"{total_words} ({r_cnt}|{g_cnt}|{s_cnt})", 
