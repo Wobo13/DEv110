@@ -252,7 +252,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V560 - Mandatory Email Registration) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V561 - Email Collision Fix) ---
 
 import hmac
 import base64
@@ -262,6 +262,7 @@ import re
 
 # Pomocnicza funkcja do pobierania klucza
 def get_signature_key():
+    # Upewnij się, że SUPABASE_KEY jest dostępny w Twoim pliku/sekretach
     key = SUPABASE_KEY
     if not key:
         st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony. Aplikacja wstrzymana.")
@@ -297,10 +298,12 @@ def is_valid_email(email):
     """Prosta walidacja formatu e-mail."""
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
+# Inicjalizacja stanu autoryzacji
 if "auth" not in st.session_state:
     st.session_state.auth = False
     st.session_state.is_admin = False
     
+    # Obsługa automatycznego logowania przez token w URL
     if "token" in st.query_params:
         secure_token = st.query_params["token"]
         verified_user = verify_secure_token(secure_token)
@@ -319,11 +322,12 @@ if "auth" not in st.session_state:
                 st.session_state.user = verified_user
                 st.session_state.is_admin = user_info.get("is_admin", False)
         else:
+            # Jeśli token jest nieważny, czyścimy parametry i odświeżamy
             st.query_params.clear()
             st.rerun()
 
+# Ekran logowania/rejestracji (jeśli nie zalogowany)
 if not st.session_state.auth:
-    # --- RESPNSYWY TYTUŁ ---
     st.markdown("""
         <style>
             .mobile-title {
@@ -386,23 +390,26 @@ if not st.session_state.auth:
             elif not re_mail or not is_valid_email(re_mail):
                 st.error("Podaj poprawny adres e-mail!")
             else:
-                # 2. Sprawdzenie czy użytkownik lub email istnieją
+                # 2. Sprawdzenie dostępności loginu i e-maila w tabeli technicznej
+                # Szukamy w users_auth, bo to tam e-mail musi być unikalny
                 check_user = db.table("users_auth").select("username").eq("username", rn).execute()
-                check_email = db.table("user_data").select("username").eq("email", re_mail).execute()
+                check_email = db.table("users_auth").select("username").eq("email", re_mail).execute()
                 
                 if check_user.data:
                     st.error("Ta nazwa użytkownika jest już zajęta!")
                 elif check_email.data:
                     st.error("Ten adres e-mail jest już przypisany do innego konta!")
                 else:
-                    # 3. Rejestracja w obu tabelach
+                    # 3. Rejestracja
                     try:
+                        # Wpis do tabeli technicznej (uwierzytelnianie)
                         db.table("users_auth").insert({
                             "username": rn, 
                             "password_hash": hash_pw(rp),
-                            "email": re_mail # Synchronizacja e-maila w auth dla porządku
+                            "email": re_mail 
                         }).execute()
 
+                        # Wpis do tabeli profilowej (dane gry)
                         db.table("user_data").insert({
                             "username": rn, 
                             "email": re_mail,
@@ -410,15 +417,19 @@ if not st.session_state.auth:
                             "is_admin": False,
                             "is_shadowbanned": False,
                             "provider": "legacy",
-                            "password": rp # Twoja kopia hasła do Panelu Admina
+                            "password": rp 
                         }).execute()
                         
+                        # Inicjalizacja danych sesji
                         load_user_data(rn)
                         st.success("Konto gotowe! Logowanie...")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as e:
+                        # Wyświetlamy błąd z bazy, jeśli coś poszło nie tak
                         st.error(f"Błąd podczas tworzenia konta: {e}")
+                        
+    # Zatrzymujemy renderowanie reszty aplikacji dla niezalogowanych
     st.stop()
 
 # --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V560 - Robust Safety Sync) ---
