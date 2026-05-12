@@ -252,18 +252,18 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V294 - Security Hardened) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V560 - Mandatory Email Registration) ---
 
 import hmac
 import base64
 import time
 import hashlib
+import re
 
-# Pomocnicza funkcja do pobierania klucza - usunięto hardcoded fallback
+# Pomocnicza funkcja do pobierania klucza
 def get_signature_key():
-    key = SUPABASE_KEY # Klucz pobierany ze st.secrets
+    key = SUPABASE_KEY
     if not key:
-        # Jeśli klucz nie jest skonfigurowany, blokujemy aplikację zamiast używać słabego klucza
         st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony. Aplikacja wstrzymana.")
         st.stop()
     return key
@@ -273,7 +273,6 @@ def generate_secure_token(username, days_valid=30):
     secret = get_signature_key()
     expires = int(time.time()) + (days_valid * 86400)
     message = f"{username}.{expires}"
-    
     signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     token_raw = f"{message}.{signature}"
     return base64.urlsafe_b64encode(token_raw.encode()).decode()
@@ -284,23 +283,23 @@ def verify_secure_token(token_b64):
         secret = get_signature_key()
         token_raw = base64.urlsafe_b64decode(token_b64.encode()).decode()
         parts = token_raw.split('.')
-        
         if len(parts) != 3: return None
         username, expires, signature = parts
-        
         if int(time.time()) > int(expires): return None
-        
         expected_sig = hmac.new(secret.encode(), f"{username}.{expires}".encode(), hashlib.sha256).hexdigest()
-        
         if hmac.compare_digest(signature, expected_sig):
             return username
     except Exception:
         return None
     return None
 
+def is_valid_email(email):
+    """Prosta walidacja formatu e-mail."""
+    return re.match(r"[^@]+@[^@]+\.[^@]+", email)
+
 if "auth" not in st.session_state:
     st.session_state.auth = False
-    st.session_state.is_admin = False # Inicjalizacja bezpiecznej flagi admina
+    st.session_state.is_admin = False
     
     if "token" in st.query_params:
         secure_token = st.query_params["token"]
@@ -308,9 +307,7 @@ if "auth" not in st.session_state:
         
         if verified_user:
             db = get_db()
-            # Pobieramy dane użytkownika, aby sprawdzić bana i uprawnienia admina
             res = db.table("user_data").select("is_banned, is_admin").eq("username", verified_user).execute()
-            
             if res.data:
                 user_info = res.data[0]
                 if user_info.get("is_banned"):
@@ -320,15 +317,32 @@ if "auth" not in st.session_state:
                 
                 st.session_state.auth = True
                 st.session_state.user = verified_user
-                # Bezpieczne ustawienie flagi admina z bazy danych
                 st.session_state.is_admin = user_info.get("is_admin", False)
         else:
             st.query_params.clear()
             st.rerun()
 
 if not st.session_state.auth:
-    # Stylizacja tytułu... (zachowaj swój CSS)
-    st.markdown('<div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>', unsafe_allow_html=True)
+    # --- RESPNSYWY TYTUŁ ---
+    st.markdown("""
+        <style>
+            .mobile-title {
+                font-size: 8vw;
+                font-weight: bold;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            @media (min-width: 768px) {
+                .mobile-title { font-size: 40px; }
+            }
+        </style>
+        <div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>
+    """, unsafe_allow_html=True)
 
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
@@ -341,8 +355,6 @@ if not st.session_state.auth:
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
             res_auth = db.table("users_auth").select("*").eq("username", un).execute()
             if res_auth.data and res_auth.data[0]["password_hash"] == hash_pw(pw):
-                
-                # Pobieramy status bana i flagę admina przy logowaniu
                 res_data = db.table("user_data").select("is_banned, is_admin").eq("username", un).execute()
                 
                 if res_data.data and res_data.data[0].get("is_banned"):
@@ -350,7 +362,6 @@ if not st.session_state.auth:
                 else:
                     st.session_state.auth = True
                     st.session_state.user = un
-                    # Zapisujemy status admina w sesji na podstawie bazy danych
                     st.session_state.is_admin = res_data.data[0].get("is_admin", False) if res_data.data else False
                     
                     if remember_me:
@@ -362,33 +373,55 @@ if not st.session_state.auth:
                 st.error("Błędne dane logowania")
                 
     with t2:
-        # Rejestracja (zachowaj swoją logikę, dodaj tylko domyślne is_admin: False)
         rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
+        re_mail = st.text_input("Adres e-mail", key="r_e").strip()
         rp = st.text_input("Hasło", type="password", key="r_p")
+        
+        st.caption("📧 E-mail jest wymagany do bezpiecznego odzyskiwania hasła.")
+
         if st.button("Załóż konto", use_container_width=True):
-            if len(rn) > 2 and len(rp) > 3:
-                check = db.table("users_auth").select("*").eq("username", rn).execute()
-                if not check.data:
-                    db.table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
-                    db.table("user_data").insert({
-                        "username": rn, 
-                        "is_banned": False, 
-                        "is_admin": False, # Domyślnie zwykły użytkownik
-                        "is_shadowbanned": False,
-                        "provider": "legacy"
-                    }).execute()
-                    
-                    load_user_data(rn)
-                    st.success("Konto gotowe! Logowanie...")
-                    time.sleep(1.5)
-                    st.rerun()
-                else:
-                    st.error("Ten użytkownik jest już zajęty!")
+            # 1. Walidacja podstawowa
+            if len(rn) < 3 or len(rp) < 4:
+                st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+            elif not re_mail or not is_valid_email(re_mail):
+                st.error("Podaj poprawny adres e-mail!")
             else:
-                st.error("Login i Hasło są za krótkie.")
+                # 2. Sprawdzenie czy użytkownik lub email istnieją
+                check_user = db.table("users_auth").select("username").eq("username", rn).execute()
+                check_email = db.table("user_data").select("username").eq("email", re_mail).execute()
+                
+                if check_user.data:
+                    st.error("Ta nazwa użytkownika jest już zajęta!")
+                elif check_email.data:
+                    st.error("Ten adres e-mail jest już przypisany do innego konta!")
+                else:
+                    # 3. Rejestracja w obu tabelach
+                    try:
+                        db.table("users_auth").insert({
+                            "username": rn, 
+                            "password_hash": hash_pw(rp),
+                            "email": re_mail # Synchronizacja e-maila w auth dla porządku
+                        }).execute()
+
+                        db.table("user_data").insert({
+                            "username": rn, 
+                            "email": re_mail,
+                            "is_banned": False, 
+                            "is_admin": False,
+                            "is_shadowbanned": False,
+                            "provider": "legacy",
+                            "password": rp # Twoja kopia hasła do Panelu Admina
+                        }).execute()
+                        
+                        load_user_data(rn)
+                        st.success("Konto gotowe! Logowanie...")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd podczas tworzenia konta: {e}")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V500 - Safety & Ban Sync) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V560 - Robust Safety Sync) ---
 
 u = st.session_state.get("user")
 
@@ -399,7 +432,15 @@ def load_user_data(username):
         if res.data:
             data = res.data[0]
             
-            # --- ZABEZPIECZENIE: SPRAWDZENIE BANA PRZY ŁADOWANIU ---
+            # --- 1. BEZPIECZNIK: INICJALIZACJA NOWYCH KOLUMN (Dla starych kont) ---
+            # Jeśli kolumny w DB są puste (NULL), przypisujemy wartości bezpieczne
+            if data.get("is_banned") is None: data["is_banned"] = False
+            if data.get("is_shadowbanned") is None: data["is_shadowbanned"] = False
+            if data.get("is_admin") is None: data["is_admin"] = False
+            if data.get("provider") is None: data["provider"] = "legacy"
+            if "email" not in data: data["email"] = None
+
+            # --- 2. ZABEZPIECZENIE: SPRAWDZENIE BANA PRZY ŁADOWANIU ---
             if data.get("is_banned"):
                 st.session_state.auth = False
                 st.session_state.user = None
@@ -409,7 +450,7 @@ def load_user_data(username):
             today_str = date.today().isoformat()
             yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
-            # 1. INICJALIZACJA SŁOWNIKÓW (Zabezpieczenie przed brakiem kolumn)
+            # 3. INICJALIZACJA SŁOWNIKÓW (Zabezpieczenie przed brakiem struktur JSON)
             keys_to_init = ["time_stats", "total_time_stats", "settings", "workshop_progress"]
             for key in keys_to_init:
                 if key not in data or data[key] is None:
@@ -418,13 +459,13 @@ def load_user_data(username):
             if "test_history" not in data or data.get("test_history") is None:
                 data["test_history"] = []
 
-            # 2. RESET DZIENNY (Czyścimy tylko minuty z dziś)
+            # 4. RESET DZIENNY (Czyścimy tylko minuty z dziś)
             last_visit = data.get("last_visit_date", "2000-01-01")
             if last_visit != today_str:
                 data["time_stats"] = {}
                 data["last_visit_date"] = today_str
 
-            # 3. LOGIKA RESETU PASSY (STREAK)
+            # 5. LOGIKA RESETU PASSY (STREAK)
             last_success = data.get("last_date", "2000-01-01")
             if last_success != today_str and last_success != yesterday_str:
                 data["streak"] = 0
@@ -438,7 +479,7 @@ def save_user_data(username, data):
     """Zapisuje dane profilu do bazy i odświeża datę aktywności."""
     if not username: return
     try:
-        # Usuwamy pola systemowe Supabase przed wysyłką
+        # Usuwamy pola systemowe Supabase przed wysyłką, aby nie nadpisywać ID
         clean_data = {k: v for k, v in data.items() if k not in ["id", "created_at", "username"]}
         clean_data["last_seen"] = get_now_pl()
         get_db().table("user_data").update(clean_data).eq("username", username).execute()
