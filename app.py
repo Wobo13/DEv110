@@ -3406,7 +3406,7 @@ elif choice == "📊 Statystyki":
         st.dataframe(hist_df, use_container_width=True, hide_index=True)
     else: st.info("Brak historii testów.")
 
-# --- 26. KONTO (V272 - Full Restore + Individual Game Resets) ---
+# --- 26. KONTO (V550 - Email Linking & Security Migration) ---
 elif choice == "⚙️ Konto":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -3416,8 +3416,42 @@ elif choice == "⚙️ Konto":
         st.success(st.session_state.acc_msg)
         del st.session_state.acc_msg
 
+    # --- 0. BEZPIECZEŃSTWO I E-MAIL (Nowa Sekcja) ---
+    with st.expander("🛡️ Bezpieczeństwo i E-mail", expanded=True):
+        u_data = st.session_state.user_data
+        current_email = u_data.get("email", "")
+        
+        st.subheader("Powiązanie konta")
+        st.caption("Podaj e-mail, aby zabezpieczyć konto i umożliwić odzyskiwanie hasła w przyszłości.")
+        
+        email_input = st.text_input("Twój adres e-mail:", value=current_email, placeholder="przyklad@poczta.pl")
+        
+        if st.button("💾 Zapisz e-mail", use_container_width=True):
+            if "@" in email_input and "." in email_input:
+                db = get_db()
+                # Sprawdzamy czy mail nie jest zajęty przez kogoś innego
+                check = db.table("user_data").select("username").eq("email", email_input).neq("username", u).execute()
+                
+                if check.data:
+                    st.error("Ten adres e-mail jest już powiązany z innym kontem.")
+                else:
+                    # Aktualizacja maila i ustawienie providera na legacy (jeśli nie istnieje)
+                    upd = {"email": email_input}
+                    if not u_data.get("provider"):
+                        upd["provider"] = "legacy"
+                    
+                    db.table("user_data").update(upd).eq("username", u).execute()
+                    st.session_state.user_data["email"] = email_input
+                    st.success("Adres e-mail został zapisany! 🛡️")
+            elif email_input == "":
+                st.warning("E-mail został wyczyszczony. Pamiętaj, że utrudni to odzyskanie konta.")
+                get_db().table("user_data").update({"email": None}).eq("username", u).execute()
+                st.session_state.user_data["email"] = None
+            else:
+                st.error("Wpisz poprawny adres e-mail.")
+
     # --- 1. PREFERENCJE NAUKI ---
-    with st.expander("🛠️ Preferencje nauki", expanded=True):
+    with st.expander("🛠️ Preferencje nauki", expanded=False):
         if "settings" not in st.session_state.user_data:
             st.session_state.user_data["settings"] = {"auto_audio": True, "show_hints": True, "daily_goal": 20, "test_questions": 10}
         
@@ -3445,6 +3479,8 @@ elif choice == "⚙️ Konto":
                 res = db.table("users_auth").select("*").eq("username", u).execute()
                 if res.data and res.data[0]["password_hash"] == hash_pw(old_p):
                     db.table("users_auth").update({"password_hash": hash_pw(new_p)}).eq("username", u).execute()
+                    # Synchronizujemy też hasło w user_data, jeśli je tam przechowujesz w celach backupu
+                    db.table("user_data").update({"password": new_p}).eq("username", u).execute()
                     st.success("Hasło zmienione!")
                 else:
                     st.error("Błędne stare hasło!")
@@ -3478,7 +3514,6 @@ elif choice == "⚙️ Konto":
         st.error(f"Tryb zarządzania bazą: **{current_lang_name.upper()}**")
         safety_lock = st.checkbox("Potwierdzam chęć skasowania danych")
         
-        # --- RESET REKORDÓW GIER (Nowa funkcja) ---
         st.subheader("Resety rekordów gier")
         st.caption(f"Wyczyść swoje najlepsze wyniki (tylko dla języka {current_lang_name}).")
         
@@ -3512,7 +3547,6 @@ elif choice == "⚙️ Konto":
 
         st.divider()
 
-        # --- KASOWANIE POZIOMÓW (CEFR) ---
         st.subheader("Usuwanie wg poziomów")
         st.caption(f"Usuwa słówka z tagiem poziomu TYLKO dla języka {current_lang_name}.")
         col_lvl1, col_lvl2 = st.columns([2, 1])
@@ -3528,7 +3562,6 @@ elif choice == "⚙️ Konto":
         st.divider()
         st.subheader("Resety całkowite")
         
-        # Reset bazy dla wybranego języka
         if st.button(f"💣 USUŃ WSZYSTKIE SŁÓWKA ({current_lang_name.upper()})", type="primary", disabled=not safety_lock, use_container_width=True):
             res = get_db().table("flashcards").delete().eq("username", u).eq("lang", L_CODE).execute()
             count = len(res.data) if res.data else 0
@@ -3536,7 +3569,6 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = f"Usunięto całą bazę słówek języka {current_lang_name} ({count} sztuk)."
             st.rerun()
 
-        # Globalny reset passy
         if st.button("🔥 Wyzeruj Streak (Konto globalne)", disabled=not safety_lock, use_container_width=True):
             st.session_state.user_data["streak"] = 0
             st.session_state.user_data["last_date"] = "2000-01-01"
