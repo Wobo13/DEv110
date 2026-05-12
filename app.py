@@ -252,7 +252,8 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V293 - Bezpieczna Autoryzacja HMAC + Rerun Fix) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V293 + Ban Security) ---
+
 import hmac
 import base64
 import time
@@ -306,9 +307,16 @@ if "auth" not in st.session_state:
         verified_user = verify_secure_token(secure_token)
         
         if verified_user:
+            # Dodatkowa weryfikacja czy użytkownik z tokena nie dostał bana w międzyczasie
+            db = get_db()
+            check_ban = db.table("user_data").select("is_banned").eq("username", verified_user).execute()
+            if check_ban.data and check_ban.data[0].get("is_banned"):
+                st.query_params.clear()
+                st.error("Twoja sesja wygasła lub konto zostało zablokowane.")
+                st.stop()
+            
             st.session_state.auth, st.session_state.user = True, verified_user
         else:
-            # Jeśli token jest sfałszowany lub to stary wpis (np. "wobo") - usuwamy i WYMUSZAMY odświeżenie paska
             st.query_params.clear()
             st.rerun()
 
@@ -349,17 +357,21 @@ if not st.session_state.auth:
         remember_me = st.checkbox("Zapamiętaj mnie na tym urządzeniu", value=True)
         
         if st.button("Zaloguj się", use_container_width=True, type="primary"):
+            # 1. Weryfikacja danych auth
             res = db.table("users_auth").select("*").eq("username", un).execute()
             if res.data and res.data[0]["password_hash"] == hash_pw(pw):
-                st.session_state.auth, st.session_state.user = True, un
                 
-                if remember_me:
-                    # --- TWORZENIE BEZPIECZNEGO TOKENA ---
-                    st.query_params["token"] = generate_secure_token(un)
+                # 2. Weryfikacja czy użytkownik nie jest zbanowany w tabeli user_data
+                ban_res = db.table("user_data").select("is_banned").eq("username", un).execute()
+                if ban_res.data and ban_res.data[0].get("is_banned"):
+                    st.error("🚫 Twoje konto zostało zablokowane. Skontaktuj się z administratorem.")
                 else:
-                    st.query_params.clear()
-                    
-                st.rerun()
+                    st.session_state.auth, st.session_state.user = True, un
+                    if remember_me:
+                        st.query_params["token"] = generate_secure_token(un)
+                    else:
+                        st.query_params.clear()
+                    st.rerun()
             else:
                 st.error("Błędne dane logowania")
                 
@@ -370,7 +382,16 @@ if not st.session_state.auth:
             if len(rn) > 2 and len(rp) > 3:
                 check = db.table("users_auth").select("*").eq("username", rn).execute()
                 if not check.data:
-                    get_db().table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
+                    # Dodajemy użytkownika do auth
+                    db.table("users_auth").insert({"username": rn, "password_hash": hash_pw(rp)}).execute()
+                    # Inicjalizujemy pusty profil w user_data z podstawowymi flagami
+                    db.table("user_data").insert({
+                        "username": rn, 
+                        "is_banned": False, 
+                        "is_shadowbanned": False,
+                        "provider": "legacy"
+                    }).execute()
+                    
                     load_user_data(rn)
                     st.success("Konto gotowe! Logowanie...")
                     time.sleep(1.5)
@@ -378,19 +399,27 @@ if not st.session_state.auth:
                 else:
                     st.error("Ten użytkownik jest już zajęty!")
             else:
-                st.warning("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+                st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
     st.stop()
 
-# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V450 - Global Module Sync & Anti-Ghost Time) ---
+# --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V500 - Safety & Ban Sync) ---
 
 u = st.session_state.get("user")
 
 def load_user_data(username):
-    """Pobiera dane profilu i zarządza resetem dziennym."""
+    """Pobiera dane profilu i zarządza resetem dziennym oraz blokadami."""
     try:
         res = get_db().table("user_data").select("*").eq("username", username).execute()
         if res.data:
             data = res.data[0]
+            
+            # --- ZABEZPIECZENIE: SPRAWDZENIE BANA PRZY ŁADOWANIU ---
+            if data.get("is_banned"):
+                st.session_state.auth = False
+                st.session_state.user = None
+                st.error("Konto zostało zablokowane.")
+                st.stop()
+
             today_str = date.today().isoformat()
             yesterday_str = (date.today() - timedelta(days=1)).isoformat()
 
@@ -446,7 +475,7 @@ def update_activity(current_choice):
     if 0.5 < delta < 600:
         ud = st.session_state.user_data
         
-        # --- PRECYZYJNE MAPOWANIE MODUŁÓW (Zgodne z nawigacją i Panelem Admina) ---
+        # --- PRECYZYJNE MAPOWANIE MODUŁÓW ---
         mapping = {
             "powtorki": "Pow", "trening": "Trn", "quiz": "Qiz", "fiszki": "Fis",
             "laborat": "Lab", "asystent": "Wri", "detektyw": "Det", "warsztat": "War",
@@ -455,9 +484,9 @@ def update_activity(current_choice):
             "skaner": "Skn"
         }
         
-        # Normalizujemy wybór (małe litery, brak polskich znaków i emoji)
+        # Normalizujemy wybór
         clean_choice = normalize_text(str(current_choice))
-        label = "Inn" # Domyślnie wszystko inne (Start, Słownik, Konto, Statystyki itp.) trafia do 'Inne'
+        label = "Inn" 
         
         for key_word, code in mapping.items():
             if key_word in clean_choice:
@@ -467,22 +496,20 @@ def update_activity(current_choice):
         # 1. Aktualizacja czasu DZIŚ oraz ŁĄCZNIE
         for stat_key in ["time_stats", "total_time_stats"]:
             curr_dict = dict(ud.get(stat_key, {}))
-            # Upewniamy się, że wartość jest liczbą
             curr_val = float(curr_dict.get(label, 0.0))
             curr_dict[label] = curr_val + delta
             ud[stat_key] = curr_dict
 
-        # 2. SPRAWDZANIE CELU DNIA (Tylko 17 modułów nauki, bez 'Inn')
-        target_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due", "Skn"]
+        # 2. SPRAWDZANIE CELU DNIA (Skn wykluczony z naliczania postępu, ale czas w Skn jest mierzony)
+        target_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due"]
         total_sec_today = sum(ud["time_stats"].get(code, 0) for code in target_modules)
         
         goal_min = ud.get("settings", {}).get("daily_goal", 20)
         today_str = date.today().isoformat()
         
-        # Jeśli dziś osiągnięto cel i jeszcze nie zapisano tego faktu
         if total_sec_today >= (goal_min * 60) and ud.get("last_date") != today_str:
             ud["streak"] = ud.get("streak", 0) + 1
-            ud["last_date"] = today_str # Blokada ponownego naliczenia dzisiaj
+            ud["last_date"] = today_str 
             st.toast(f"🔥 Cel dnia osiągnięty! Twoja passa: {ud['streak']} dni", icon="🚀")
 
         # 3. Zapis zmian do session_state i bazy
@@ -493,18 +520,21 @@ def update_activity(current_choice):
 
 # --- INICJALIZACJA SESJI ---
 if u:
-    # Pobierz dane przy wejściu (jeśli brak w sesji)
+    # Pobierz dane przy wejściu
     if "user_data" not in st.session_state:
         st.session_state.user_data = load_user_data(u)
+        # Zabezpieczenie: jeśli po załadowaniu okazało się, że użytkownik ma bana
+        if not st.session_state.user_data:
+            st.rerun()
+            
         st.session_state.flashcards = load_flashcards(u)
-        # Pierwszy zapis aktywności (last_seen)
         save_user_data(u, st.session_state.user_data)
 
-    # Uruchom licznik czasu dla aktualnego widoku
+    # Uruchom licznik czasu
     current_choice = st.session_state.get("choice", "🏠 Start")
     update_activity(current_choice)
 
-    # Synchronizacja co 5 minut (zabezpieczenie)
+    # Synchronizacja co 5 minut
     if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
