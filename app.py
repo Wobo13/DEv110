@@ -3485,14 +3485,14 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V445 - Global Stats Admin Filter) ---
+# --- 27. ADMIN PRO (V450 - Custom Sort & Origin Breakdown) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
-    # --- 1. DEFINICJA SZTYWNEJ KOLEJNOŚCI (17 + 1) ---
+    # --- 1. DEFINICJE I MAPOWANIE ---
     ADMIN_ORDER = [
         "Pow", "Trn", "Qiz", "Fis", "Lab", "Wri", "Det", "War", "Tst", 
         "Spa", "Mem", "Kon", "Wan", "Bal", "Sur", "Due", "Skn", "Inn"
@@ -3557,8 +3557,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         db = get_db()
         ud_data = db.table("user_data").select("*").execute().data
-        all_cards_res = db.table("flashcards").select("username", "mastery_xp").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp"])
+        
+        # POBIERANIE ORIGIN DLA PODZIAŁU SŁÓWEK
+        all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
         
         today_iso = date.today().isoformat()
         adm_summary = []
@@ -3569,8 +3571,14 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # Wiedza XP
+            # --- ROZKŁAD ŹRÓDEŁ SŁÓWEK (R|G|S) ---
             total_words = len(u_cards)
+            oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
+            r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
+            g_count = sum(1 for x in oc if "Generator" in str(x))
+            s_count = sum(1 for x in oc if "Skaner" in str(x))
+            
+            # Wiedza XP
             wiedza_str = "0%"
             if total_words > 0:
                 xp_sum = u_cards["mastery_xp"].fillna(0).sum()
@@ -3590,7 +3598,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
             # --- FILTR ADMINA DLA STATYSTYK GLOBALNYCH ---
             for code in ADMIN_ORDER:
-                # Jeśli to Ty (ADMIN_USER) i moduł to "Inne", pomijamy dodawanie do sumy globalnej
                 if uname == ADMIN_USER and code == "Inn":
                     continue
                 global_daily[code] += u_daily[code]
@@ -3600,17 +3607,32 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             total_min_all = sum(u_total.values()) // 60
 
             adm_summary.append({
-                "Użytkownik": uname, "Ostatnio": user.get("last_seen", "-"), "🔥": user.get("streak", 0),
-                "Słówka": total_words, "Wiedza (XP)": wiedza_str, "Nauka dziś": int(study_min_today),
-                "Łącznie (min)": int(total_min_all), "Koszt AI": round(user.get("historical_cost", 0.0), 2),
+                "Użytkownik": uname, 
+                "Ostatnio": user.get("last_seen", "-"), 
+                "🔥": user.get("streak", 0),
+                "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})", 
+                "Wiedza (XP)": wiedza_str, 
+                "Nauka dziś": int(study_min_today),
+                "Łącznie (min)": int(total_min_all), 
+                "Koszt AI": round(user.get("historical_cost", 0.0), 2),
                 "u_total_map": u_total
             })
 
+        # --- SPECJALNE SORTOWANIE (wobo -> wiola -> reszta alfabetycznie) ---
+        def custom_sort_key(x):
+            name = x["Użytkownik"].lower()
+            if name == "wobo": return (0, "")
+            if name == "wiola": return (1, "")
+            return (2, name)
+
+        adm_summary.sort(key=custom_sort_key)
+        
         st.subheader("📋 Podsumowanie kont")
-        df_main = pd.DataFrame(adm_summary).sort_values("Nauka dziś", ascending=False)
+        df_main = pd.DataFrame(adm_summary)
         st.dataframe(df_main.drop(columns=["u_total_map"]), use_container_width=True, hide_index=True,
             column_config={
                 "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60),
+                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R-Ręczne, G-Generator, S-Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN")
             })
 
