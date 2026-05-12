@@ -3514,7 +3514,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V500 - Management Tab & Backup System) ---
+# --- 27. ADMIN PRO (V550 - User Control & Profile Editor) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3538,7 +3538,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
     STUDY_MODULES = [c for c in ADMIN_ORDER if c not in ["Inn", "Skn"]]
 
-    # --- 2. SEEDERY (Logika Generatorów) ---
+    # --- 2. SEEDERY I FUNKCJE ADMINA ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
         import json, time
         l_code = "de" if target_lang == "Niemiecki" else "cs"
@@ -3590,28 +3590,33 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
     # --- 3. INTERFEJS TABS ---
     tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
 
+    db = get_db()
+    ud_raw = db.table("user_data").select("*").execute().data
+    all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
+    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
+
     with tabs[0]:
-        # --- TAB: ANALIZA (Logika z obraz_28.png) ---
+        # --- TAB: ANALIZA ---
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
         with col_adm2:
             st.link_button("💸 Koszty OpenAI", "https://platform.openai.com/usage", use_container_width=True)
 
-        db = get_db()
-        ud_data = db.table("user_data").select("*").execute().data
-        all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
-        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
-        
         today_iso = date.today().isoformat()
         adm_summary = []
         global_daily = {code: 0.0 for code in ADMIN_ORDER}
         global_total = {code: 0.0 for code in ADMIN_ORDER}
 
-        for user in ud_data:
+        for user in ud_raw:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
+            # Flagi statusu
+            status_prefix = ""
+            if user.get("is_banned"): status_prefix += "🚫 "
+            if user.get("is_shadowbanned"): status_prefix += "👻 "
+
             total_words = len(u_cards)
             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
             r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
@@ -3626,7 +3631,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
             def process_stats(raw_dict):
                 processed = {code: 0.0 for code in ADMIN_ORDER}
-                for k, v in raw_dict.items():
+                for k, v in (raw_dict or {}).items():
                     if k in processed: processed[k] += v
                     else: processed["Inn"] += v
                 return processed
@@ -3643,15 +3648,21 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             total_min_all = sum(u_total.values()) // 60
 
             adm_summary.append({
-                "Użytkownik": uname, "Ostatnio": user.get("last_seen", "-"), "🔥": user.get("streak", 0),
+                "Użytkownik": f"{status_prefix}{uname}",
+                "E-mail": user.get("email", "-"),
+                "Ostatnio": user.get("last_seen", "-"),
+                "🔥": user.get("streak", 0),
                 "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})", 
-                "Wiedza (XP)": wiedza_str, "Nauka dziś": int(study_min_today),
-                "Łącznie (min)": int(total_min_all), "Koszt AI": round(user.get("historical_cost", 0.0), 2),
-                "u_total_map": u_total
+                "Wiedza (XP)": wiedza_str, 
+                "Nauka dziś": int(study_min_today),
+                "Łącznie (min)": int(total_min_all), 
+                "Koszt AI": round(user.get("historical_cost", 0.0), 2),
+                "u_total_map": u_total,
+                "raw_uname": uname
             })
 
         def custom_sort_key(x):
-            name = x["Użytkownik"].lower()
+            name = x["raw_uname"].lower()
             if name == "wobo": return (0, "")
             if name == "wiola": return (1, "")
             return (2, name)
@@ -3660,10 +3671,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         st.subheader("📋 Podsumowanie kont")
         df_main = pd.DataFrame(adm_summary)
-        st.dataframe(df_main.drop(columns=["u_total_map"]), use_container_width=True, hide_index=True,
+        st.dataframe(df_main.drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True,
             column_config={
                 "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60),
-                "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R-Ręczne, G-Generator, S-Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN")
             })
 
@@ -3679,7 +3689,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         st.divider()
         col_g1, col_glob2 = st.columns(2)
-        
         def show_full_table(cont, title, data_dict):
             cont.subheader(title)
             total = sum(data_dict.values())
@@ -3690,48 +3699,72 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
                 rows.append({"Moduł": MOD_MAP[code], "Pop.": perc, "Czas": t_str})
             cont.table(pd.DataFrame(rows))
-
         show_full_table(col_g1, "📈 Globalnie (Dziś)", global_daily)
         show_full_table(col_glob2, "📊 Globalnie (Historycznie)", global_total)
 
     with tabs[1]:
-        # --- TAB: ZARZĄDZANIE (Backup + Generatory) ---
+        # --- TAB: ZARZĄDZANIE ---
+        st.subheader("👤 Kontrola Użytkowników (Edytor Profili)")
+        
+        user_list = [u["username"] for u in ud_raw]
+        selected_target = st.selectbox("Wybierz konto do edycji:", user_list)
+        
+        target_data = next((item for item in ud_raw if item["username"] == selected_target), None)
+        
+        if target_data:
+            with st.expander(f"🛠️ Narzędzia dla: {selected_target}", expanded=True):
+                col_ed1, col_ed2 = st.columns(2)
+                with col_ed1:
+                    new_email = st.text_input("Adres E-mail:", value=target_data.get("email", ""))
+                    new_pass = st.text_input("Zresetuj Hasło (zostaw puste, by nie zmieniać):", type="password")
+                    admin_notes = st.text_area("Notatki Admina (niewidoczne dla użytkownika):", value=target_data.get("admin_notes", ""))
+                
+                with col_ed2:
+                    is_banned = st.checkbox("🚫 Zablokuj konto (BAN)", value=target_data.get("is_banned", False))
+                    is_shadow = st.checkbox("👻 Shadowban (ukryj z rankingów)", value=target_data.get("is_shadowbanned", False))
+                    st.warning("BAN uniemożliwi logowanie. Shadowban pozwala na naukę, ale ukrywa wyniki przed innymi.")
+
+                if st.button(f"💾 Zapisz zmiany dla {selected_target}", use_container_width=True, type="primary"):
+                    upd = {
+                        "email": new_email,
+                        "is_banned": is_banned,
+                        "is_shadowbanned": is_shadow,
+                        "admin_notes": admin_notes
+                    }
+                    if new_pass:
+                        upd["password"] = new_pass
+                    
+                    db.table("user_data").update(upd).eq("username", selected_target).execute()
+                    st.success(f"Zaktualizowano profil {selected_target}!")
+                    st.rerun()
+
+        st.divider()
         st.subheader("📂 Kopie zapasowe (Backup)")
         col_b1, col_b2 = st.columns(2)
-        
-        db = get_db()
-        
         with col_b1:
             st.write("📜 **Tabela Flashcards**")
             if st.button("Przygotuj Backup Flashcards", use_container_width=True):
                 data_fc = db.table("flashcards").select("*").execute().data
                 df_fc = pd.DataFrame(data_fc)
-                csv_fc = df_fc.to_csv(index=False).encode('utf-8')
-                st.download_button("⬇️ Pobierz CSV (Flashcards)", csv_fc, "backup_flashcards.csv", "text/csv", use_container_width=True)
-                
+                st.download_button("⬇️ Pobierz CSV", df_fc.to_csv(index=False).encode('utf-8'), "flashcards.csv", "text/csv")
         with col_b2:
             st.write("👤 **Tabela User Data**")
             if st.button("Przygotuj Backup User Data", use_container_width=True):
                 data_ud = db.table("user_data").select("*").execute().data
                 df_ud = pd.DataFrame(data_ud)
-                csv_ud = df_ud.to_csv(index=False).encode('utf-8')
-                st.download_button("⬇️ Pobierz CSV (User Data)", csv_ud, "backup_user_data.csv", "text/csv", use_container_width=True)
+                st.download_button("⬇️ Pobierz CSV", df_ud.to_csv(index=False).encode('utf-8'), "users.csv", "text/csv")
 
         st.divider()
         st.subheader("🤖 Generatory AI")
-        
         gen_tab1, gen_tab2, gen_tab3 = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki"])
-        
         with gen_tab1:
             v_lang = st.selectbox("Język", ["Niemiecki", "Czeski"], key="adm_v_l")
             v_lvl = st.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="adm_v_lv")
             v_goal = st.number_input("Ilość", 10, 500, 50)
             if st.button("Uruchom Seeder Słówek", type="primary"): seed_master_vocab(v_lang, v_lvl, v_goal)
-
         with gen_tab2:
             i_lang = st.selectbox("Język Idiomów", ["Niemiecki", "Czeski"], key="adm_i_l")
             if st.button("Generuj 10 Idiomów", type="primary"): seed_idioms(i_lang)
-
         with gen_tab3:
             c_lang = st.selectbox("Język Ciekawostek", ["Niemiecki", "Czeski"], key="adm_c_l")
             if st.button("Generuj 10 Ciekawostek", type="primary"): seed_cultural_trivia(c_lang)
