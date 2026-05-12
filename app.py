@@ -3514,7 +3514,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V450 - Custom Sort & Origin Breakdown) ---
+# --- 27. ADMIN PRO (V455 - Custom Sort & Origin Breakdown & Skn Excluded from Progress) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3536,7 +3536,8 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         "Skn": "📸 Skaner AI", "Inn": "⚙️ Inne"
     }
 
-    STUDY_MODULES = [c for c in ADMIN_ORDER if c != "Inn"]
+    # Wykluczamy 'Inn' oraz 'Skn' z paska postępu "Nauka dziś"
+    STUDY_MODULES = [c for c in ADMIN_ORDER if c not in ["Inn", "Skn"]]
 
     # --- 2. SEEDERY ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
@@ -3632,6 +3633,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
 
+            # Nauka dziś obliczana na podstawie STUDY_MODULES (teraz bez Skn)
             study_min_today = sum(u_daily[c] for c in STUDY_MODULES) // 60
             total_min_all = sum(u_total.values()) // 60
 
