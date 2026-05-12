@@ -3147,7 +3147,7 @@ elif choice == "📖 Słownik":
                 st.toast("Słówko zostało usunięte.")
                 st.rerun()
 
-# --- 25. STATYSTYKI (V410 - Mastery Distribution & XP Analytics) ---
+# --- 25. STATYSTYKI (V411 - Robust XP Analytics Fix) ---
 elif choice == "📊 Statystyki":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -3220,27 +3220,31 @@ elif choice == "📊 Statystyki":
         
         st.write("---")
 
-        # --- NOWOŚĆ: ROZKŁAD BIEGŁOŚCI (SYSTEM XP) ---
+        # --- NOWOŚĆ: ROZKŁAD BIEGŁOŚCI (POPRAWIONY SILNIK) ---
         st.subheader("📈 Rozwój Biegłości Słownictwa")
         
-        # Funkcja kategoryzująca XP
-        def get_xp_label(xp):
-            xp = int(xp or 0)
-            if xp <= 10: return "Nowicjusz"
-            if xp <= 30: return "Zaznajomiony"
-            if xp <= 60: return "Uczeń"
-            if xp <= 100: return "Średniozaawansowany"
-            if xp <= 150: return "Ekspert"
+        # PANCERNA FUNKCJA KATEGORYZACJI (Fix dla NaN/None)
+        def get_xp_label_safe(xp_val):
+            try:
+                # Zamiana na float, potem na int (bezpieczne dla Pandas)
+                val = int(float(xp_val)) if pd.notnull(xp_val) else 0
+            except:
+                val = 0
+                
+            if val <= 10: return "Nowicjusz"
+            if val <= 30: return "Zaznajomiony"
+            if val <= 60: return "Uczeń"
+            if val <= 100: return "Średniozaawansowany"
+            if val <= 150: return "Ekspert"
             return "Mistrz 🏆"
 
-        # Przygotowanie danych do tabeli biegłości
-        df['Biegłość'] = df['mastery_xp'].apply(get_xp_label)
+        # Bezpieczne mapowanie
+        df['Biegłość'] = df['mastery_xp'].apply(get_xp_label_safe)
         order = ["Nowicjusz", "Zaznajomiony", "Uczeń", "Średniozaawansowany", "Ekspert", "Mistrz 🏆"]
         
         dist = df['Biegłość'].value_counts().reindex(order, fill_value=0).reset_index()
         dist.columns = ['Poziom Biegłości', 'Liczba słówek']
         
-        # Wyświetlenie "zgrabnej" tabeli z paskiem postępu
         st.dataframe(
             dist,
             use_container_width=True,
@@ -3249,7 +3253,6 @@ elif choice == "📊 Statystyki":
                 "Poziom Biegłości": st.column_config.TextColumn("Stopień Opanowania"),
                 "Liczba słówek": st.column_config.ProgressColumn(
                     "Ilość Słów",
-                    help="Liczba słówek na danym poziomie",
                     format="%d",
                     min_value=0,
                     max_value=int(dist['Liczba słówek'].max() or 1)
@@ -3257,8 +3260,6 @@ elif choice == "📊 Statystyki":
             }
         )
         
-        # Dodatkowy wykres kołowy dla wizualizacji proporcji
-        import plotly.express as px
         fig = px.pie(dist, values='Liczba słówek', names='Poziom Biegłości', 
                      color='Poziom Biegłości',
                      color_discrete_map={
