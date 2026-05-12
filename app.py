@@ -3495,7 +3495,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V425 - Learning Logic Sync & Permanent Visibility) ---
+# --- 27. ADMIN PRO (V430 - Global Analytics Restored) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3561,7 +3561,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         
         today_iso = date.today().isoformat()
         adm_summary = []
+        
+        # Słowniki na statystyki globalne
         global_daily_time = {}
+        global_total_time = {}
         
         MOD_MAP = {
             "Pow": "📅 Powtórki", "Trn": "🚀 Trening", "Qiz": "🕹️ Quiz", "Fis": "🎴 Fiszki",
@@ -3583,13 +3586,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 wiedza_str = f"{min(wiedza_val, 100)}%"
             else: wiedza_str = "0%"
 
-            # --- CZAS DZISIAJ (TYLKO MODUŁY NAUKI) ---
+            # Rozkład źródeł
+            oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
+            r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
+            g_count = sum(1 for x in oc if "Generator" in str(x))
+            s_count = sum(1 for x in oc if "Skaner" in str(x))
+
+            # --- CZAS DZISIAJ (TYLKO MODUŁY NAUKI DLA PASKA) ---
             is_active_today = user.get("last_visit_date") == today_iso
             stats_today = user.get("time_stats", {}) if is_active_today else {}
-            # FILTR: Sumujemy tylko klucze z STUDY_MODULES
             study_sec_today = sum(v for k, v in stats_today.items() if k in STUDY_MODULES)
             
-            # Zbieranie danych do rozkładu globalnego (całość dla analityki)
+            # Globalne dzisiejsze
             if is_active_today:
                 for code, sec in stats_today.items():
                     global_daily_time[code] = global_daily_time.get(code, 0) + sec
@@ -3597,6 +3605,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             # Czas Łącznie (wszystko)
             stats_total = user.get("total_time_stats", {})
             total_sec_all = sum(stats_total.values()) if isinstance(stats_total, dict) else 0
+            
+            # Globalne historyczne
+            for code, sec in stats_total.items():
+                global_total_time[code] = global_total_time.get(code, 0) + sec
 
             adm_summary.append({
                 "Użytkownik": uname,
@@ -3610,6 +3622,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 "raw_total": stats_total
             })
 
+        # --- TABELA 1: PODSUMOWANIE KONT ---
         st.subheader("📋 Podsumowanie aktywności")
         df_main = pd.DataFrame(adm_summary).sort_values("Nauka dziś", ascending=False)
         st.dataframe(
@@ -3623,7 +3636,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         )
 
         st.divider()
-        st.subheader("🕵️ Czas w modułach (minuty historycznie)")
+        
+        # --- TABELA 2: SZCZEGÓŁY HISTORYCZNE (ZAWSZE WIDOCZNE) ---
+        st.subheader("🕵️ Czas spędzony w modułach (minuty historycznie)")
         history_rows = []
         for item in adm_summary:
             row = {"Użytkownik": item["Użytkownik"]}
@@ -3633,6 +3648,31 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             history_rows.append(row)
         st.dataframe(pd.DataFrame(history_rows), use_container_width=True, hide_index=True)
 
+        st.divider()
+
+        # --- TABELE GLOBALNE (DZIŚ VS HISTORYCZNIE) ---
+        col_glob1, col_glob2 = st.columns(2)
+        
+        def render_global_stats(container, title, data_dict):
+            container.subheader(title)
+            total_sec = sum(data_dict.values())
+            if total_sec > 0:
+                analysis = []
+                for code, full_name in MOD_MAP.items():
+                    v = data_dict.get(code, 0)
+                    if v > 0:
+                        time_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
+                        analysis.append({"Moduł": full_name, "Pop.": f"{round((v/total_sec)*100, 1)}%", "Czas": time_str})
+                # Sortowanie po czasie (najpopularniejsze na górze)
+                df_glob = pd.DataFrame(analysis).sort_values(by="Pop.", ascending=False)
+                container.dataframe(df_glob, use_container_width=True, hide_index=True)
+            else:
+                container.info("Brak danych w tym okresie.")
+
+        render_global_stats(col_glob1, "📈 Globalnie (Dziś)", global_daily_time)
+        render_global_stats(col_glob2, "📊 Globalnie (Historycznie)", global_total_time)
+
+    # --- ZAKŁADKA 2: MASTER VOCAB ---
     with tabs[1]:
         st.subheader("🏗️ Generator Master Vocab")
         with st.container(border=True):
@@ -3643,12 +3683,13 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             if st.button("🏗️ Uruchom Seeder Słówek", use_container_width=True, type="primary"):
                 seed_master_vocab(v_lang, v_lvl, v_goal)
 
+    # --- ZAKŁADKA 3: IDIOMY ---
     with tabs[2]:
         st.subheader("📖 Biblioteka Idiomów")
         if st.button("🏗️ Inicjuj/Doładuj Idiomy AI", use_container_width=True):
-            # Tutaj możesz wywołać funkcję seed_idioms_library() jeśli ją zdefiniowałeś
-            st.info("Trwa generowanie...") 
+            st.info("Trwa generowanie...") # Tutaj możesz wywołać ew. funkcję seed_idioms
 
+    # --- ZAKŁADKA 4: CIEKAWOSTKI ---
     with tabs[3]:
         st.subheader("🌍 Ciekawostki Kulturowe")
         c_lang_sel = st.selectbox("Wybierz język:", ["Niemiecki", "Czeski"], key="cur_lang_trivia")
