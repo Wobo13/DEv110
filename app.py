@@ -2755,90 +2755,105 @@ elif choice == "📦 Generator":
             del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V452 - Robust Syntax Fix) ---
+# --- 22. SKANER AI (V460 - Image Cropper Integration) ---
 elif choice == "📸 Skaner AI":
+    from streamlit_cropper import st_cropper # Wymaga pip install streamlit-cropper
+    
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📸 Skaner AI: {current_lang_name}")
-    st.write(f"Zrób zdjęcie tekstu lub wgraj grafikę, a AI wyciągnie z niej słówka w języku {current_lang_name}.")
+    st.write("Wgraj grafikę i przytnij ją, aby AI skupiło się tylko na istotnym tekście.")
 
-    # 1. UPLOAD I CAMERA
+    # 1. PRZECHWYTYWANIE OBRAZU
     cam_col, file_col = st.columns(2)
-    img_file = cam_col.camera_input("Zrób zdjęcie tekstu")
-    uploaded_file = file_col.file_uploader("Lub wgraj plik obrazu", type=["jpg", "jpeg", "png"])
+    img_file = cam_col.camera_input("Zrób zdjęcie")
+    uploaded_file = file_col.file_uploader("Wgraj plik", type=["jpg", "jpeg", "png"])
 
-    active_img = img_file if img_file else uploaded_file
+    active_raw_img = img_file if img_file else uploaded_file
 
-    if active_img:
-        img_obj = Image.open(active_img)
-        st.image(img_obj, caption="Podgląd skanu", use_container_width=True)
+    if active_raw_img:
+        img_obj = Image.open(active_raw_img)
         
-        if st.button("🔍 Analizuj obraz przez AI", use_container_width=True, type="primary"):
-            with st.spinner(f"Sztuczna inteligencja czyta tekst ({current_lang_name})..."):
-                
-                lang_instruction = ""
-                if L_CODE == "de":
-                    lang_instruction = "Jeśli znajdziesz niemieckie rzeczowniki, dodaj do nich rodzajniki (der, die, das)."
-                elif L_CODE == "cs":
-                    lang_instruction = "Analizuj tekst w języku CZESKIM. Zwróć uwagę na znaki diakrytyczne (haczki i kreski)."
+        st.subheader("✂️ Przytnij zdjęcie (zaznacz tekst)")
+        st.info("Przesuń ramkę, aby objęła tylko słówka, które chcesz dodać. AI ignoruje wszystko poza ramką.")
+        
+        # MODUŁ KADROWANIA
+        # Ustawienia: zachowanie proporcji (False), kolor ramki (czerwony)
+        cropped_img = st_cropper(
+            img_obj, 
+            realtime_update=True, 
+            box_color='#ff4b4b', 
+            aspect_ratio=None,
+            key="cropper_v1"
+        )
+        
+        # Podgląd wyciętego fragmentu
+        if cropped_img:
+            st.write("🔍 Podgląd wycinka do analizy:")
+            st.image(cropped_img, use_container_width=False, width=300)
 
-                prompt = f"""Przeanalizuj ten obraz. Wyciągnij z niego listę najważniejszych słówek i fraz w języku {current_lang_name}.
-                {lang_instruction}
-                
-                Dla każdego słowa przygotuj:
-                - de: słowo w języku {current_lang_name}
-                - pl: tłumaczenie na polski
-                - tags: kategorie wpisane WYŁĄCZNIE W JĘZYKU POLSKIM. Muszą zawierać poziom CEFR (np. A1, B2) i tagi tematyczne.
-                - ex_de: naturalne zdanie przykładowe w języku {current_lang_name}
-                - ex_pl: tłumaczenie tego zdania na polski
-                
-                Zwróć TYLKO czysty JSON:
-                {{"flashcards": [
-                    {{"de": "...", "pl": "...", "tags": "...", "ex_de": "...", "ex_pl": "..."}}
-                ]}}"""
-                
-                try:
-                    res_raw = get_openai_response(prompt, img_obj=img_obj).strip()
+            if st.button("🚀 Analizuj wykadrowany tekst", use_container_width=True, type="primary"):
+                with st.spinner("AI analizuje wycinek..."):
                     
-                    # --- BARDZIEJ ODPORNE OCZYSZCZANIE JSON ---
-                    # Usuwamy backticki i frazę 'json' w sposób odporny na błędy kopiowania
-                    cleaned_res = res_raw.strip()
-                    if cleaned_res.startswith("```"):
-                        cleaned_res = cleaned_res.strip("`").strip()
-                        if cleaned_res.lower().startswith("json"):
-                            cleaned_res = cleaned_res[4:].strip()
+                    lang_instruction = ""
+                    if L_CODE == "de":
+                        lang_instruction = "Jeśli znajdziesz niemieckie rzeczowniki, dodaj do nich rodzajniki (der, die, das)."
+                    elif L_CODE == "cs":
+                        lang_instruction = "Analizuj tekst w języku CZESKIM (haczki i kreski są kluczowe)."
+
+                    prompt = f"""Przeanalizuj wycięty fragment obrazu. Wyciągnij listę słówek/fraz w języku {current_lang_name}.
+                    {lang_instruction}
+                    
+                    Dla każdego słowa przygotuj:
+                    - de: słowo ({current_lang_name})
+                    - pl: tłumaczenie (polski)
+                    - tags: poziom (np. A1) i kategoria tematyczna (po polsku)
+                    - ex_de: zdanie przykładowe ({current_lang_name})
+                    - ex_pl: tłumaczenie zdania
+                    
+                    Zwróć TYLKO czysty JSON:
+                    {{"flashcards": [
+                        {{"de": "...", "pl": "...", "tags": "...", "ex_de": "...", "ex_pl": "..."}}
+                    ]}}"""
+                    
+                    try:
+                        # WYSYŁAMY cropped_img ZAMIAST img_obj
+                        res_raw = get_openai_response(prompt, img_obj=cropped_img).strip()
                         
-                    data = json.loads(cleaned_res)
-                    st.session_state.scanner_results = data.get("flashcards", [])
-                    st.success(f"Znaleziono {len(st.session_state.scanner_results)} słówek!")
-                except Exception as e:
-                    st.error(f"Błąd analizy: {e}")
+                        # Pancerna metoda czyszczenia JSON
+                        cleaned_res = res_raw.strip()
+                        if cleaned_res.startswith("```"):
+                            cleaned_res = cleaned_res.strip("`").strip()
+                            if cleaned_res.lower().startswith("json"):
+                                cleaned_res = cleaned_res[4:].strip()
+                            
+                        data = json.loads(cleaned_res)
+                        st.session_state.scanner_results = data.get("flashcards", [])
+                        st.success(f"Sukces! Znaleziono {len(st.session_state.scanner_results)} rekordów.")
+                    except Exception as e:
+                        st.error(f"Błąd: {e}")
 
     # --- 2. EDYTOR WYNIKÓW I MASOWA EDYCJA ---
     if "scanner_results" in st.session_state and st.session_state.scanner_results:
         st.divider()
-        st.subheader("📝 Edytuj i zatwierdź znalezione słówka")
+        st.subheader("📝 Zatwierdź wyniki")
         
-        # PANEL MASOWEJ EDYCJI KATEGORII
-        with st.expander("🛠️ Masowa edycja kategorii dla całego skanu"):
+        with st.expander("🛠️ Masowa edycja kategorii"):
             col_m1, col_m2 = st.columns([2, 1])
-            new_mass_cat = col_m1.text_input("Wpisz nową kategorię:", placeholder="np. Dom, Praca, A2")
+            new_mass_cat = col_m1.text_input("Kategoria dla wszystkich:", placeholder="np. Owoce, B2")
             
-            m_btn_col1, m_btn_col2 = st.columns(2)
-            if m_btn_col1.button("✅ Zastosuj do wszystkich", use_container_width=True):
+            m_btn_c1, m_btn_c2 = st.columns(2)
+            if m_btn_c1.button("✅ Zastosuj", use_container_width=True):
                 for item in st.session_state.scanner_results:
                     item["tags"] = new_mass_cat
                 st.rerun()
-            
-            if m_btn_col2.button("🗑️ Wyczyść wszystkie kategorie", use_container_width=True):
+            if m_btn_c2.button("🗑️ Wyczyść", use_container_width=True):
                 for item in st.session_state.scanner_results:
                     item["tags"] = ""
                 st.rerun()
 
         lang_col_label = "Niemiecki" if L_CODE == "de" else "Czeski"
-        
-        # Przygotowanie danych do edytora
         df_init = []
         for item in st.session_state.scanner_results:
             df_init.append({
@@ -2850,40 +2865,27 @@ elif choice == "📸 Skaner AI":
                 "Przykład PL": item.get("ex_pl", "")
             })
 
-        # Edytor tabelaryczny
-        edited_df = st.data_editor(
-            df_init,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="scanner_data_editor_v4"
-        )
+        edited_df = st.data_editor(df_init, use_container_width=True, num_rows="dynamic", key="scanner_v5")
 
-        col_save, col_cancel = st.columns(2)
-        
-        if col_save.button(f"🚀 Dodaj wybrane do bazy", use_container_width=True, type="primary"):
-            success_count = 0
+        c_save, c_cancel = st.columns(2)
+        if c_save.button("🚀 Dodaj do słownika", use_container_width=True, type="primary"):
+            added = 0
             for row in edited_df:
                 if row.get("Zapisz", False):
                     new_word = {
-                        "de": row[lang_col_label],
-                        "pl": row["Polski"],
-                        "category": row["Kategorie"],
-                        "next_review": str(date.today()),
-                        "level": 0,
-                        "origin": "Skaner AI",
-                        "lang": L_CODE,
-                        "mastery_xp": 0,
+                        "de": row[lang_col_label], "pl": row["Polski"], "category": row["Kategorie"],
+                        "next_review": str(date.today()), "level": 0, "origin": "Skaner AI",
+                        "lang": L_CODE, "mastery_xp": 0,
                         "examples": [{"de": row["Przykład"], "pl": row["Przykład PL"]}]
                     }
                     save_word(u, new_word)
-                    success_count += 1
-            
+                    added += 1
             st.session_state.flashcards = load_flashcards(u)
-            st.success(f"Dodano {success_count} słówek! ✅")
+            st.success(f"Dodano {added} słówek!")
             del st.session_state.scanner_results
             st.rerun()
 
-        if col_cancel.button("🗑️ Odrzuć skan", use_container_width=True, type="secondary"):
+        if c_cancel.button("🗑️ Odrzuć", use_container_width=True):
             del st.session_state.scanner_results
             st.rerun()
         
