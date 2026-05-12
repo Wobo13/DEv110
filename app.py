@@ -2533,7 +2533,7 @@ elif choice == "⚔️ Klub Pojedynków":
             })
             st.table(df_rank)
 
-# --- 20. ARENA WYZWAŃ (V2.9 - Syntax Fix & Final) ---
+# --- 20. ARENA WYZWAŃ (V550 - Shadowban Filter) ---
 elif choice == "🏆 Arena Wyzwań":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2547,30 +2547,36 @@ elif choice == "🏆 Arena Wyzwań":
     start_of_week = (now_pl - timedelta(days=now_pl.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     start_of_month = now_pl.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-    # --- 1. FUNKCJA POBIERAJĄCA (Z POPRAWIONYM SYNTAYXEM ORDER) ---
+    # --- 1. FUNKCJA POBIERAJĄCA Z FILTREM SHADOWBAN ---
     def get_game_leaderboard(game_id, lang_code, start_date=None):
         try:
             db = get_db()
-            query = db.table("game_scores").select("username, score, created_at").eq("game_name", game_id).eq("lang", lang_code)
+            # Pobieramy rekordy wraz z flagą shadowban z powiązanej tabeli user_data
+            query = db.table("game_scores").select("username, score, created_at, user_data(is_shadowbanned)").eq("game_name", game_id).eq("lang", lang_code)
             
             if start_date:
                 query = query.gte("created_at", start_date)
             
-            # POPRAWKA: Używamy 'desc' zamiast 'ascending'
-            # Memory (czas): is_asc=True -> desc=False
-            # Inne (punkty): is_asc=False -> desc=True
             is_desc = False if game_id == "memory" else True
             
-            res = query.order("score", desc=is_desc).limit(10).execute()
-            return res.data if res.data else []
+            # Pobieramy dane bez limitu, aby odfiltrować shadowbany w pamięci (Pandas)
+            res = query.order("score", desc=is_desc).execute()
+            data = res.data if res.data else []
+            
+            if not data: return []
+            
+            # Filtrowanie: zostawiamy tylko tych, którzy NIE mają shadowbana
+            filtered = [d for d in data if not (d.get('user_data') and d['user_data'].get('is_shadowbanned'))]
+            
+            return filtered[:10] # Zwracamy top 10 po filtracji
         except Exception as e:
-            # st.error(f"Błąd zapytania: {e}") # Debugging
             return []
 
-    # --- 2. POBIERANIE DANYCH STAŁYCH ---
+    # --- 2. POBIERANIE DANYCH STAŁYCH (Z uwzględnieniem flag shadowban) ---
     try:
         db = get_db()
-        raw_users = db.table("user_data").select("username, streak").execute().data or []
+        # Pobieramy wszystkich użytkowników, aby móc wyliczyć wiedzę i passę
+        raw_users = db.table("user_data").select("username, streak, is_shadowbanned").execute().data or []
         all_cards_global = db.table("flashcards").select("username, next_review").eq("lang", L_CODE).execute().data or []
         
         cards_per_user = {}
@@ -2629,33 +2635,46 @@ elif choice == "🏆 Arena Wyzwań":
     # --- 5. PASSA I WIEDZA ---
     col1, col2 = st.columns(2)
     leaderboard_data = []
+    visible_leaderboard = [] # Lista tylko dla osób bez shadowbana
+    
     today_dt = date.today()
     for u_row in raw_users:
         uname = u_row.get("username", "Anonim")
+        is_ghost = u_row.get("is_shadowbanned", False)
         u_cards = cards_per_user.get(uname, [])
         w_raw = 0
         if u_cards:
             strong = len([c for c in u_cards if (pd.to_datetime(c.get('next_review', today_dt)).date() - today_dt).days > 6])
             w_raw = int((strong / len(u_cards)) * 100)
         
-        leaderboard_data.append({"Użytkownik": uname, "Ogień 🔥": int(u_row.get("streak", 0)), "w_raw": w_raw, "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"})
+        entry = {
+            "Użytkownik": uname, 
+            "Ogień 🔥": int(u_row.get("streak", 0)), 
+            "w_raw": w_raw, 
+            "Wiedza 🧠": f"{w_raw}%" if u_cards else "---"
+        }
+        
+        leaderboard_data.append(entry)
+        if not is_ghost:
+            visible_leaderboard.append(entry)
 
-    if leaderboard_data:
+    if visible_leaderboard:
         with col1:
             st.subheader("🔥 Top 10: Passa")
-            df_s = pd.DataFrame(leaderboard_data).sort_values("Ogień 🔥", ascending=False).head(10)
+            df_s = pd.DataFrame(visible_leaderboard).sort_values("Ogień 🔥", ascending=False).head(10)
             st.table(assign_medals(df_s.reset_index(drop=True))[["Użytkownik", "Ogień 🔥"]])
         with col2:
             st.subheader(f"🧠 Top 10: Wiedza ({L_CODE.upper()})")
-            df_w = pd.DataFrame(leaderboard_data)
+            df_w = pd.DataFrame(visible_leaderboard)
             df_w = df_w[df_w["Wiedza 🧠"] != "---"].sort_values("w_raw", ascending=False).head(10)
             if not df_w.empty: st.table(assign_medals(df_w.reset_index(drop=True))[["Użytkownik", "Wiedza 🧠"]])
             else: st.caption("Brak danych.")
 
-    # Podświetlenie pozycji aktualnego gracza
+    # Podświetlenie pozycji aktualnego gracza (działa nawet jeśli gracz ma shadowbana)
     st.write("---")
     my_stats = next((item for item in leaderboard_data if item["Użytkownik"] == u_name), None)
     if my_stats:
+        # Informacja dla użytkownika - on widzi swoje statystyki normalnie
         st.info(f"Twoje statystyki ({current_lang_name}): Wiedza: **{my_stats['Wiedza 🧠']}** | Passa: **{my_stats['Ogień 🔥']} dni**.")
 
 # --- 21. GENERATOR SŁÓW (V3.0 - Master Vocab Integration) ---
