@@ -3579,11 +3579,11 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V551 - Security Hardened Admin Check) ---
+# --- 27. ADMIN PRO (V551 - Performance & Security Edition) ---
 elif choice == "👑 Admin" and st.session_state.get("is_admin"):
     st.header("👑 Panel Administratora")
 
-    # Aktualizacja czasu ostatniej aktywności admina
+    # Aktualizacja czasu aktywności admina
     st.session_state.user_data["last_seen"] = get_now_pl()
     save_user_data(u, st.session_state.user_data)
 
@@ -3653,15 +3653,18 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
             st.success("Dodano ciekawostki!")
         except: st.error("Błąd generatora ciekawostek.")
 
-    # --- 3. INTERFEJS TABS ---
-    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
-
+    # --- 3. POBIERANIE DANYCH BAZOWYCH (Lekkie) ---
     db = get_db()
     ud_raw = db.table("user_data").select("*").execute().data
-    all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
-    df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
+    
+    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
 
     with tabs[0]:
+        # --- TAB: ANALIZA (Zoptymalizowana) ---
+        # Obliczenia wykonywane tylko gdy ta zakładka jest aktywna
+        all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
+        df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
+
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
@@ -3707,18 +3710,14 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
 
-            study_min_today = sum(u_daily[c] for c in STUDY_MODULES) // 60
-            total_min_all = sum(u_total.values()) // 60
-
             adm_summary.append({
                 "Użytkownik": f"{status_prefix}{uname}",
-                "E-mail": user.get("email", "-"),
                 "Ostatnio": user.get("last_seen", "-"),
                 "🔥": user.get("streak", 0),
                 "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})", 
                 "Wiedza (XP)": wiedza_str, 
-                "Nauka dziś": int(study_min_today),
-                "Łącznie (min)": int(total_min_all), 
+                "Nauka dziś": int(sum(u_daily[c] for c in STUDY_MODULES) // 60),
+                "Łącznie (min)": int(sum(u_total.values()) // 60), 
                 "Koszt AI": round(user.get("historical_cost", 0.0), 2),
                 "u_total_map": u_total,
                 "raw_uname": uname
@@ -3728,11 +3727,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
         
         st.subheader("📋 Podsumowanie kont")
         df_main = pd.DataFrame(adm_summary)
-        st.dataframe(df_main.drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True,
-            column_config={
-                "Nauka dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", min_value=0, max_value=60),
-                "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN")
-            })
+        st.dataframe(df_main.drop(columns=["u_total_map", "raw_uname"]), use_container_width=True, hide_index=True)
 
         st.divider()
         st.subheader("🕵️ Czas w modułach (minuty historycznie)")
@@ -3745,9 +3740,10 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
         st.dataframe(pd.DataFrame(hist_table_data), use_container_width=True, hide_index=True)
 
     with tabs[1]:
-        st.subheader("👤 Kontrola Użytkowników (Edytor Profili)")
+        # --- TAB: ZARZĄDZANIE (Błyskawiczne) ---
+        st.subheader("👤 Kontrola Użytkowników")
         
-        user_list = [u["username"] for u in ud_raw]
+        user_list = [u_data["username"] for u_data in ud_raw]
         selected_target = st.selectbox("Wybierz konto do edycji:", user_list)
         
         target_data = next((item for item in ud_raw if item["username"] == selected_target), None)
@@ -3757,13 +3753,14 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                 col_ed1, col_ed2 = st.columns(2)
                 with col_ed1:
                     new_email = st.text_input("Adres E-mail:", value=target_data.get("email", ""))
-                    new_pass = st.text_input("Zresetuj Hasło (zostaw puste, by nie zmieniać):", type="password")
+                    new_pass = st.text_input("Zresetuj Hasło (puste = bez zmian):", type="password")
                     admin_notes = st.text_area("Notatki Admina:", value=target_data.get("admin_notes", ""))
                 
                 with col_ed2:
                     is_banned = st.checkbox("🚫 Zablokuj konto (BAN)", value=target_data.get("is_banned", False))
                     is_admin_flag = st.checkbox("👑 Uprawnienia Admina", value=target_data.get("is_admin", False))
                     is_shadow = st.checkbox("👻 Shadowban", value=target_data.get("is_shadowbanned", False))
+                    st.warning("Zmiana statusu Admina wymaga przelogowania użytkownika.")
 
                 if st.button(f"💾 Zapisz zmiany dla {selected_target}", use_container_width=True, type="primary"):
                     upd = {
@@ -3773,8 +3770,7 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
                         "is_shadowbanned": is_shadow,
                         "admin_notes": admin_notes
                     }
-                    if new_pass:
-                        upd["password"] = new_pass
+                    if new_pass: upd["password"] = new_pass
                     
                     db.table("user_data").update(upd).eq("username", selected_target).execute()
                     st.success(f"Zaktualizowano profil {selected_target}!")
@@ -3784,15 +3780,15 @@ elif choice == "👑 Admin" and st.session_state.get("is_admin"):
         st.subheader("📂 Kopie zapasowe (Backup)")
         col_b1, col_b2 = st.columns(2)
         with col_b1:
+            st.write("📜 **Tabela Flashcards**")
             if st.button("Przygotuj Backup Flashcards", use_container_width=True):
                 data_fc = db.table("flashcards").select("*").execute().data
-                df_fc = pd.DataFrame(data_fc)
-                st.download_button("⬇️ Pobierz CSV", df_fc.to_csv(index=False).encode('utf-8'), "flashcards.csv", "text/csv")
+                st.download_button("⬇️ Pobierz CSV", pd.DataFrame(data_fc).to_csv(index=False).encode('utf-8'), "flashcards.csv", "text/csv")
         with col_b2:
+            st.write("👤 **Tabela User Data**")
             if st.button("Przygotuj Backup User Data", use_container_width=True):
                 data_ud = db.table("user_data").select("*").execute().data
-                df_ud = pd.DataFrame(data_ud)
-                st.download_button("⬇️ Pobierz CSV", df_ud.to_csv(index=False).encode('utf-8'), "users.csv", "text/csv")
+                st.download_button("⬇️ Pobierz CSV", pd.DataFrame(data_ud).to_csv(index=False).encode('utf-8'), "users.csv", "text/csv")
 
         st.divider()
         st.subheader("🤖 Generatory AI")
