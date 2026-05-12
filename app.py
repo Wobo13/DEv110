@@ -557,9 +557,6 @@ if u:
         st.session_state.flashcards = load_flashcards(u)
         save_user_data(u, st.session_state.user_data)
 
-    # Uruchom licznik czasu
-    current_choice = st.session_state.get("choice", "🏠 Start")
-    update_activity(current_choice)
 
     # Synchronizacja co 5 minut
     if "last_db_ping" not in st.session_state or time.time() - st.session_state.last_db_ping > 300:
@@ -979,6 +976,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                     if st.form_submit_button("SPRAWDŹ", use_container_width=True, type="primary"):
                         st.session_state[f"{pfx}_user_ans"] = u_in
                         st.session_state[f"{pfx}_mode"] = "res"
+                        update_activity(choice)
                         st.rerun(scope="fragment")
             else:
                 # NORMALIZACJA I SPRAWDZANIE
@@ -1038,6 +1036,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                             
                             st.session_state[f"{pfx}_idx"] += 1
                             st.session_state[f"{pfx}_mode"] = "ask"
+                            update_activity(choice)
                             st.rerun(scope="fragment")
                 else:
                     # KARA ZA BŁĄD (-15 XP, powtórka na dziś)
@@ -1055,6 +1054,7 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
+                        update_activity(choice)
                         st.rerun(scope="fragment")
 
         flashcard_engine_xp()
@@ -1125,6 +1125,7 @@ elif choice == "🕹️ Quiz":
                     if cols[i % 2].button(o, key=f"qbtn_{current_seed}_{i}", use_container_width=True):
                         st.session_state.u_q = o
                         st.session_state.q_s = "res"
+                        update_activity(choice)
                         st.rerun(scope="fragment")
             else:
                 # 4. WYNIK I NOWA LOGIKA XP/SRS
@@ -1164,6 +1165,7 @@ elif choice == "🕹️ Quiz":
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q", "q_key_seed"]:
                         if key in st.session_state: del st.session_state[key]
+                        update_activity(choice)
                     st.rerun(scope="fragment")
 
         quiz_engine_xp()
@@ -1273,15 +1275,18 @@ elif choice == "🎴 Fiszki":
             if c1.button("⬅️ Poprzednia", use_container_width=True):
                 st.session_state.f_idx -= 1
                 st.session_state.f_flipped = False
+                update_activity(choice)
                 st.rerun(scope="fragment")
                 
             if c2.button("🔄 OBRÓĆ KARTĘ", type="primary", use_container_width=True):
                 st.session_state.f_flipped = not st.session_state.f_flipped
+                update_activity(choice)
                 st.rerun(scope="fragment")
                 
             if c3.button("Następna ➡️", use_container_width=True):
                 st.session_state.f_idx += 1
                 st.session_state.f_flipped = False
+                update_activity(choice)
                 st.rerun(scope="fragment")
 
         flashcards_ui()
@@ -1381,6 +1386,7 @@ elif choice == "📝 Testy":
                                 st.toast(f"Błąd! Poprawnie: {correct_ans} ❌", icon="⚠️")
                             
                             st.session_state.test_idx += 1
+                            update_activity(choice)
                             st.rerun(scope="fragment")
                 
                 # 4. PODSUMOWANIE TESTU
@@ -1564,9 +1570,11 @@ elif choice == "🧠 Memory":
                     if st.session_state.mem_first is None:
                         status[idx] = "flipped"
                         st.session_state.mem_first = idx
+                        update_activity(choice)
                         st.rerun(scope="fragment")
                     else:
                         status[idx] = "flipped"
+                        update_activity(choice)
                         st.rerun(scope="fragment") 
 
         # SPRAWDZANIE PAR
@@ -1584,6 +1592,7 @@ elif choice == "🧠 Memory":
                 status[idx2] = "hidden"
             
             st.session_state.mem_first = None
+            update_activity(choice)
             st.rerun(scope="fragment")
 
     memory_engine()
@@ -1672,6 +1681,7 @@ elif choice == "🛠️ Warsztat":
                 if not st.session_state.w_show:
                     if st.button("👁️ Pokaż odpowiedź", use_container_width=True, type="primary"):
                         st.session_state.w_show = True
+                        update_activity(choice)
                         st.rerun(scope="fragment")
                 else:
                     col_a, col_b = st.columns(2)
@@ -1680,6 +1690,7 @@ elif choice == "🛠️ Warsztat":
                             card = st.session_state.w_list.pop(st.session_state.w_idx)
                             st.session_state.w_list.append(card)
                             st.session_state.w_show = False
+                            update_activity(choice)
                             st.rerun(scope="fragment")
                     
                     with col_b:
@@ -2352,6 +2363,7 @@ elif choice == "🎲 Językowa Ruletka":
                     
                     del st.session_state.surv_task
                     st.toast(f"Dobrze! XP: +{xp_gain} | Pamięć: +1 dzień", icon="✅")
+                    update_activity(choice)
                     st.rerun(scope="fragment")
                 else:
                     # KONIEC GRY
