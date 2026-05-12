@@ -699,7 +699,7 @@ with st.sidebar:
                 del st.session_state[key]
         st.rerun()
 
-# --- 7. START (V3.6 - Dashboard + System Announcements + Study Time Fix) ---
+# --- 7. START (V3.7 - Unified Notification Center & Dashboard) ---
 
 choice = st.session_state.get("choice", "🏠 Start")
 update_activity(choice)
@@ -710,30 +710,60 @@ if choice == "🏠 Start":
     u_name = st.session_state.get("user", "Anonim")
     db = get_db()
     
-    # --- 0. OGŁOSZENIA SYSTEMOWE ---
+    # --- 0. ZINTEGROWANE CENTRUM POWIADOMIEŃ ---
+    all_notices = []
+    
+    # A. Pobieranie ogłoszeń systemowych
     try:
-        # Pobieramy aktywne ogłoszenia skierowane do wszystkich ('all') lub konkretnie do tego użytkownika
         res_ann = db.table("system_announcements")\
             .select("*")\
             .or_(f"target.eq.all,target.eq.{u_name}")\
             .eq("is_active", True)\
             .order("created_at", desc=True)\
             .execute()
+        if res_ann.data:
+            for a in res_ann.data:
+                all_notices.append({
+                    "title": a['title'],
+                    "message": a['message'],
+                    "icon": a.get("icon", "📢"),
+                    "color": a.get("color", "#2E86C1"),
+                    "type": "info"
+                })
+    except: pass
+
+    # B. Pobieranie oczekujących pojedynków (Wirtualne Ogłoszenie)
+    try:
+        res_pending = db.table("duels").select("challenger")\
+            .eq("opponent", u_name).eq("status", "pending").execute()
         
-        announcements = res_ann.data if res_ann.data else []
-        
-        for ann in announcements:
-            icon = ann.get("icon", "📢")
-            color = ann.get("color", "#2E86C1")
+        if res_pending.data:
+            challengers = ", ".join(list(set([d['challenger'] for d in res_pending.data])))
+            all_notices.append({
+                "title": "Masz nowe wyzwania! ⚔️",
+                "message": f"Użytkownicy rzucili Ci rękawicę: {challengers}",
+                "icon": "⚔️",
+                "color": "#FF4B4B", # Czerwony dla pojedynków
+                "type": "duel"
+            })
+    except: pass
+
+    # C. Wyświetlanie powiadomień w ujednoliconym stylu
+    if all_notices:
+        for notice in all_notices:
             st.markdown(f"""
-                <div style="background-color: {color}; padding: 12px; border-radius: 10px; 
+                <div style="background-color: {notice['color']}; padding: 12px; border-radius: 10px; 
                             color: white; margin-bottom: 10px; border-left: 5px solid rgba(0,0,0,0.2);">
-                    <span style="font-size: 1.2rem; margin-right: 10px;">{icon}</span>
-                    <b>{ann['title']}</b>: {ann['message']}
+                    <span style="font-size: 1.2rem; margin-right: 10px;">{notice['icon']}</span>
+                    <b>{notice['title']}</b>: {notice['message']}
                 </div>
             """, unsafe_allow_html=True)
-    except:
-        pass
+            
+            # Jeśli to pojedynek, dodajemy przycisk akcji bezpośrednio pod ramką
+            if notice['type'] == "duel":
+                if st.button("ODPOWIEDZ NA WYZWANIE ➔", use_container_width=True, key="go_to_duels_unified"):
+                    st.session_state.choice = "⚔️ Klub Pojedynków"
+                    st.rerun()
 
     # --- 1. ANALIZA DANYCH BIEŻĄCYCH ---
     all_cards_full = st.session_state.flashcards
@@ -744,49 +774,18 @@ if choice == "🏠 Start":
     due_cards = [c for c in all_c if str(c.get("next_review", today_str)) <= today_str]
     hard_cards = [c for c in all_c if c.get("level", 0) < 2]
 
-    # --- POPRAWKA CZASU NAUKI: Skaner (Skn) usunięty z naliczania celu ---
+    # Statystyki czasu (Skn wykluczony z naliczania celu)
     current_stats = ud.get("time_stats", {})
-    study_modules = [
-        "Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", 
-        "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due"
-    ]
+    study_modules = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due"]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
     daily_goal = ud.get("settings", {}).get("daily_goal", 20)
 
-    # --- NAGŁÓWEK ---
+    # --- 2. NAGŁÓWEK ---
     hello_msg = "Guten Morgen" if L_CODE == "de" else "Dobrý den"
     st.markdown(f"<h3 style='margin-bottom: 0px; font-size: 1.4rem;'>{hello_msg}, {str(u_name).capitalize()}! ☀️</h3>", unsafe_allow_html=True)
 
-    # --- CENTRUM DOWODZENIA (ALERTY POJEDYNKÓW) ---
-    try:
-        res_pending = db.table("duels").select("challenger")\
-            .eq("opponent", u_name).eq("status", "pending").execute()
-        
-        pending_challenges = res_pending.data if res_pending.data else []
-        
-        if pending_challenges:
-            challengers = ", ".join(list(set([d['challenger'] for d in pending_challenges])))
-            st.markdown(f"""
-                <div style="background: linear-gradient(90deg, #FF4B4B 0%, #FF8F8F 100%); 
-                            padding: 15px; border-radius: 12px; margin: 15px 0px; color: white;">
-                    <div style="display: flex; align-items: center;">
-                        <span style="font-size: 1.5rem; margin-right: 15px;">⚔️</span>
-                        <div>
-                            <b style="font-size: 1rem;">Masz nowe wyzwania!</b><br>
-                            <span style="font-size: 0.85rem; opacity: 0.9;">Wyzywa Cię: {challengers}</span>
-                        </div>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("ODPOWIEDZ NA WYZWANIE ➔", use_container_width=True, key="go_to_duels_home"):
-                st.session_state.choice = "⚔️ Klub Pojedynków"
-                st.rerun()
-    except:
-        pass
-
-    # --- SEKCJA 1: SŁÓWKO DNIA (SPOTLIGHT) ---
+    # --- 3. SEKCJA 1: SŁÓWKO DNIA (SPOTLIGHT) ---
     if hard_cards:
         idx_spot = int(hashlib.md5((today_str + "spot").encode()).hexdigest(), 16) % len(hard_cards)
         spot_word = hard_cards[idx_spot]
@@ -805,7 +804,7 @@ if choice == "🏠 Start":
     else:
         st.success("✨ Wszystkie trudne słowa opanowane!")
 
-    # --- SEKCJA 2: ZADANIA NA DZIŚ ---
+    # --- 4. SEKCJA 2: ZADANIA NA DZIŚ ---
     st.markdown(f"<div style='margin-top: 10px; font-weight: bold; font-size: 1.1rem;'>🏆 Zadania na dziś</div>", unsafe_allow_html=True)
     
     try:
@@ -833,7 +832,6 @@ if choice == "🏠 Start":
         wrk_key_day = f"{today_str}_{L_CODE}"
         mastered_today = ud.get("workshop_progress", {}).get(wrk_key_day, 0)
         workshop_done = mastered_today >= wrk_goal
-        
     except:
         writing_done = det_done = workshop_done = False
         current_writing_topic = daily_phrase = "Błąd połączenia"
@@ -843,7 +841,6 @@ if choice == "🏠 Start":
     t_icon = "✅" if study_minutes >= daily_goal else "❌"
     st.markdown(f"<div style='font-size: 0.9rem; margin-bottom: 5px;'>{t_icon} Cel czasowy: <b>{study_minutes}/{daily_goal} m</b></div>", unsafe_allow_html=True)
 
-    # Kontenery zadań
     with st.container(border=True):
         c_w1, c_w2 = st.columns([4, 1])
         c_w1.markdown(f"**{'✅' if writing_done else '✍️'} Pisanie:** *{current_writing_topic[:30]}...*")
@@ -865,7 +862,7 @@ if choice == "🏠 Start":
             if c_r2.button("GO", key="go_wr_home", use_container_width=True):
                 st.session_state.choice = "🛠️ Warsztat"; st.rerun()
 
-    # --- SEKCJA 3: KULTURA ---
+    # --- 5. SEKCJA 3: KULTURA ---
     try:
         res_trivia = db.table("cultural_trivia").select("*").eq("lang", L_CODE).execute()
         if res_trivia.data:
@@ -878,7 +875,7 @@ if choice == "🏠 Start":
 
     st.divider()
 
-    # --- SEKCJA 4: FOOTER ---
+    # --- 6. SEKCJA 4: FOOTER ---
     col_f1, col_f2 = st.columns(2)
     col_f1.metric("Baza słów", len(all_c))
     col_f2.metric("Do powtórki", len(due_cards))
