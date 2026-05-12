@@ -3514,7 +3514,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V455 - Custom Sort & Origin Breakdown & Skn Excluded from Progress) ---
+# --- 27. ADMIN PRO (V500 - Management Tab & Backup System) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3536,10 +3536,9 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         "Skn": "📸 Skaner AI", "Inn": "⚙️ Inne"
     }
 
-    # Wykluczamy 'Inn' oraz 'Skn' z paska postępu "Nauka dziś"
     STUDY_MODULES = [c for c in ADMIN_ORDER if c not in ["Inn", "Skn"]]
 
-    # --- 2. SEEDERY ---
+    # --- 2. SEEDERY (Logika Generatorów) ---
     def seed_master_vocab(target_lang, target_lvl, total_goal):
         import json, time
         l_code = "de" if target_lang == "Niemiecki" else "cs"
@@ -3562,23 +3561,37 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             time.sleep(0.5)
         st.success("Gotowe!")
 
+    def seed_idioms(lang):
+        import json
+        st.info(f"📚 Generowanie idiomów ({lang})...")
+        prompt = f"Wygeneruj 10 unikalnych idiomów ({lang}). JSON: idioms: [{{phrase_orig, phrase_pl, lang, level}}]"
+        try:
+            l_code = "de" if lang == "Niemiecki" else "cs"
+            raw = get_openai_response(prompt)
+            items = json.loads(raw).get("idioms", [])
+            for item in items: item["lang"] = l_code
+            get_db().table("idioms").insert(items).execute()
+            st.success("Dodano idiomy!")
+        except: st.error("Błąd generatora idiomów.")
+
     def seed_cultural_trivia(lang):
         import json
-        st.info(f"🌍 Generowanie ciekawostek {lang}...")
-        prompt = f"Wygeneruj 10 ciekawostek {lang}. JSON: trivia: [{{title, content_orig, content_pl, lang}}]"
+        st.info(f"🌍 Generowanie ciekawostek ({lang})...")
+        prompt = f"Wygeneruj 10 ciekawostek ({lang}). JSON: trivia: [{{title, content_orig, content_pl, lang}}]"
         try:
             l_code = "de" if lang == "Niemiecki" else "cs"
             raw = get_openai_response(prompt)
             items = json.loads(raw).get("trivia", [])
             for item in items: item["lang"] = l_code
             get_db().table("cultural_trivia").insert(items).execute()
-            st.success("Dodano!")
-        except: st.error("Błąd.")
+            st.success("Dodano ciekawostki!")
+        except: st.error("Błąd generatora ciekawostek.")
 
     # --- 3. INTERFEJS TABS ---
-    tabs = st.tabs(["👥 Analiza Użytkowników", "📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki"])
+    tabs = st.tabs(["👥 Analiza Użytkowników", "🛠️ Zarządzanie"])
 
     with tabs[0]:
+        # --- TAB: ANALIZA (Logika z obraz_28.png) ---
         col_adm1, col_adm2 = st.columns(2)
         with col_adm1:
             if st.button("🔄 Odśwież Dane", use_container_width=True): st.rerun()
@@ -3587,8 +3600,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
 
         db = get_db()
         ud_data = db.table("user_data").select("*").execute().data
-        
-        # POBIERANIE ORIGIN DLA PODZIAŁU SŁÓWEK
         all_cards_res = db.table("flashcards").select("username", "mastery_xp", "origin").execute().data
         df_cards_all = pd.DataFrame(all_cards_res) if all_cards_res else pd.DataFrame(columns=["username", "mastery_xp", "origin"])
         
@@ -3601,21 +3612,18 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             uname = user["username"]
             u_cards = df_cards_all[df_cards_all["username"] == uname]
             
-            # --- ROZKŁAD ŹRÓDEŁ SŁÓWEK (R|G|S) ---
             total_words = len(u_cards)
             oc = u_cards["origin"].fillna("Dodaj").tolist() if not u_cards.empty else []
             r_count = sum(1 for x in oc if any(s in str(x) for s in ["Dodaj", "Detektyw", "Manual"]))
             g_count = sum(1 for x in oc if "Generator" in str(x))
             s_count = sum(1 for x in oc if "Skaner" in str(x))
             
-            # Wiedza XP
             wiedza_str = "0%"
             if total_words > 0:
                 xp_sum = u_cards["mastery_xp"].fillna(0).sum()
                 wiedza_val = int((xp_sum / (total_words * 150)) * 100)
                 wiedza_str = f"{min(wiedza_val, 100)}%"
 
-            # Przetwarzanie czasu użytkownika
             def process_stats(raw_dict):
                 processed = {code: 0.0 for code in ADMIN_ORDER}
                 for k, v in raw_dict.items():
@@ -3626,30 +3634,22 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             u_daily = process_stats(user.get("time_stats", {}) if user.get("last_visit_date") == today_iso else {})
             u_total = process_stats(user.get("total_time_stats", {}))
 
-            # --- FILTR ADMINA DLA STATYSTYK GLOBALNYCH ---
             for code in ADMIN_ORDER:
-                if uname == ADMIN_USER and code == "Inn":
-                    continue
+                if uname == ADMIN_USER and code == "Inn": continue
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
 
-            # Nauka dziś obliczana na podstawie STUDY_MODULES (teraz bez Skn)
             study_min_today = sum(u_daily[c] for c in STUDY_MODULES) // 60
             total_min_all = sum(u_total.values()) // 60
 
             adm_summary.append({
-                "Użytkownik": uname, 
-                "Ostatnio": user.get("last_seen", "-"), 
-                "🔥": user.get("streak", 0),
+                "Użytkownik": uname, "Ostatnio": user.get("last_seen", "-"), "🔥": user.get("streak", 0),
                 "Słówka (R|G|S)": f"{total_words} ({r_count}|{g_count}|{s_count})", 
-                "Wiedza (XP)": wiedza_str, 
-                "Nauka dziś": int(study_min_today),
-                "Łącznie (min)": int(total_min_all), 
-                "Koszt AI": round(user.get("historical_cost", 0.0), 2),
+                "Wiedza (XP)": wiedza_str, "Nauka dziś": int(study_min_today),
+                "Łącznie (min)": int(total_min_all), "Koszt AI": round(user.get("historical_cost", 0.0), 2),
                 "u_total_map": u_total
             })
 
-        # --- SPECJALNE SORTOWANIE (wobo -> wiola -> reszta alfabetycznie) ---
         def custom_sort_key(x):
             name = x["Użytkownik"].lower()
             if name == "wobo": return (0, "")
@@ -3695,16 +3695,46 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         show_full_table(col_glob2, "📊 Globalnie (Historycznie)", global_total)
 
     with tabs[1]:
-        st.subheader("🏗️ Master Vocab")
-        v_lang = st.selectbox("Język", ["Niemiecki", "Czeski"], key="adm_v_l")
-        v_lvl = st.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="adm_v_lv")
-        v_goal = st.number_input("Ilość", 10, 500, 50)
-        if st.button("Uruchom Seeder", type="primary"): seed_master_vocab(v_lang, v_lvl, v_goal)
+        # --- TAB: ZARZĄDZANIE (Backup + Generatory) ---
+        st.subheader("📂 Kopie zapasowe (Backup)")
+        col_b1, col_b2 = st.columns(2)
+        
+        db = get_db()
+        
+        with col_b1:
+            st.write("📜 **Tabela Flashcards**")
+            if st.button("Przygotuj Backup Flashcards", use_container_width=True):
+                data_fc = db.table("flashcards").select("*").execute().data
+                df_fc = pd.DataFrame(data_fc)
+                csv_fc = df_fc.to_csv(index=False).encode('utf-8')
+                st.download_button("⬇️ Pobierz CSV (Flashcards)", csv_fc, "backup_flashcards.csv", "text/csv", use_container_width=True)
+                
+        with col_b2:
+            st.write("👤 **Tabela User Data**")
+            if st.button("Przygotuj Backup User Data", use_container_width=True):
+                data_ud = db.table("user_data").select("*").execute().data
+                df_ud = pd.DataFrame(data_ud)
+                csv_ud = df_ud.to_csv(index=False).encode('utf-8')
+                st.download_button("⬇️ Pobierz CSV (User Data)", csv_ud, "backup_user_data.csv", "text/csv", use_container_width=True)
 
-    with tabs[3]:
-        st.subheader("🌍 Ciekawostki")
-        c_lang = st.selectbox("Język:", ["Niemiecki", "Czeski"], key="adm_c_l")
-        if st.button("Generuj ciekawostki"): seed_cultural_trivia(c_lang)
+        st.divider()
+        st.subheader("🤖 Generatory AI")
+        
+        gen_tab1, gen_tab2, gen_tab3 = st.tabs(["📚 Master Vocab", "📖 Idiomy", "🌍 Ciekawostki"])
+        
+        with gen_tab1:
+            v_lang = st.selectbox("Język", ["Niemiecki", "Czeski"], key="adm_v_l")
+            v_lvl = st.selectbox("Poziom", ["A1", "A2", "B1", "B2", "C1"], key="adm_v_lv")
+            v_goal = st.number_input("Ilość", 10, 500, 50)
+            if st.button("Uruchom Seeder Słówek", type="primary"): seed_master_vocab(v_lang, v_lvl, v_goal)
+
+        with gen_tab2:
+            i_lang = st.selectbox("Język Idiomów", ["Niemiecki", "Czeski"], key="adm_i_l")
+            if st.button("Generuj 10 Idiomów", type="primary"): seed_idioms(i_lang)
+
+        with gen_tab3:
+            c_lang = st.selectbox("Język Ciekawostek", ["Niemiecki", "Czeski"], key="adm_c_l")
+            if st.button("Generuj 10 Ciekawostek", type="primary"): seed_cultural_trivia(c_lang)
 
 # --- 28. SPARING AI (V680 - Precision Correction & Stable Connection) ---
 elif choice == "🤖 Sparing AI":
