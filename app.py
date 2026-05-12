@@ -3579,8 +3579,8 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V550 - User Control & Profile Editor) --- 
-elif choice == "👑 Admin" and st.session_state.get("is_admin"): 
+# --- 27. ADMIN PRO (V552 - Full Restoration & Performance Optimization) ---
+elif choice == "👑 Admin" and st.session_state.get("is_admin"):
      st.header("👑 Panel Administratora") 
 
      st.session_state.user_data["last_seen"] = get_now_pl() 
