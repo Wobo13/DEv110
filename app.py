@@ -2082,10 +2082,14 @@ elif choice == "🎈 Balonowy Wyścig":
         game_fragment()
 
 
-# --- 17. JĘZYKOWA RULETKA (V1.2 - Fast & Reverse Edition) ---
+# --- 17. JĘZYKOWA RULETKA (V400 - Survival XP & Memory Refresh Edition) ---
 elif choice == "🎲 Językowa Ruletka":
+    import hashlib
+    from datetime import datetime, date, timedelta
+    
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
+    today_str = date.today().isoformat()
     
     st.header(f"🎲 Językowa Ruletka: {current_lang_name}")
     st.markdown("""
@@ -2102,9 +2106,13 @@ elif choice == "🎲 Językowa Ruletka":
             .stat-box {
                 font-size: 1.5rem; font-weight: bold; color: #ff4b4b; text-align: center;
             }
+            .bonus-text {
+                color: #FFD700; font-weight: bold; font-size: 1.1rem;
+            }
         </style>
     """, unsafe_allow_html=True)
 
+    # 1. PRZYGOTOWANIE BAZY
     all_c = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     if len(all_c) < 10:
         st.warning(f"Dodaj min. 10 słówek, aby odblokować Ruletkę.")
@@ -2129,7 +2137,7 @@ elif choice == "🎲 Językowa Ruletka":
 
     # --- EKRAN STARTOWY / GAMEOVER ---
     if st.session_state.surv_state == "START":
-        st.info("⚠️ **ZASADY:** Przetrwaj jak najdłużej. Jeden błąd = koniec. Tryby zmieniają się dynamicznie!")
+        st.info("⚠️ **REWOLUCJA RULETKI:** Każda dobra odpowiedź odsuwa powtórkę o **+1 dzień** i daje **XP**. Przetrwaj serię 15 rund, aby zgarnąć **Survival Bonus!**")
         if st.button("🔥 ROZPOCZNIJ PRZETRWANIE", use_container_width=True, type="primary"):
             st.session_state.surv_state = "PLAYING"; st.session_state.surv_score = 0
             if "surv_task" in st.session_state: del st.session_state.surv_task
@@ -2147,12 +2155,15 @@ elif choice == "🎲 Językowa Ruletka":
     # --- EKRAN GRY ---
     elif st.session_state.surv_state == "PLAYING":
         @st.fragment
-        def survival_engine():
+        def survival_engine_xp():
             if "surv_task" not in st.session_state:
-                word = random.choice(all_c)
+                word_raw = random.choice(all_c)
+                # Świeże dane z sesji
+                word = next((item for item in st.session_state.flashcards if item['id'] == word_raw['id']), word_raw)
+                
                 score = st.session_state.surv_score
                 
-                # Losowanie trybu (zależnie od wyniku)
+                # Losowanie trybu
                 if score < 5:
                     mode = random.choice(["QUIZ_DE_PL", "FAST_MATCH"])
                 elif score < 12:
@@ -2165,7 +2176,6 @@ elif choice == "🎲 Językowa Ruletka":
                 
                 task = {"word": word, "mode": mode, "gender": gender, "clean": clean}
                 
-                # Przygotowanie opcji Quizu (w obie strony)
                 if mode == "QUIZ_DE_PL":
                     others = [x['pl'] for x in all_c if x['id'] != word['id']]
                     opts = random.sample(others, min(len(others), 3)) + [word['pl']]
@@ -2175,7 +2185,6 @@ elif choice == "🎲 Językowa Ruletka":
                     opts = random.sample(others, min(len(others), 3)) + [word['de']]
                     random.shuffle(opts); task["opts"] = opts
                 elif mode == "FAST_MATCH":
-                    # 50% szans na poprawną parę
                     is_correct = random.random() > 0.5
                     display_pl = word['pl'] if is_correct else random.choice([x['pl'] for x in all_c if x['id'] != word['id']])
                     task["fast_pl"] = display_pl
@@ -2184,7 +2193,11 @@ elif choice == "🎲 Językowa Ruletka":
                 st.session_state.surv_task = task
 
             t = st.session_state.surv_task
-            st.markdown(f"<div style='text-align:right; font-weight:bold; color:#ff4b4b;'>SERIA: {st.session_state.surv_score} 🔥</div>", unsafe_allow_html=True)
+            
+            # Nagłówek statusu
+            c_header1, c_header2 = st.columns([1, 1])
+            c_header1.markdown(f"🔥 SERIA: **{st.session_state.surv_score}**")
+            c_header2.markdown(f"<div style='text-align:right; font-size:0.8rem; color:gray;'>SŁOWO: {t['word'].get('mastery_xp', 0)} XP</div>", unsafe_allow_html=True)
             
             # Karta pytania
             display_word = t['word']['de']
@@ -2227,16 +2240,54 @@ elif choice == "🎲 Językowa Ruletka":
                         correct_synonyms = [normalize_text(s) for s in re.split(r'[/,;]', t['word']['pl'])]
                         user_ans = normalize_text(u_txt) in correct_synonyms
 
+            # --- LOGIKA WYNIKU I REWOLUCYJNYCH ZMIAN ---
             if user_ans is not None:
                 if user_ans:
                     st.session_state.surv_score += 1
+                    word_id = t['word']['id']
+                    
+                    # 1. Obliczanie XP i Survival Bonus
+                    xp_gain = 2 # Baza
+                    if st.session_state.surv_score % 15 == 0:
+                        xp_gain += 10 # Bonus co 15 punktów serii
+                        st.toast(f"🔥 SURVIVAL BONUS! +10 XP dodatkowo!", icon="🔥")
+                    
+                    current_xp = int(t['word'].get('mastery_xp', 0))
+                    new_xp = min(current_xp + xp_gain, 200)
+                    
+                    # 2. Memory Refresh (Push Date +1)
+                    # Bierzemy obecną datę powtórki słowa; jeśli jest w przeszłości, zaczynamy od dzisiaj
+                    try:
+                        current_rev = datetime.strptime(t['word'].get('next_review', today_str), "%Y-%m-%d").date()
+                        base_date = max(current_rev, date.today())
+                    except:
+                        base_date = date.today()
+                    
+                    new_date = (base_date + timedelta(days=1)).isoformat()
+                    
+                    # 3. Zapis do DB i lokalnego Cache
+                    update_word(word_id, {"mastery_xp": new_xp, "next_review": new_date})
+                    for card in st.session_state.flashcards:
+                        if card['id'] == word_id:
+                            card['mastery_xp'] = new_xp
+                            card['next_review'] = new_date
+                            break
+                    
                     del st.session_state.surv_task
-                    st.toast("Dobrze!", icon="✅"); st.rerun(scope="fragment")
+                    st.toast(f"Dobrze! XP: +{xp_gain} | Pamięć: +1 dzień", icon="✅")
+                    st.rerun(scope="fragment")
                 else:
+                    # KONIEC GRY
                     final_score = st.session_state.surv_score
                     try:
                         db = get_db()
-                        db.table("game_scores").insert({"username": u, "game_name": "survival", "lang": L_CODE, "score": float(final_score)}).execute()
+                        db.table("game_scores").insert({
+                            "username": u, 
+                            "game_name": "survival", 
+                            "lang": L_CODE, 
+                            "score": float(final_score)
+                        }).execute()
+                        
                         ud = st.session_state.user_data
                         surv_key = f"survival_scores_{L_CODE}"
                         scores = ud.get(surv_key, [])
@@ -2247,7 +2298,7 @@ elif choice == "🎲 Językowa Ruletka":
                     except: pass
                     st.session_state.surv_state = "GAMEOVER"; st.rerun()
 
-        survival_engine()
+        survival_engine_xp()
 
 # --- 19. KLUB POJEDYNKÓW (V1.5 - Final Scoring & Win/Loss Fix) ---
 elif choice == "⚔️ Klub Pojedynków":
