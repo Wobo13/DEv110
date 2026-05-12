@@ -3485,7 +3485,7 @@ elif choice == "⚙️ Konto":
             st.session_state.acc_msg = "Globalna passa została wyzerowana."
             st.rerun()
 
-# --- 27. ADMIN PRO (V440 - Fixed Module List & No Scroll) ---
+# --- 27. ADMIN PRO (V445 - Global Stats Admin Filter) ---
 elif choice == "👑 Admin" and u == ADMIN_USER:
     st.header("👑 Panel Administratora")
 
@@ -3507,7 +3507,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
         "Skn": "📸 Skaner AI", "Inn": "⚙️ Inne"
     }
 
-    # Moduły wliczane do paska postępu "Nauka dziś"
     STUDY_MODULES = [c for c in ADMIN_ORDER if c != "Inn"]
 
     # --- 2. SEEDERY ---
@@ -3575,9 +3574,10 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             wiedza_str = "0%"
             if total_words > 0:
                 xp_sum = u_cards["mastery_xp"].fillna(0).sum()
-                wiedza_str = f"{min(int((xp_sum / (total_words * 150)) * 100), 100)}%"
+                wiedza_val = int((xp_sum / (total_words * 150)) * 100)
+                wiedza_str = f"{min(wiedza_val, 100)}%"
 
-            # Przetwarzanie czasu użytkownika z agregacją do 'Inn'
+            # Przetwarzanie czasu użytkownika
             def process_stats(raw_dict):
                 processed = {code: 0.0 for code in ADMIN_ORDER}
                 for k, v in raw_dict.items():
@@ -3588,8 +3588,11 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             u_daily = process_stats(user.get("time_stats", {}) if user.get("last_visit_date") == today_iso else {})
             u_total = process_stats(user.get("total_time_stats", {}))
 
-            # Akumulacja globalna
+            # --- FILTR ADMINA DLA STATYSTYK GLOBALNYCH ---
             for code in ADMIN_ORDER:
+                # Jeśli to Ty (ADMIN_USER) i moduł to "Inne", pomijamy dodawanie do sumy globalnej
+                if uname == ADMIN_USER and code == "Inn":
+                    continue
                 global_daily[code] += u_daily[code]
                 global_total[code] += u_total[code]
 
@@ -3633,7 +3636,6 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
                 perc = f"{round((v/total)*100, 1)}%" if total > 0 else "0%"
                 t_str = f"{int(v//3600)}h {int((v%3600)//60)}m" if v >= 3600 else f"{int(v//60)} min"
                 rows.append({"Moduł": MOD_MAP[code], "Pop.": perc, "Czas": t_str})
-            # Używamy st.table dla braku przewijania
             cont.table(pd.DataFrame(rows))
 
         show_full_table(col_g1, "📈 Globalnie (Dziś)", global_daily)
