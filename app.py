@@ -3619,7 +3619,7 @@ elif choice == "👑 Admin" and u == ADMIN_USER:
             column_config={
                 "Słówka (R|G|S)": st.column_config.TextColumn("Słówka (R|G|S)", help="R-Ręczne, G-Generator, S-Skaner"),
                 "Koszt AI": st.column_config.NumberColumn("Koszt AI", format="%.2f PLN"),
-                "Czas Dziś": st.column_config.ProgressColumn("Dziś (cel 60m)", help="Postęp względem godziny nauki", min_value=0, max_value=60),
+                "Czas Dziś": st.column_config.ProgressColumn("Nauka dziś (cel 60m)", help="Postęp względem godziny nauki", min_value=0, max_value=60),
             }
         )
 
