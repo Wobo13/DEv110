@@ -566,7 +566,7 @@ if u:
         save_user_data(u, st.session_state.user_data)
         st.session_state.last_db_ping = time.time()
 
-# --- 6. SIDEBAR (V400 - Mastery XP Engine Integration) ---
+# --- 6. SIDEBAR (V450 - Study Time Sync & Mastery XP) ---
 with st.sidebar:
     st.markdown("""
         <style>
@@ -626,18 +626,21 @@ with st.sidebar:
     wiedza = 0
     if all_c:
         # LICZENIE WIEDZY NA PODSTAWIE XP:
-        # Przyjmujemy, że 150 XP to 100% opanowania jednego słowa (Poziom 5)
+        # Przyjmujemy, że 150 XP to 100% opanowania jednego słowa
         current_total_xp = sum(c.get("mastery_xp", 0) for c in all_c)
         max_possible_xp = len(all_c) * 150
         
         if max_possible_xp > 0:
             wiedza = int((current_total_xp / max_possible_xp) * 100)
         
-        # Zabezpieczenie, żeby nie przekroczyć 100% (jeśli ktoś ma słówka > 150 XP)
         wiedza = min(wiedza, 100)
 
-    # Cel dnia (czasowy)
-    m_list = ["Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", "Wan", "Bal", "Lab", "Wri", "Det", "Sur"]
+    # --- ZSYNCHRONIZOWANA LISTA MODUŁÓW (Zgodnie z Sekcją 7) ---
+    # Dodano: 'Spa' (Sparing AI), 'Due' (Pojedynki) | Wykluczono: 'Skn' (Skaner)
+    m_list = [
+        "Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", 
+        "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due"
+    ]
     time_stats = ud.get("time_stats", {})
     total_sec = sum(time_stats.get(c, 0) for c in m_list)
     
@@ -699,7 +702,7 @@ with st.sidebar:
                 del st.session_state[key]
         st.rerun()
 
-# --- 7. START (V3.5 - Dashboard + System Announcements + Study Time Fix) ---
+# --- 7. START (V3.6 - Dashboard + System Announcements + Study Time Fix) ---
 
 choice = st.session_state.get("choice", "🏠 Start")
 update_activity(choice)
@@ -710,7 +713,7 @@ if choice == "🏠 Start":
     u_name = st.session_state.get("user", "Anonim")
     db = get_db()
     
-    # --- 0. OGŁOSZENIA SYSTEMOWE (Nowość) ---
+    # --- 0. OGŁOSZENIA SYSTEMOWE ---
     try:
         # Pobieramy aktywne ogłoszenia skierowane do wszystkich ('all') lub konkretnie do tego użytkownika
         res_ann = db.table("system_announcements")\
@@ -724,7 +727,7 @@ if choice == "🏠 Start":
         
         for ann in announcements:
             icon = ann.get("icon", "📢")
-            color = ann.get("color", "#2E86C1") # Domyślny niebieski
+            color = ann.get("color", "#2E86C1")
             st.markdown(f"""
                 <div style="background-color: {color}; padding: 12px; border-radius: 10px; 
                             color: white; margin-bottom: 10px; border-left: 5px solid rgba(0,0,0,0.2);">
@@ -733,7 +736,7 @@ if choice == "🏠 Start":
                 </div>
             """, unsafe_allow_html=True)
     except:
-        pass # Jeśli tabela jeszcze nie istnieje w SQL, pomijamy bez błędu
+        pass
 
     # --- 1. ANALIZA DANYCH BIEŻĄCYCH ---
     all_cards_full = st.session_state.flashcards
@@ -744,11 +747,11 @@ if choice == "🏠 Start":
     due_cards = [c for c in all_c if str(c.get("next_review", today_str)) <= today_str]
     hard_cards = [c for c in all_c if c.get("level", 0) < 2]
 
-    # --- POPRAWKA CZASU NAUKI: Dodano brakujące moduły (Sur, Spa, Due, Skn) ---
+    # --- POPRAWKA CZASU NAUKI: Skaner (Skn) usunięty z naliczania celu ---
     current_stats = ud.get("time_stats", {})
     study_modules = [
         "Pow", "Trn", "Qiz", "Fis", "Tst", "Mem", "War", "Kon", 
-        "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due", "Skn"
+        "Wan", "Bal", "Lab", "Wri", "Det", "Sur", "Spa", "Due"
     ]
     study_seconds = sum(current_stats.get(code, 0) for code in study_modules)
     study_minutes = int(study_seconds // 60)
@@ -760,7 +763,6 @@ if choice == "🏠 Start":
 
     # --- CENTRUM DOWODZENIA (ALERTY POJEDYNKÓW) ---
     try:
-        # Sprawdzamy czy są jakieś oczekujące wyzwania dla nas
         res_pending = db.table("duels").select("challenger")\
             .eq("opponent", u_name).eq("status", "pending").execute()
         
@@ -781,7 +783,7 @@ if choice == "🏠 Start":
                 </div>
             """, unsafe_allow_html=True)
             
-            if st.button("ODPOWIEDZ NA WYZWANIE ➔", use_container_width=True):
+            if st.button("ODPOWIEDZ NA WYZWANIE ➔", use_container_width=True, key="go_to_duels_home"):
                 st.session_state.choice = "⚔️ Klub Pojedynków"
                 st.rerun()
     except:
@@ -813,7 +815,7 @@ if choice == "🏠 Start":
         # A. Pisanie
         topics_for_teaser = {
             "de": ["Beschreibe deinen Morgen.", "Was sind deine Ziele?", "Erzähle von deinem Hobby."],
-            "cs": ["Popiš své ráno.", "Jaké jsou tvé cíle?", "Vyprávěj o svém koníčku."]
+            "cs": ["Popiš své ráno.", "Jaké są Twoje cele?", "Vyprávěj o svém koníčku."]
         }
         t_idx = int(hashlib.md5(today_str.encode()).hexdigest(), 16) % len(topics_for_teaser.get(L_CODE, ["..."]))
         current_writing_topic = topics_for_teaser.get(L_CODE, ["..."])[t_idx]
