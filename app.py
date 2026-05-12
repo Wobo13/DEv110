@@ -4444,7 +4444,7 @@ elif choice == "🕵️ Kulturowy Detektyw":
         st.caption("Każdy idiom dodany do słownika otrzymuje tag #idiom.")
 
 # --- 32. DYNAMO FAN-ZONE (V2.1 - Empty State Fix) ---
-elif choice == "🏟️ Dynamo Fan-Zone" and u == ADMIN_USER:
+elif choice == "🏟️ Dynamo Fan-Zone" and st.session_state.get("is_admin"):
     st.markdown("<style>.stApp { background-color: #000000; } h1, h2, h3, p, span { color: #f9d71c !important; }</style>", unsafe_allow_html=True)
     st.title("🏟️ SGD Karaoke Player")
     
