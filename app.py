@@ -2755,7 +2755,7 @@ elif choice == "📦 Generator":
             del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V272 - Syntax & String Fix) ---
+# --- 22. SKANER AI (V450 - Mass Category Editor) ---
 elif choice == "📸 Skaner AI":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
@@ -2801,9 +2801,9 @@ elif choice == "📸 Skaner AI":
                 try:
                     res_raw = get_openai_response(prompt, img_obj=img_obj).strip()
                     
-                    # Naprawiony mechanizm usuwania znaczników markdown (wszystko w jednej linii)
                     if res_raw.startswith("```"):
-                        res_raw = res_raw.replace("```json", "").replace("```", "").strip()
+                        res_raw = res_raw.replace("
+```json", "").replace("```", "").strip()
                         
                     data = json.loads(res_raw)
                     st.session_state.scanner_results = data.get("flashcards", [])
@@ -2811,13 +2811,30 @@ elif choice == "📸 Skaner AI":
                 except Exception as e:
                     st.error(f"Błąd analizy: {e}")
 
-    # --- 2. MASOWY EDYTOR WYNIKÓW SKANOWANIA ---
+    # --- 2. EDYTOR WYNIKÓW I MASOWA EDYCJA ---
     if "scanner_results" in st.session_state and st.session_state.scanner_results:
         st.divider()
         st.subheader("📝 Edytuj i zatwierdź znalezione słówka")
         
+        # --- NOWOŚĆ: PANEL MASOWEJ EDYCJI KATEGORII ---
+        with st.expander("🛠️ Masowa edycja kategorii dla całego skanu"):
+            col_m1, col_m2 = st.columns([2, 1])
+            new_mass_cat = col_m1.text_input("Wpisz nową kategorię:", placeholder="np. Dom, Praca, A2")
+            
+            m_btn_col1, m_btn_col2 = st.columns(2)
+            if m_btn_col1.button("✅ Zastosuj do wszystkich", use_container_width=True):
+                for item in st.session_state.scanner_results:
+                    item["tags"] = new_mass_cat
+                st.rerun()
+            
+            if m_btn_col2.button("🗑️ Wyczyść wszystkie kategorie", use_container_width=True):
+                for item in st.session_state.scanner_results:
+                    item["tags"] = ""
+                st.rerun()
+
         lang_col_label = "Niemiecki" if L_CODE == "de" else "Czeski"
         
+        # Przygotowanie danych do edytora
         df_init = []
         for item in st.session_state.scanner_results:
             df_init.append({
@@ -2829,16 +2846,17 @@ elif choice == "📸 Skaner AI":
                 "Przykład PL": item.get("ex_pl", "")
             })
 
+        # Edytor tabelaryczny
         edited_df = st.data_editor(
             df_init,
             use_container_width=True,
             num_rows="dynamic",
-            key="scanner_data_editor_v2"
+            key="scanner_data_editor_v3"
         )
 
         col_save, col_cancel = st.columns(2)
         
-        if col_save.button(f"🚀 Dodaj do bazy ({current_lang_name})", use_container_width=True, type="primary"):
+        if col_save.button(f"🚀 Dodaj wybrane do bazy", use_container_width=True, type="primary"):
             success_count = 0
             for row in edited_df:
                 if row.get("Zapisz", False):
@@ -2850,13 +2868,14 @@ elif choice == "📸 Skaner AI":
                         "level": 0,
                         "origin": "Skaner AI",
                         "lang": L_CODE,
+                        "mastery_xp": 0,
                         "examples": [{"de": row["Przykład"], "pl": row["Przykład PL"]}]
                     }
                     save_word(u, new_word)
                     success_count += 1
             
             st.session_state.flashcards = load_flashcards(u)
-            st.success(f"Dodano {success_count} słówek!")
+            st.success(f"Dodano {success_count} słówek! ✅")
             del st.session_state.scanner_results
             st.rerun()
 
