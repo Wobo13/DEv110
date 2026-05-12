@@ -813,7 +813,7 @@ if choice == "🏠 Start":
         if all_c:
             for r in reversed(all_c[-3:]): st.write(f"• {r['de']} ({r['pl']})")
 
-# --- 8. POWTÓRKI & TRENING (V275 - Pełna Synchronizacja Audio i Przykładów) ---
+# --- 8. POWTÓRKI & TRENING (V401 - Mastery XP & Dual Mode SRS) ---
 elif choice in ["📅 Powtórki", "🚀 Trening"]:
     is_r = (choice == "📅 Powtórki")
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
@@ -825,16 +825,16 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
     user_settings = st.session_state.user_data.get("settings", {})
     auto_audio = user_settings.get("auto_audio", True)
     
-    # 1. FILTROWANIE SŁÓWEK (Na świeżo z bazy głównej)
+    # 1. FILTROWANIE SŁÓWEK
     lang_cards = [c for c in st.session_state.flashcards if c.get("lang", "de") == L_CODE]
     
     all_tags = set()
     for c in lang_cards:
         all_tags.update([t.strip() for t in str(c.get('category','')).split(',') if t.strip()])
     
-    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_final")
+    sel_tag = st.selectbox(f"Zakres nauki ({current_lang_name}):", ["Wszystkie"] + sorted(list(all_tags)), key=f"{pfx}_tag_sel_v401")
 
-    # 2. INICJALIZACJA KOLEJKI (Jeśli zmienił się tag lub język)
+    # 2. INICJALIZACJA KOLEJKI
     if f"{pfx}_list" not in st.session_state or st.session_state.get(f"{pfx}_last_tag") != sel_tag:
         pool = [c for c in lang_cards if (sel_tag == "Wszystkie" or sel_tag in str(c.get('category','')))]
         if is_r:
@@ -856,31 +856,29 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
             st.rerun()
     elif st.session_state[f"{pfx}_idx"] >= len(cards):
         st.balloons()
-        st.success("Sesja zakończona! 🏆")
-        if st.button("Zacznij od nowa", key=f"{pfx}_restart_btn_final"):
+        st.success("Sesja zakończona! Wiedza zaktualizowana. 🏆")
+        if st.button("Zacznij od nowa", key=f"{pfx}_restart_v401"):
             for k in [f"{pfx}_list", f"{pfx}_idx", f"{pfx}_mode", f"{pfx}_user_ans"]:
                 if k in st.session_state: del st.session_state[k]
             st.rerun()
     else:
         @st.fragment
-        def flashcard_engine():
+        def flashcard_engine_xp():
             idx = st.session_state[f"{pfx}_idx"]
             if idx >= len(cards):
                 st.rerun()
                 return
             
-            # --- PANCERNE POBIERANIE DANYCH (Omijanie starego cache'u) ---
             c_cached = cards[idx]
-            # Szukamy świeżych danych o słowie w głównej bazie sesji po ID
             c = next((item for item in st.session_state.flashcards if item['id'] == c_cached['id']), c_cached)
             
-            # Losowanie kierunku (Tylko raz na słowo)
+            # Kierunek (0: obcy->pl, 1: pl->obcy)
             dir_key = f"{pfx}_dir_{c['id']}"
             if dir_key not in st.session_state:
                 st.session_state[dir_key] = random.choice([0, 1])
 
             st.progress(idx / len(cards))
-            st.caption(f"Słówko {idx + 1} z {len(cards)}")
+            st.caption(f"Słówko {idx + 1} z {len(cards)} | Poziom: {c.get('mastery_xp', 0)} XP")
 
             is_target_foreign = (st.session_state[dir_key] == 1)
             display_word = c["de"] if not is_target_foreign else c["pl"]
@@ -906,73 +904,83 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
                         st.session_state[f"{pfx}_mode"] = "res"
                         st.rerun(scope="fragment")
             else:
-                # 3. TOLERANCYJNE SPRAWDZANIE (ä -> a, itd.)
+                # NORMALIZACJA I SPRAWDZANIE
                 def permissive_clean(text):
                     if not text: return ""
                     t = str(text).lower().strip()
-                    # Usuwanie rodzajników
                     t = re.sub(r'^(der|die|das|ten|ta|to)\s+', '', t)
-                    # Zamiana umlautów na proste litery
                     t = t.replace("ä", "a").replace("ö", "o").replace("ü", "u").replace("ß", "ss")
-                    # Usuwanie diakrytyki (haczki, ogonki)
                     t = "".join(char for char in unicodedata.normalize('NFD', t) if unicodedata.category(char) != 'Mn')
                     return t.replace("ł", "l").strip()
 
                 user_ans_clean = permissive_clean(st.session_state.get(f"{pfx}_user_ans", ""))
                 correct_synonyms = [permissive_clean(s) for s in re.split(r'[/,;]', correct_val) if s.strip()]
-                
                 is_correct = user_ans_clean in correct_synonyms
                 
                 if is_correct: st.success(f"✅ Dobrze! ({correct_val})")
                 else: st.error(f"❌ Niepoprawnie. ({correct_val})")
                 
-                # --- LOGIKA PRZYKŁADÓW (Identyczna jak w sekcji 9) ---
+                # AUDIO I PRZYKŁADY
                 exs = c.get("examples", [])
-                example_foreign = None
-                example_pl = None
+                ex_foreign = exs[0].get("de") if (exs and isinstance(exs, list) and len(exs) > 0) else c.get('example')
+                if ex_foreign:
+                    ex_pl = exs[0].get("pl") if (exs and isinstance(exs, list) and len(exs) > 0) else ""
+                    st.info(f"📖 **Przykład:** {ex_foreign}" + (f"\n\n🇵🇱 *{ex_pl}*" if ex_pl else ""))
                 
-                # Rozpakowanie przykładów (obsługa listy JSONB)
-                if exs and isinstance(exs, list) and len(exs) > 0:
-                    example_foreign = exs[0].get("de")
-                    example_pl = exs[0].get("pl")
-                elif c.get('example'): # Fallback dla starych danych
-                    example_foreign = c['example']
-
-                if example_foreign:
-                    st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
-                
-                # Odtwarzanie Audio (Słowo + Zdanie)
-                if auto_audio:
-                    play_audio(c['de'], example_foreign, lang=L_CODE)
+                if auto_audio: play_audio(c['de'], ex_foreign, lang=L_CODE)
 
                 st.divider()
                 
-                # 4. NAWIGACJA I SRS
-                if is_r:
-                    st.write("Oceń trudność:")
-                    col1, col2, col3 = st.columns(3)
-                    d = None
-                    if col1.button("🔴 Trudne"): d = 1
-                    if col2.button("🟡 Średnie"): d = 3
-                    if col3.button("🟢 Łatwe"): d = 7
+                # --- NOWA LOGIKA XP I SRS ---
+                current_xp = int(c.get("mastery_xp", 0))
+
+                if is_correct:
+                    st.write("Oceń łatwość tego słówka (zdobędziesz XP):")
+                    c1, c2, c3 = st.columns(3)
                     
-                    if d:
-                        new_date = str(date.today() + timedelta(days=d))
-                        update_word(c['id'], {"next_review": new_date})
-                        # Odświeżamy datę w lokalnej pamięci
+                    # Definicje nagród XP i dni
+                    rewards = {
+                        "🔴 Trudne": {"xp": 5, "days": 1},
+                        "🟡 Średnie": {"xp": 10, "days": 3},
+                        "🟢 Łatwe": {"xp": 20, "days": 7}
+                    }
+                    
+                    for i, (label, val) in enumerate(rewards.items()):
+                        cols = [c1, c2, c3]
+                        if cols[i].button(label, use_container_width=True):
+                            new_xp = min(current_xp + val["xp"], 200) # Max 200 (Level 5+)
+                            new_date = str(date.today() + timedelta(days=val["days"]))
+                            
+                            # ZAPIS DO BAZY I SESJI
+                            update_word(c['id'], {"mastery_xp": new_xp, "next_review": new_date})
+                            for card in st.session_state.flashcards:
+                                if card['id'] == c['id']: 
+                                    card['mastery_xp'] = new_xp
+                                    card['next_review'] = new_date
+                                    break
+                            
+                            st.session_state[f"{pfx}_idx"] += 1
+                            st.session_state[f"{pfx}_mode"] = "ask"
+                            st.rerun(scope="fragment")
+                else:
+                    # KARA ZA BŁĄD (-15 XP, powtórka na dziś)
+                    st.warning("Przez błąd słówko traci -15 XP i wraca do kolejki na dzisiaj.")
+                    if st.button("Kontynuuj ➡️", use_container_width=True, type="primary"):
+                        new_xp = max(current_xp - 15, 0)
+                        today_str = str(date.today())
+                        
+                        update_word(c['id'], {"mastery_xp": new_xp, "next_review": today_str})
                         for card in st.session_state.flashcards:
-                            if card['id'] == c['id']: card['next_review'] = new_date; break
+                            if card['id'] == c['id']: 
+                                card['mastery_xp'] = new_xp
+                                card['next_review'] = today_str
+                                break
                         
                         st.session_state[f"{pfx}_idx"] += 1
                         st.session_state[f"{pfx}_mode"] = "ask"
                         st.rerun(scope="fragment")
-                else:
-                    if st.button("Następne słówko ➡️", use_container_width=True, type="primary"):
-                        st.session_state[f"{pfx}_idx"] += 1
-                        st.session_state[f"{pfx}_mode"] = "ask"
-                        st.rerun(scope="fragment")
 
-        flashcard_engine()
+        flashcard_engine_xp()
         
 # --- 9. QUIZ (V245 - Full Multilang & Distractor Fix) ---
 elif choice == "🕹️ Quiz":
