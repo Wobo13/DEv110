@@ -2755,54 +2755,47 @@ elif choice == "📦 Generator":
             del st.session_state.temp_generated
             st.rerun()
 
-# --- 22. SKANER AI (V470 - Image Enhancement & Deep Scan) ---
+# --- 22. SKANER AI (V471 - Full Implementation & Quality Fix) ---
 elif choice == "📸 Skaner AI":
     from streamlit_cropper import st_cropper
-    from PIL import ImageEnhance, ImageOps # Nowe biblioteki do tuningu
+    from PIL import ImageEnhance, ImageOps
     
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"📸 Skaner AI: {current_lang_name}")
-    st.info("💡 Protip: Dla gęstego tekstu lepiej zrób zdjęcie aparatem telefonu i wgraj plik (lepsza ostrość!).")
+    st.info("💡 Protip: Najlepszą jakość uzyskasz robiąc zdjęcie aparatem telefonu i wgrywając plik.")
 
     cam_col, file_col = st.columns(2)
     img_file = cam_col.camera_input("Zrób zdjęcie")
-    uploaded_file = file_col.file_uploader("Wgraj plik (zalecane dla jakości)", type=["jpg", "jpeg", "png"])
+    uploaded_file = file_col.file_uploader("Wgraj plik", type=["jpg", "jpeg", "png"])
 
     active_raw_img = img_file if img_file else uploaded_file
 
     if active_raw_img:
         img_obj = Image.open(active_raw_img)
         
-        st.subheader("✂️ Kadrowanie")
-        cropped_img = st_cropper(img_obj, realtime_update=True, box_color='#ff4b4b', aspect_ratio=None, key="cropper_v2")
+        st.subheader("✂️ Przytnij i wyostrz")
+        cropped_img = st_cropper(img_obj, realtime_update=True, box_color='#ff4b4b', aspect_ratio=None, key="cropper_v3")
         
         if cropped_img:
             # --- CYFROWY TUNING OBRAZU ---
-            # 1. Konwersja do skali szarości (pomaga AI skupić się na kształtach liter)
             enhanced_img = ImageOps.grayscale(cropped_img)
-            # 2. Mocne podbicie kontrastu
-            enhancer = ImageEnhance.Contrast(enhanced_img)
-            enhanced_img = enhancer.enhance(2.0) 
-            # 3. Wyostrzenie
-            sharpener = ImageEnhance.Sharpness(enhanced_img)
-            enhanced_img = sharpener.enhance(2.0)
+            enhanced_img = ImageEnhance.Contrast(enhanced_img).enhance(2.0)
+            enhanced_img = ImageEnhance.Sharpness(enhanced_img).enhance(2.0)
 
-            st.write("🔍 Podgląd po optymalizacji (wyostrzony):")
+            st.write("🔍 Podgląd wycinka do analizy:")
             st.image(enhanced_img, width=400)
 
-            if st.button("🚀 Głęboka analiza tekstu", use_container_width=True, type="primary"):
-                with st.spinner("AI przeprowadza dokładny skan..."):
-                    
-                    # ZMIANA PROMPTU: Żądamy WSZYSTKIEGO, nie tylko "ważnych"
+            if st.button("🚀 Analizuj wykadrowany tekst", use_container_width=True, type="primary"):
+                with st.spinner("AI przeprowadza głęboki skan..."):
                     prompt = f"""DOKŁADNY SKAN TEKSTU. Wyciągnij WSZYSTKIE słówka i frazy widoczne na obrazku w języku {current_lang_name}. 
-                    Nie pomijaj żadnego wyrazu. Jeśli słowo występuje obok innego (np. kolumna), potraktuj je jako osobne rekordy.
+                    Nie pomijaj żadnego wyrazu. Jeśli słowo występuje obok innego, potraktuj je jako osobne rekordy.
                     
                     Język: {current_lang_name}. 
                     Zasady: Niemieckie rzeczowniki z rodzajnikami (der/die/das). Czeskie znaki diakrytyczne nienaruszone.
                     
-                    Format wyjściowy TYLKO JSON:
+                    Zwróć TYLKO czysty JSON:
                     {{"flashcards": [
                         {{"de": "słowo", "pl": "tłumaczenie", "tags": "poziom i kategoria", "ex_de": "przykład", "ex_pl": "tłumaczenie przykładu"}}
                     ]}}"""
@@ -2823,9 +2816,60 @@ elif choice == "📸 Skaner AI":
                     except Exception as e:
                         st.error(f"Błąd analizy: {e}")
 
-    # --- 2. EDYTOR I ZATWIERDZANIE (Reszta kodu bez zmian) ---
+    # --- 2. EDYTOR WYNIKÓW I MASOWA EDYCJA ---
     if "scanner_results" in st.session_state and st.session_state.scanner_results:
-        # ... (tutaj zostawiasz istniejącą logikę edytora i zapisywania) ...
+        st.divider()
+        st.subheader("📝 Zatwierdź wyniki")
+        
+        with st.expander("🛠️ Masowa edycja kategorii"):
+            col_m1, col_m2 = st.columns([2, 1])
+            new_mass_cat = col_m1.text_input("Kategoria dla wszystkich:", placeholder="np. Dom, B2")
+            
+            m_btn_c1, m_btn_c2 = st.columns(2)
+            if m_btn_c1.button("✅ Zastosuj", use_container_width=True):
+                for item in st.session_state.scanner_results:
+                    item["tags"] = new_mass_cat
+                st.rerun()
+            if m_btn_c2.button("🗑️ Wyczyść", use_container_width=True):
+                for item in st.session_state.scanner_results:
+                    item["tags"] = ""
+                st.rerun()
+
+        lang_col_label = "Niemiecki" if L_CODE == "de" else "Czeski"
+        df_init = []
+        for item in st.session_state.scanner_results:
+            df_init.append({
+                "Zapisz": True,
+                lang_col_label: item.get("de", ""),
+                "Polski": item.get("pl", ""),
+                "Kategorie": item.get("tags", "Skaner AI"),
+                "Przykład": item.get("ex_de", ""),
+                "Przykład PL": item.get("ex_pl", "")
+            })
+
+        edited_df = st.data_editor(df_init, use_container_width=True, num_rows="dynamic", key="scanner_v6")
+
+        c_save, c_cancel = st.columns(2)
+        if c_save.button("🚀 Dodaj do słownika", use_container_width=True, type="primary"):
+            added = 0
+            for row in edited_df:
+                if row.get("Zapisz", False):
+                    new_word = {
+                        "de": row[lang_col_label], "pl": row["Polski"], "category": row["Kategorie"],
+                        "next_review": str(date.today()), "level": 0, "origin": "Skaner AI",
+                        "lang": L_CODE, "mastery_xp": 0,
+                        "examples": [{"de": row["Przykład"], "pl": row["Przykład PL"]}]
+                    }
+                    save_word(u, new_word)
+                    added += 1
+            st.session_state.flashcards = load_flashcards(u)
+            st.success(f"Dodano {added} słówek!")
+            del st.session_state.scanner_results
+            st.rerun()
+
+        if c_cancel.button("🗑️ Odrzuć", use_container_width=True):
+            del st.session_state.scanner_results
+            st.rerun()
         
 # --- 23. DODAJ (V266 - Multilang + Obsługa Przykładów w obu trybach) ---
 elif choice == "➕ Dodaj":
