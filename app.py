@@ -982,14 +982,14 @@ elif choice in ["📅 Powtórki", "🚀 Trening"]:
 
         flashcard_engine_xp()
         
-# --- 9. QUIZ (V245 - Full Multilang & Distractor Fix) ---
+# --- 9. QUIZ (V400 - Mastery XP Integration) ---
 elif choice == "🕹️ Quiz":
     current_lang_name = st.session_state.get("current_lang", "Niemiecki")
     L_CODE = "de" if current_lang_name == "Niemiecki" else "cs"
     
     st.header(f"🕹️ Quiz: {current_lang_name}")
     
-    # 1. FILTROWANIE SŁÓWEK (Tylko dla aktualnie wybranego języka)
+    # 1. FILTROWANIE SŁÓWEK (Tylko dla wybranego języka)
     all_cards_full = st.session_state.flashcards
     all_c = [c for c in all_cards_full if c.get("lang", "de") == L_CODE]
     
@@ -1002,23 +1002,20 @@ elif choice == "🕹️ Quiz":
         st.warning(f"Dodaj min. 4 słówka w języku {current_lang_name}, aby uruchomić quiz.")
     else:
         @st.fragment
-        def quiz_engine():
+        def quiz_engine_xp():
             # 1. INICJALIZACJA PYTANIA
             if "q_c" not in st.session_state or st.session_state.get("q_lang_ref") != L_CODE:
-                # Losujemy słowo testowe z puli wybranego języka
-                t = random.choice(all_c)
+                t_raw = random.choice(all_c)
+                # Pobieramy najświeższe dane o XP z bazy sesji
+                t = next((item for item in st.session_state.flashcards if item['id'] == t_raw['id']), t_raw)
                 
-                # POPRAWKA DYSTRAKTORÓW: Pobieramy błędne opcje TYLKO z przefiltrowanej bazy 'all_c'
                 other_pls = [x['pl'] for x in all_c if x['pl'] != t['pl']]
-                
-                # Jeśli baza jest mała, bierzemy tyle ile się da (max 3)
                 num_distractors = min(3, len(other_pls))
                 distractors = random.sample(other_pls, num_distractors)
                 
                 opts = distractors + [t['pl']]
                 random.shuffle(opts)
                 
-                # Zapis stanu pytania
                 st.session_state.q_c = t
                 st.session_state.q_a = t['pl']
                 st.session_state.q_o = opts
@@ -1034,6 +1031,7 @@ elif choice == "🕹️ Quiz":
                 <div style="background: rgba(255,255,255,0.05); padding: 25px; border-radius: 20px; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
                     <div style="color: #888; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 10px;">Jak przetłumaczysz:</div>
                     <div style="font-size: 2.5rem; font-weight: bold; color: white;">{q_c['de']}</div>
+                    <div style="color: #4CAF50; font-size: 0.8rem; margin-top: 10px;">OBECNY POZIOM: {q_c.get('mastery_xp', 0)} XP</div>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -1044,7 +1042,6 @@ elif choice == "🕹️ Quiz":
                     first_letter = st.session_state.q_a[0].upper()
                     st.info(f"💡 Podpowiedź: Polskie słowo zaczyna się na literę **{first_letter}**")
 
-                # Grid przycisków odpowiedzi
                 current_seed = st.session_state.q_key_seed
                 cols = st.columns(2)
                 for i, o in enumerate(st.session_state.q_o):
@@ -1053,46 +1050,46 @@ elif choice == "🕹️ Quiz":
                         st.session_state.q_s = "res"
                         st.rerun(scope="fragment")
             else:
-                # 4. WYNIK I LOGIKA SRS
+                # 4. WYNIK I NOWA LOGIKA XP/SRS
                 is_correct = st.session_state.u_q == st.session_state.q_a
                 word_id = q_c.get('id')
+                current_xp = int(q_c.get("mastery_xp", 0))
                 
                 if is_correct:
-                    st.success(f"✅ **Świetnie!** Poprawna odpowiedź: {st.session_state.q_a}")
-                    # Przesuwamy termin powtórki (SRS)
+                    new_xp = min(current_xp + 5, 200) # Stabilny wzrost +5 w Quizie
                     new_date = str(date.today() + timedelta(days=2))
-                    update_word(word_id, {"next_review": new_date})
+                    st.success(f"✅ **Świetnie!** (+5 XP) Poprawna odpowiedź: {st.session_state.q_a}")
                 else:
-                    st.error(f"❌ **Błąd!** Poprawna odpowiedź to: **{st.session_state.q_a}**")
-                    # Słowo wraca na dziś do powtórek
-                    update_word(word_id, {"next_review": str(date.today()), "level": 0})
+                    new_xp = max(current_xp - 15, 0) # Kara -15 za błąd
+                    new_date = str(date.today())
+                    st.error(f"❌ **Błąd!** (-15 XP) Poprawna odpowiedź to: **{st.session_state.q_a}**")
                 
+                # AKTUALIZACJA BAZY I LOKALNEGO CACHE
+                update_word(word_id, {"mastery_xp": new_xp, "next_review": new_date, "level": 0 if not is_correct else q_c.get('level', 0)})
+                for card in st.session_state.flashcards:
+                    if card['id'] == word_id:
+                        card['mastery_xp'] = new_xp
+                        card['next_review'] = new_date
+                        break
+
                 # --- OBSŁUGA PRZYKŁADÓW I AUDIO ---
                 exs = q_c.get("examples", [])
-                example_foreign = None
-                example_pl = None
+                example_foreign = exs[0].get("de") if (exs and isinstance(exs, list) and len(exs) > 0) else q_c.get('example')
                 
-                if exs and isinstance(exs, list) and len(exs) > 0:
-                    example_foreign = exs[0].get("de")
-                    example_pl = exs[0].get("pl")
-                elif q_c.get('example'): # Fallback
-                    example_foreign = q_c['example']
-
                 if example_foreign:
+                    example_pl = exs[0].get("pl") if (exs and isinstance(exs, list) and len(exs) > 0) else ""
                     st.info(f"📖 **Przykład:** {example_foreign}" + (f"\n\n🇵🇱 *{example_pl}*" if example_pl else ""))
                 
-                # Automatyczne odtwarzanie (z kluczową poprawką lang=L_CODE)
                 if auto_audio:
                     play_audio(q_c['de'], example_foreign, lang=L_CODE)
 
                 st.write("---")
                 if st.button("Następne pytanie ➡️", use_container_width=True, type="primary"):
-                    # Czyścimy stan, aby wylosować nowe pytanie
                     for key in ["q_c", "q_a", "q_o", "q_s", "u_q", "q_key_seed"]:
                         if key in st.session_state: del st.session_state[key]
                     st.rerun(scope="fragment")
 
-        quiz_engine()
+        quiz_engine_xp()
         
 # --- 10. FISZKI (V351 - Multilang Themes + Shuffle Function) ---
 elif choice == "🎴 Fiszki":
