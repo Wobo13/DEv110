@@ -35,7 +35,7 @@ import plotly.graph_objects as go
 import plotly.express as px  # <-- KLUCZOWY IMPORT DLA WYKRESÓW W STATYSTYKACH
 from postgrest import SyncPostgrestClient
 
-# USTAWIENIA STRONY (Musi być na samym początku skryptu)
+# --- USTAWIENIA STRONY (Musi być na samym początku skryptu) ---
 st.set_page_config(
     page_title="Niemiecki Master",
     page_icon="🚀",
@@ -43,7 +43,23 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# SEKRETY I KLUCZE
+# Ukrywanie elementów Streamlita dla efektu natywnej aplikacji
+st.markdown("""
+    <style>
+        /* Ukrywa menu (trzy kreski), stopkę oraz nagłówek */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Usuwa zbędny margines na górze, żeby apka wypełniała cały ekran telefonu */
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 0rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- SEKRETY I KLUCZE ---
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 API_KEY = st.secrets.get("OPENAI_API_KEY", "")
