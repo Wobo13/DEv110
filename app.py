@@ -273,7 +273,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V569 - Ultra-Fast Polling Sync) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V570 - Full Integration: Polling & RPC) ---
 
 import hmac
 import base64
@@ -287,13 +287,24 @@ import extra_streamlit_components as stx
 cookie_manager = stx.CookieManager()
 
 def get_signature_key():
+    """Pobiera klucz do weryfikacji tokenów sesji."""
     key = SUPABASE_KEY
     if not key:
-        st.error("⚠️ Błąd bezpieczeństwa: Brak klucza.")
+        st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony. Aplikacja wstrzymana.")
         st.stop()
     return key
 
+def generate_secure_token(username, days_valid=30):
+    """Tworzy bezpieczny token z kryptograficznym podpisem HMAC."""
+    secret = get_signature_key()
+    expires = int(time.time()) + (days_valid * 86400)
+    message = f"{username}.{expires}"
+    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    token_raw = f"{message}.{signature}"
+    return base64.urlsafe_b64encode(token_raw.encode()).decode()
+
 def verify_secure_token(token_b64):
+    """Weryfikuje integralność i datę ważności tokena."""
     try:
         if not token_b64: return None
         secret = get_signature_key()
@@ -309,47 +320,66 @@ def verify_secure_token(token_b64):
         return None
     return None
 
-# --- DYNAMICZNA LOGIKA AUTORYZACJI ---
+def is_valid_email(email):
+    """Walidacja formatu adresu e-mail za pomocą wyrażenia regularnego."""
+    return re.match(r"[^@]+@[^@]+\.[^@]+", email)
+
+# --- GŁÓWNA LOGIKA AUTORYZACJI I AUTOLOGOWANIA ---
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
+    st.session_state.is_admin = False
 
 if not st.session_state.auth:
-    # Szybkie sprawdzenie startowe
+    # 1. Próba natychmiastowego odczytu tokena
     saved_token = cookie_manager.get("remember_token")
     
-    # Jeśli nie ma tokenu od razu, robimy krótką serię szybkich sprawdzeń (max 0.6s)
+    # 2. Ultraszybki polling (max 0.6s), jeśli ciasteczko nie "wskoczyło" od razu
     if saved_token is None:
-        placeholder = st.empty()
         for _ in range(6):  # 6 prób co 100ms
             time.sleep(0.1)
             saved_token = cookie_manager.get("remember_token")
             if saved_token:
                 break
     
-    # Próba logowania jeśli token został znaleziony
+    # 3. Weryfikacja znalezionego tokena
     if saved_token:
         verified_user = verify_secure_token(saved_token)
         if verified_user:
             db = get_db()
             res = db.table("user_data").select("is_banned, is_admin").eq("username", verified_user).execute()
-            if res.data and not res.data[0].get("is_banned"):
-                st.session_state.auth = True
-                st.session_state.user = verified_user
-                st.session_state.is_admin = res.data[0].get("is_admin", False)
-                st.rerun()
-            else:
-                cookie_manager.delete("remember_token")
+            if res.data:
+                user_info = res.data[0]
+                if not user_info.get("is_banned"):
+                    st.session_state.auth = True
+                    st.session_state.user = verified_user
+                    st.session_state.is_admin = user_info.get("is_admin", False)
+                    st.rerun()
+                else:
+                    cookie_manager.delete("remember_token")
+        else:
+            cookie_manager.delete("remember_token")
 
-# --- INTERFEJS LOGOWANIA ---
+# --- INTERFEJS LOGOWANIA I REJESTRACJI ---
+
 if not st.session_state.auth:
+    # Stylizacja nagłówka mobilnego
     st.markdown("""
         <style>
             .mobile-title {
-                font-size: 8vw; font-weight: bold; margin-bottom: 20px;
-                display: flex; align-items: center; gap: 10px;
+                font-size: 8vw;
+                font-weight: bold;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
             }
-            @media (min-width: 768px) { .mobile-title { font-size: 40px; } }
+            @media (min-width: 768px) {
+                .mobile-title { font-size: 40px; }
+            }
         </style>
         <div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>
     """, unsafe_allow_html=True)
@@ -368,24 +398,62 @@ if not st.session_state.auth:
                 res_data = db.table("user_data").select("is_banned, is_admin").eq("username", un).execute()
                 
                 if res_data.data and res_data.data[0].get("is_banned"):
-                    st.error("🚫 Konto zablokowane.")
+                    st.error("🚫 Twoje konto zostało zablokowane.")
                 else:
                     st.session_state.auth = True
                     st.session_state.user = un
-                    st.session_state.is_admin = res_data.data[0].get("is_admin", False)
+                    st.session_state.is_admin = res_data.data[0].get("is_admin", False) if res_data.data else False
                     
                     if remember_me:
                         token = generate_secure_token(un)
                         cookie_manager.set("remember_token", token, expires_at=datetime.now() + timedelta(days=30))
-                        time.sleep(0.4) # Krótki czas na zapisanie przed rerunem
+                        time.sleep(0.4) # Czas na zapis ciasteczka przed przeładowaniem
+                    
                     st.rerun()
             else:
                 st.error("Błędne dane logowania")
-    
+                
     with t2:
-        # Kod rejestracji bez zmian...
-        pass
+        rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
+        re_mail = st.text_input("Adres e-mail", key="r_e").strip()
+        rp = st.text_input("Hasło", type="password", key="r_p")
+        
+        st.caption("📧 E-mail jest wymagany do bezpiecznego odzyskiwania hasła.")
 
+        if st.button("Załóż konto", use_container_width=True):
+            # 1. Podstawowa walidacja
+            if len(rn) < 3 or len(rp) < 4:
+                st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+            elif not re_mail or not is_valid_email(re_mail):
+                st.error("Podaj poprawny adres e-mail!")
+            else:
+                # 2. Sprawdzenie unikalności
+                check_user = db.table("users_auth").select("username").eq("username", rn).execute()
+                check_email = db.table("users_auth").select("username").eq("email", re_mail).execute()
+                
+                if check_user.data:
+                    st.error("Ta nazwa użytkownika jest już zajęta!")
+                elif check_email.data:
+                    st.error("Ten adres e-mail jest już przypisany do innego konta!")
+                else:
+                    # 3. Atomowa rejestracja przez RPC
+                    try:
+                        db.rpc("register_user_v2", {
+                            "new_username": rn,
+                            "new_email": re_mail,
+                            "new_password_hash": hash_pw(rp),
+                            "new_provider": "legacy"
+                        }).execute()
+                        
+                        # Inicjalizacja sesji
+                        load_user_data(rn)
+                        st.success("Konto gotowe! Logowanie...")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd podczas tworzenia konta: {e}")
+
+    # Blokada renderowania reszty aplikacji dla gości
     st.stop()
 
 # --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V560 - Robust Safety Sync) ---
