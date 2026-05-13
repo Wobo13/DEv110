@@ -273,7 +273,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V568 - Splash Screen & Sync) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V569 - Ultra-Fast Polling Sync) ---
 
 import hmac
 import base64
@@ -309,25 +309,25 @@ def verify_secure_token(token_b64):
         return None
     return None
 
-# --- GŁÓWNA LOGIKA AUTORYZACJI ---
+# --- DYNAMICZNA LOGIKA AUTORYZACJI ---
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
 
-# Jeśli nie jesteśmy zalogowani, sprawdzamy ciasteczka
 if not st.session_state.auth:
-    # 1. Pobieramy token
+    # Szybkie sprawdzenie startowe
     saved_token = cookie_manager.get("remember_token")
     
-    # 2. Mechanizm oczekiwania (Splash Screen)
-    # Jeśli saved_token jest None, czekamy sekundę, czy się pojawi
+    # Jeśli nie ma tokenu od razu, robimy krótką serię szybkich sprawdzeń (max 0.6s)
     if saved_token is None:
-        with st.empty():
-            with st.spinner("🚀 Wczytywanie profilu Niemiecki Master..."):
-                time.sleep(1.2) # Dajemy czas na synchronizację ciasteczek
-                saved_token = cookie_manager.get("remember_token")
+        placeholder = st.empty()
+        for _ in range(6):  # 6 prób co 100ms
+            time.sleep(0.1)
+            saved_token = cookie_manager.get("remember_token")
+            if saved_token:
+                break
     
-    # 3. Jeśli po czekaniu mamy token - logujemy
+    # Próba logowania jeśli token został znaleziony
     if saved_token:
         verified_user = verify_secure_token(saved_token)
         if verified_user:
@@ -341,7 +341,7 @@ if not st.session_state.auth:
             else:
                 cookie_manager.delete("remember_token")
 
-# --- INTERFEJS LOGOWANIA (Tylko jeśli autologowanie zawiodło) ---
+# --- INTERFEJS LOGOWANIA ---
 if not st.session_state.auth:
     st.markdown("""
         <style>
@@ -377,13 +377,13 @@ if not st.session_state.auth:
                     if remember_me:
                         token = generate_secure_token(un)
                         cookie_manager.set("remember_token", token, expires_at=datetime.now() + timedelta(days=30))
-                        time.sleep(0.5)
+                        time.sleep(0.4) # Krótki czas na zapisanie przed rerunem
                     st.rerun()
             else:
                 st.error("Błędne dane logowania")
-                
+    
     with t2:
-        # Tu wstaw swój kod rejestracji (rn, re_mail, rp...)
+        # Kod rejestracji bez zmian...
         pass
 
     st.stop()
