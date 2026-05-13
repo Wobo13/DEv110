@@ -273,7 +273,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V570 - Full Integration: Polling & RPC) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V571 - Global State Safety) ---
 
 import hmac
 import base64
@@ -324,7 +324,11 @@ def is_valid_email(email):
     """Walidacja formatu adresu e-mail za pomocą wyrażenia regularnego."""
     return re.match(r"[^@]+@[^@]+\.[^@]+", email)
 
-# --- GŁÓWNA LOGIKA AUTORYZACJI I AUTOLOGOWANIA ---
+# --- GŁÓWNA LOGIKA SESJI I AUTOLOGOWANIA ---
+
+# ZABEZPIECZENIE: Inicjalizacja kluczowych zmiennych (Fix dla błędu Wioli)
+if "flashcards" not in st.session_state:
+    st.session_state.flashcards = []
 
 if "auth" not in st.session_state:
     st.session_state.auth = False
@@ -407,7 +411,7 @@ if not st.session_state.auth:
                     if remember_me:
                         token = generate_secure_token(un)
                         cookie_manager.set("remember_token", token, expires_at=datetime.now() + timedelta(days=30))
-                        time.sleep(0.4) # Czas na zapis ciasteczka przed przeładowaniem
+                        time.sleep(0.4) 
                     
                     st.rerun()
             else:
@@ -421,13 +425,11 @@ if not st.session_state.auth:
         st.caption("📧 E-mail jest wymagany do bezpiecznego odzyskiwania hasła.")
 
         if st.button("Załóż konto", use_container_width=True):
-            # 1. Podstawowa walidacja
             if len(rn) < 3 or len(rp) < 4:
                 st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
             elif not re_mail or not is_valid_email(re_mail):
                 st.error("Podaj poprawny adres e-mail!")
             else:
-                # 2. Sprawdzenie unikalności
                 check_user = db.table("users_auth").select("username").eq("username", rn).execute()
                 check_email = db.table("users_auth").select("username").eq("email", re_mail).execute()
                 
@@ -436,7 +438,6 @@ if not st.session_state.auth:
                 elif check_email.data:
                     st.error("Ten adres e-mail jest już przypisany do innego konta!")
                 else:
-                    # 3. Atomowa rejestracja przez RPC
                     try:
                         db.rpc("register_user_v2", {
                             "new_username": rn,
@@ -445,7 +446,6 @@ if not st.session_state.auth:
                             "new_provider": "legacy"
                         }).execute()
                         
-                        # Inicjalizacja sesji
                         load_user_data(rn)
                         st.success("Konto gotowe! Logowanie...")
                         time.sleep(1.5)
