@@ -273,7 +273,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V567 - Async Cookie Sync) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V568 - Splash Screen & Sync) ---
 
 import hmac
 import base64
@@ -289,17 +289,9 @@ cookie_manager = stx.CookieManager()
 def get_signature_key():
     key = SUPABASE_KEY
     if not key:
-        st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony.")
+        st.error("⚠️ Błąd bezpieczeństwa: Brak klucza.")
         st.stop()
     return key
-
-def generate_secure_token(username, days_valid=30):
-    secret = get_signature_key()
-    expires = int(time.time()) + (days_valid * 86400)
-    message = f"{username}.{expires}"
-    signature = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
-    token_raw = f"{message}.{signature}"
-    return base64.urlsafe_b64encode(token_raw.encode()).decode()
 
 def verify_secure_token(token_b64):
     try:
@@ -317,37 +309,40 @@ def verify_secure_token(token_b64):
         return None
     return None
 
-# --- LOGIKA AUTOLOGOWANIA ---
-if "auth" not in st.session_state or not st.session_state.auth:
+# --- GŁÓWNA LOGIKA AUTORYZACJI ---
+
+if "auth" not in st.session_state:
     st.session_state.auth = False
-    
-    # Próba odczytu tokena
+
+# Jeśli nie jesteśmy zalogowani, sprawdzamy ciasteczka
+if not st.session_state.auth:
+    # 1. Pobieramy token
     saved_token = cookie_manager.get("remember_token")
     
-    # KLUCZOWY FIX: Czasami komponent potrzebuje chwili na załadowanie
-    # Jeśli nie mamy auth, ale ciasteczko właśnie się pojawiło, wymuszamy rerun
+    # 2. Mechanizm oczekiwania (Splash Screen)
+    # Jeśli saved_token jest None, czekamy sekundę, czy się pojawi
+    if saved_token is None:
+        with st.empty():
+            with st.spinner("🚀 Wczytywanie profilu Niemiecki Master..."):
+                time.sleep(1.2) # Dajemy czas na synchronizację ciasteczek
+                saved_token = cookie_manager.get("remember_token")
+    
+    # 3. Jeśli po czekaniu mamy token - logujemy
     if saved_token:
         verified_user = verify_secure_token(saved_token)
         if verified_user:
             db = get_db()
             res = db.table("user_data").select("is_banned, is_admin").eq("username", verified_user).execute()
-            if res.data:
-                user_info = res.data[0]
-                if not user_info.get("is_banned"):
-                    st.session_state.auth = True
-                    st.session_state.user = verified_user
-                    st.session_state.is_admin = user_info.get("is_admin", False)
-                    # Po poprawnym zalogowaniu z ciasteczka, odświeżamy stronę raz, 
-                    # aby załadować właściwy interfejs panelu użytkownika
-                    st.rerun()
-                else:
-                    cookie_manager.delete("remember_token")
-        else:
-            cookie_manager.delete("remember_token")
+            if res.data and not res.data[0].get("is_banned"):
+                st.session_state.auth = True
+                st.session_state.user = verified_user
+                st.session_state.is_admin = res.data[0].get("is_admin", False)
+                st.rerun()
+            else:
+                cookie_manager.delete("remember_token")
 
-# --- INTERFEJS LOGOWANIA ---
+# --- INTERFEJS LOGOWANIA (Tylko jeśli autologowanie zawiodło) ---
 if not st.session_state.auth:
-    # Styl tytułu
     st.markdown("""
         <style>
             .mobile-title {
@@ -381,20 +376,16 @@ if not st.session_state.auth:
                     
                     if remember_me:
                         token = generate_secure_token(un)
-                        # Ustawiamy ciasteczko
                         cookie_manager.set("remember_token", token, expires_at=datetime.now() + timedelta(days=30))
-                        # Dajemy chwilę na zapisanie ciasteczka przed rerunem
                         time.sleep(0.5)
-                    
                     st.rerun()
             else:
                 st.error("Błędne dane logowania")
                 
     with t2:
-        # Zachowaj swoją dotychczasową logikę rejestracji
+        # Tu wstaw swój kod rejestracji (rn, re_mail, rp...)
         pass
 
-    # Zatrzymujemy resztę aplikacji dla niezalogowanych
     st.stop()
 
 # --- 5. LOGOWANIE I ŁADOWANIE DANYCH (V560 - Robust Safety Sync) ---
