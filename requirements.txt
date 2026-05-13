@@ -8,3 +8,4 @@ plotly
 Pillow
 pytz
 streamlit-cropper
+extra-streamlit-components
