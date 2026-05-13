@@ -43,15 +43,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Ukrywanie elementów Streamlita dla efektu natywnej aplikacji
+# Ukrywanie elementów Streamlita z zachowaniem przycisku MENU
 st.markdown("""
     <style>
-        /* Ukrywa menu (trzy kreski), stopkę oraz nagłówek */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        /* Przywracamy header, żeby przycisk menu (hamburger) był dostępny */
+        header {visibility: visible; background: transparent;}
         
-        /* Usuwa zbędny margines na górze, żeby apka wypełniała cały ekran telefonu */
+        /* Ukrywamy tylko menu 'trzech kropek' (MainMenu) w prawym górnym rogu */
+        #MainMenu {visibility: hidden;}
+        
+        /* Ukrywamy stopkę */
+        footer {visibility: hidden;}
+        
+        /* Usuwa marginesy na górze, żeby apka wypełniała ekran */
         .block-container {
             padding-top: 1rem;
             padding-bottom: 0rem;
