@@ -43,22 +43,23 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Ukrywanie elementów Streamlita z zachowaniem przycisku MENU
+# Poprawka marginesów i widoczności nagłówka
 st.markdown("""
     <style>
-        /* Przywracamy header, żeby przycisk menu (hamburger) był dostępny */
-        header {visibility: visible; background: transparent;}
-        
-        /* Ukrywamy tylko menu 'trzech kropek' (MainMenu) w prawym górnym rogu */
+        /* Ukrywamy tylko menu 'trzech kropek', zostawiamy hamburgera */
         #MainMenu {visibility: hidden;}
-        
-        /* Ukrywamy stopkę */
         footer {visibility: hidden;}
-        
-        /* Usuwa marginesy na górze, żeby apka wypełniała ekran */
+        header {visibility: visible; background: transparent;}
+
+        /* Zwiększamy padding-top, aby treść nie była ucinana (z 1rem na 3.5rem) */
         .block-container {
-            padding-top: 1rem;
+            padding-top: 3.5rem !important;
             padding-bottom: 0rem;
+        }
+
+        /* Opcjonalnie: upewniamy się, że ikony na górze są dobrze widoczne */
+        [data-testid="stHeader"] {
+            background-color: rgba(0,0,0,0);
         }
     </style>
 """, unsafe_allow_html=True)
