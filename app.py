@@ -273,7 +273,7 @@ def update_word(word_id, fields):
 def delete_word(word_id): 
     get_db().table("flashcards").delete().eq("id", word_id).execute()
 
-# --- 4. LOGOWANIE I REJESTRACJA (V565 - Persistent Cookie Auth) ---
+# --- 4. LOGOWANIE I REJESTRACJA (V566 - Fix Cached Widget Warning) ---
 
 import hmac
 import base64
@@ -283,14 +283,12 @@ import re
 from datetime import datetime, timedelta
 import extra_streamlit_components as stx
 
-# Inicjalizacja managera ciasteczek
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# Inicjalizacja managera ciasteczek bezpośrednio (bez @st.cache_resource)
+# To usunie błąd widoczny na obraz_53.png
+cookie_manager = stx.CookieManager()
 
 def get_signature_key():
+    """Pobiera klucz do weryfikacji tokenów sesji."""
     key = SUPABASE_KEY
     if not key:
         st.error("⚠️ Błąd bezpieczeństwa: Klucz SUPABASE_KEY nie został odnaleziony.")
@@ -298,6 +296,7 @@ def get_signature_key():
     return key
 
 def generate_secure_token(username, days_valid=30):
+    """Tworzy bezpieczny token z kryptograficznym podpisem HMAC."""
     secret = get_signature_key()
     expires = int(time.time()) + (days_valid * 86400)
     message = f"{username}.{expires}"
@@ -306,7 +305,9 @@ def generate_secure_token(username, days_valid=30):
     return base64.urlsafe_b64encode(token_raw.encode()).decode()
 
 def verify_secure_token(token_b64):
+    """Weryfikuje integralność i datę ważności tokena."""
     try:
+        if not token_b64: return None
         secret = get_signature_key()
         token_raw = base64.urlsafe_b64decode(token_b64.encode()).decode()
         parts = token_raw.split('.')
@@ -324,7 +325,7 @@ def verify_secure_token(token_b64):
 if "auth" not in st.session_state or not st.session_state.auth:
     st.session_state.auth = False
     
-    # 1. Próba odczytu tokena z ciasteczka (Persistent Storage)
+    # Próba odczytu tokena z ciasteczka
     saved_token = cookie_manager.get("remember_token")
     
     if saved_token:
@@ -338,18 +339,28 @@ if "auth" not in st.session_state or not st.session_state.auth:
                     st.session_state.auth = True
                     st.session_state.user = verified_user
                     st.session_state.is_admin = user_info.get("is_admin", False)
-                    # Opcjonalnie: odświeżamy token, by przedłużyć sesję o kolejne 30 dni
-                    new_token = generate_secure_token(verified_user)
-                    cookie_manager.set("remember_token", new_token, expires_at=datetime.now() + timedelta(days=30))
                 else:
                     cookie_manager.delete("remember_token")
         else:
+            # Token niepoprawny lub wygasł - czyścimy go
             cookie_manager.delete("remember_token")
 
-# --- INTERFEJS LOGOWANIA ---
+# Wyświetlanie ekranu logowania, jeśli użytkownik nie jest uwierzytelniony
 if not st.session_state.auth:
-    # (Tutaj zachowaj swój styl CSS dla .mobile-title)
-    st.markdown('<div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>', unsafe_allow_html=True)
+    st.markdown("""
+        <style>
+            .mobile-title {
+                font-size: 8vw;
+                font-weight: bold;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            @media (min-width: 768px) { .mobile-title { font-size: 40px; } }
+        </style>
+        <div class="mobile-title"><span>🚀</span><span>Niemiecki Master</span></div>
+    """, unsafe_allow_html=True)
 
     t1, t2 = st.tabs(["🔐 Logowanie", "📝 Rejestracja"])
     db = get_db()
@@ -373,7 +384,6 @@ if not st.session_state.auth:
                     
                     if remember_me:
                         token = generate_secure_token(un)
-                        # ZAPISUJEMY W CIASTECZKU NA 30 DNI
                         cookie_manager.set("remember_token", token, expires_at=datetime.now() + timedelta(days=30))
                     
                     st.rerun()
@@ -381,8 +391,30 @@ if not st.session_state.auth:
                 st.error("Błędne dane logowania")
                 
     with t2:
-        # (Tutaj zachowaj swoją logikę rejestracji bez zmian)
-        pass
+        rn = st.text_input("Nowy użytkownik", key="r_u").lower().strip()
+        re_mail = st.text_input("Adres e-mail", key="r_e").strip()
+        rp = st.text_input("Hasło", type="password", key="r_p")
+        
+        if st.button("Załóż konto", use_container_width=True):
+            if len(rn) < 3 or len(rp) < 4:
+                st.error("Login (min. 3) i Hasło (min. 4) są za krótkie.")
+            elif not re_mail or not is_valid_email(re_mail):
+                st.error("Podaj poprawny e-mail!")
+            else:
+                check_user = db.table("users_auth").select("username").eq("username", rn).execute()
+                if check_user.data:
+                    st.error("Ta nazwa jest zajęta!")
+                else:
+                    try:
+                        db.rpc("register_user_v2", {
+                            "new_username": rn, "new_email": re_mail,
+                            "new_password_hash": hash_pw(rp), "new_provider": "legacy"
+                        }).execute()
+                        st.success("Konto gotowe!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd: {e}")
 
     st.stop()
 
